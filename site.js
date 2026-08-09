@@ -265,6 +265,17 @@ function firstName(value, fallback = "Usuario") {
   return String(value || fallback).trim().split(/\s+/)[0] || fallback;
 }
 
+function globalDisplayName(profile, user) {
+  return firstName(
+    profile?.display_name ||
+      profile?.username ||
+      user?.user_metadata?.display_name ||
+      user?.user_metadata?.full_name ||
+      user?.user_metadata?.name ||
+      "Usuario",
+  );
+}
+
 function globalAvatarSrc(value) {
   const fallback = "/assets/img/np-negative.png";
   const avatar = String(value || "").trim();
@@ -316,7 +327,7 @@ function showGlobalInstagramUsernamePrompt(profile, user, supabase) {
     "position:fixed",
     "inset:0",
     "background:rgba(0,0,0,.82)",
-    "z-index:99998",
+    "z-index:var(--hr-z-overlay,10001)",
     "display:flex",
     "align-items:center",
     "justify-content:center",
@@ -383,7 +394,7 @@ function showGlobalInstagramUsernamePrompt(profile, user, supabase) {
   });
 }
 function authenticatedHeaderMarkup(profile, user, unread = 0, drawer = false) {
-  const name = firstName(profile?.display_name || profile?.username || user?.email?.split("@")[0]);
+  const name = globalDisplayName(profile, user);
   const avatarSrc = globalAvatarSrc(profile?.avatar_url);
   const avatarMarkup = `<img src="${escapeNavText(avatarSrc)}" alt=""
     referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='/assets/img/np-negative.png'">`;
@@ -512,6 +523,9 @@ async function hydrateGlobalSession() {
   const drawerTargets = document.querySelectorAll("[data-hr-drawer-session]");
   if (!sessionTargets.length && !drawerTargets.length) return;
 
+  sessionTargets.forEach((target) => { target.hidden = true; });
+  drawerTargets.forEach((target) => { target.hidden = true; });
+
   try {
     const supabase = await getHiddenRoomSupabaseClient();
     const { data: { session } } = await supabase.auth.getSession();
@@ -523,14 +537,13 @@ async function hydrateGlobalSession() {
       drawerTargets.forEach((target) => {
         target.innerHTML = guestHeaderMarkup(true);
       });
+      sessionTargets.forEach((target) => { target.hidden = false; });
+      drawerTargets.forEach((target) => { target.hidden = false; });
       setAdminNavigationVisibility(false);
       renderGlobalNotifications([]);
       toggleGlobalNotifications(false);
       return;
     }
-
-    sessionTargets.forEach((target) => { target.innerHTML = authenticatedHeaderMarkup(null, user, 0); });
-    drawerTargets.forEach((target) => { target.innerHTML = authenticatedHeaderMarkup(null, user, 0, true); });
 
     const { data: profile } = await supabase
       .from("users")
@@ -567,9 +580,19 @@ async function hydrateGlobalSession() {
     drawerTargets.forEach((target) => {
       target.innerHTML = authenticatedHeaderMarkup(profile, user, unread, true);
     });
+    sessionTargets.forEach((target) => { target.hidden = false; });
+    drawerTargets.forEach((target) => { target.hidden = false; });
     renderGlobalNotifications(notifications);
     showGlobalInstagramUsernamePrompt(profile, user, supabase);
   } catch (error) {
+    sessionTargets.forEach((target) => {
+      target.innerHTML = guestHeaderMarkup();
+      target.hidden = false;
+    });
+    drawerTargets.forEach((target) => {
+      target.innerHTML = guestHeaderMarkup(true);
+      target.hidden = false;
+    });
     console.info("[HR] No fue posible hidratar la sesión global:", error?.message || error);
   }
 }
@@ -606,9 +629,21 @@ async function attachGlobalSessionSync() {
 }
 
 let globalDrawerScrollY = 0;
+let globalDrawerScrollLocked = false;
+let globalDrawerBodyStyles = null;
 
 function lockGlobalDrawerScroll() {
+  if (globalDrawerScrollLocked) return;
+
   globalDrawerScrollY = window.scrollY;
+  globalDrawerBodyStyles = {
+    position: document.body.style.position,
+    top: document.body.style.top,
+    right: document.body.style.right,
+    left: document.body.style.left,
+    width: document.body.style.width,
+  };
+  globalDrawerScrollLocked = true;
   document.documentElement.classList.add("hr-scroll-locked");
   document.body.style.position = "fixed";
   document.body.style.top = `-${globalDrawerScrollY}px`;
@@ -617,15 +652,63 @@ function lockGlobalDrawerScroll() {
   document.body.style.width = "100%";
 }
 
-function unlockGlobalDrawerScroll() {
-  document.documentElement.classList.remove("hr-scroll-locked");
-  document.body.style.position = "";
-  document.body.style.top = "";
-  document.body.style.right = "";
-  document.body.style.left = "";
-  document.body.style.width = "";
-  window.scrollTo(0, globalDrawerScrollY);
+function syncGlobalOverlayState() {
+  const globalOpen = document.body.classList.contains("hr-global-menu-open");
+  const portalOpen = document.body.classList.contains("hr-portal-menu-open");
+  document.body.classList.toggle("hr-overlay-open", globalOpen || portalOpen);
 }
+
+/**
+ * Close only persistent global overlays and release the drawer's scroll lock.
+ * This is intentionally idempotent so SPA navigation and nav rerenders can
+ * call it even when the drawer is already closed or partially replaced.
+ */
+function releaseGlobalOverlayState() {
+  const drawer = document.getElementById("hr-global-drawer");
+  const backdrop = document.querySelector(".hr-global-drawer__backdrop");
+  const toggle = document.querySelector(".hr-nav__mobile-toggle");
+  const instagramGate = document.getElementById("hr-instagram-username-gate");
+  const html = document.documentElement;
+  const body = document.body;
+  const staleBodyScrollMatch = body.style.top.match(/^-([\d.]+)px$/);
+  const hadStaleLock = html.classList.contains("hr-scroll-locked")
+    || body.classList.contains("hr-global-menu-open")
+    || (body.style.position === "fixed" && Boolean(staleBodyScrollMatch));
+
+  if (drawer) {
+    drawer.hidden = true;
+    drawer.setAttribute("aria-hidden", "true");
+  }
+  if (backdrop) backdrop.hidden = true;
+  if (toggle) toggle.setAttribute("aria-expanded", "false");
+  body.classList.remove("hr-global-menu-open");
+  syncGlobalOverlayState();
+  html.classList.remove("hr-scroll-locked");
+
+  if (globalDrawerScrollLocked || hadStaleLock) {
+    const restoreY = globalDrawerScrollLocked
+      ? globalDrawerScrollY
+      : staleBodyScrollMatch
+        ? Math.max(0, Number.parseFloat(staleBodyScrollMatch[1]) || 0)
+        : null;
+    const originalStyles = globalDrawerBodyStyles;
+    body.style.position = originalStyles?.position ?? "";
+    body.style.top = originalStyles?.top ?? "";
+    body.style.right = originalStyles?.right ?? "";
+    body.style.left = originalStyles?.left ?? "";
+    body.style.width = originalStyles?.width ?? "";
+    globalDrawerScrollLocked = false;
+    globalDrawerBodyStyles = null;
+    if (restoreY !== null) window.scrollTo(0, restoreY);
+  }
+
+  if (instagramGate) {
+    instagramGate.remove();
+    instagramUsernamePromptOpen = false;
+  }
+}
+
+window.releaseGlobalOverlayState = releaseGlobalOverlayState;
 
 function toggleGlobalDrawer(forceOpen) {
   const drawer = document.getElementById("hr-global-drawer");
@@ -643,13 +726,9 @@ function toggleGlobalDrawer(forceOpen) {
   drawer.setAttribute("aria-hidden", String(!open));
   toggle.setAttribute("aria-expanded", String(open));
   document.body.classList.toggle("hr-global-menu-open", open);
-  document.body.classList.toggle(
-    "hr-overlay-open",
-    open || document.body.classList.contains("hr-portal-menu-open"),
-  );
-
   if (open) lockGlobalDrawerScroll();
-  else if (!document.body.classList.contains("hr-portal-menu-open")) unlockGlobalDrawerScroll();
+  else releaseGlobalOverlayState();
+  syncGlobalOverlayState();
 
   if (open) drawer.querySelector(".hr-global-drawer__close")?.focus();
   else toggle.focus();
@@ -1098,6 +1177,7 @@ function renderGlobalNav() {
   const target = document.getElementById("hr-global-nav");
   if (!target) return;
 
+  releaseGlobalOverlayState();
   document.body.classList.add("hr-has-global-nav");
   const module = document.body.dataset.hrContext || "home";
   const accent = module === "media" ? "media" : "brand";
@@ -1411,12 +1491,6 @@ if (track) {
   });
 
 }
-
-
-
-
-
-
 
 
 

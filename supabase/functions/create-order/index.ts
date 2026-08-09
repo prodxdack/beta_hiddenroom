@@ -97,7 +97,17 @@ function normalizeRequestedItems(value: unknown) {
 }
 
 function paymentStatus(value: unknown) {
-  return cleanText(value, 40).toLowerCase() || "pending";
+  const status = cleanText(value, 40).toLowerCase();
+  const normalizedStatuses: Record<string, string> = {
+    processed: "paid",
+    processing: "pending",
+    created: "pending",
+    action_required: "pending",
+    canceled: "cancelled",
+    cancelled: "cancelled",
+    partially_refunded: "refunded",
+  };
+  return normalizedStatuses[status] ?? (status || "pending");
 }
 
 function paymentIdFrom(orderResult: Record<string, any>) {

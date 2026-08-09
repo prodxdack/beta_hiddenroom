@@ -134,7 +134,8 @@ function verifyDownloadToken(token) {
   const expectedBuffer = Buffer.from(expected);
   const signatureBuffer = Buffer.from(signature);
   if (expectedBuffer.length !== signatureBuffer.length || !crypto.timingSafeEqual(expectedBuffer, signatureBuffer)) throw new Error('Enlace de descarga invalido.');
-  const payload = JSON.parse(base64UrlDecode(body));
+  let payload;
+  try { payload = JSON.parse(base64UrlDecode(body)); } catch { throw new Error('Enlace de descarga invalido.'); }
   if (!payload.exp || Date.now() > Number(payload.exp)) throw new Error('El enlace de descarga expiro.');
   return payload;
 }
@@ -933,6 +934,94 @@ async function resolveBeatFile(rawFile) {
   return { relativeFile, resolved: realCandidate, stats };
 }
 
+async function resolveBeatAudioFile(rawFile) {
+  const relativeFile = normalizeBeatRelativePath(rawFile, { allowImages: false });
+  const root = beatStoreRoot();
+  const realRoot = await fsp.realpath(root);
+  const candidate = path.resolve(realRoot, relativeFile);
+  assertInsideRoot(realRoot, candidate);
+  const realCandidate = await fsp.realpath(candidate);
+  assertInsideRoot(realRoot, realCandidate);
+  const stats = await fsp.stat(realCandidate);
+  if (!stats.isFile()) throw new Error('Beat no encontrado.');
+  return { relativeFile, resolved: realCandidate, stats };
+}
+
+function storeDownloadNotFound() {
+  const err = new Error('Descarga no disponible.');
+  err.status = 404;
+  return err;
+}
+
+async function authorizedStoreBeatDownload(downloadId, userId) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(downloadId || '') || !userId) throw storeDownloadNotFound();
+  const encodedDownloadId = encodeURIComponent(downloadId);
+  const encodedUserId = encodeURIComponent(userId);
+  const downloads = await supabaseFetch(`/rest/v1/store_downloads?select=id,order_id,product_id,beat_id,license_id,license_snapshot,file_url&and=(id.eq.${encodedDownloadId},user_id.eq.${encodedUserId},available.eq.true)&limit=1`, { headers: supabaseHeaders() });
+  const download = Array.isArray(downloads) ? downloads[0] : null;
+  if (!download?.id || !download.order_id || !download.product_id) throw storeDownloadNotFound();
+
+  const orders = await supabaseFetch(`/rest/v1/store_orders?select=id,status,user_id&id=eq.${encodeURIComponent(download.order_id)}&user_id=eq.${encodedUserId}&limit=1`, { headers: supabaseHeaders() });
+  const order = Array.isArray(orders) ? orders[0] : null;
+  if (!order || !['approved', 'paid', 'authorized'].includes(String(order.status || '').toLowerCase())) throw storeDownloadNotFound();
+
+  const products = await supabaseFetch(`/rest/v1/store_products?select=id,category,beat_original_path,file_url,name&id=eq.${encodeURIComponent(download.product_id)}&limit=1`, { headers: supabaseHeaders() });
+  const product = Array.isArray(products) ? products[0] : null;
+  if (!product || product.category !== 'beats') throw storeDownloadNotFound();
+
+  let relativeFile = String(product.beat_original_path || '').trim().replace(/^\/+/, '').replace(new RegExp(`^${BEAT_STORE_DIR}/`, 'i'), '');
+  if (!relativeFile) {
+    const legacyPath = String(product.file_url || '').trim();
+    const prefix = `/${BEAT_STORE_DIR}/`;
+    if (legacyPath.startsWith(prefix)) relativeFile = legacyPath.slice(prefix.length);
+  }
+  if (!relativeFile) throw storeDownloadNotFound();
+  let file;
+  try { file = await resolveBeatAudioFile(relativeFile); } catch { throw storeDownloadNotFound(); }
+  return { download, order, product, file };
+}
+
+async function createStoreDownloadToken(user, req, res) {
+  let body;
+  try { body = await readJson(req); } catch {
+    const err = new Error('Solicitud invalida.');
+    err.status = 400;
+    throw err;
+  }
+  const downloadId = String(body?.store_download_id || '').trim();
+  const authorized = await authorizedStoreBeatDownload(downloadId, user.id);
+  const name = safeChildName(path.basename(authorized.file.relativeFile));
+  const token = signDownloadPayload({
+    kind: 'store-beat-download',
+    uid: user.id,
+    download_id: authorized.download.id,
+    path: authorized.file.relativeFile,
+    name,
+    exp: Date.now() + DOWNLOAD_TOKEN_TTL_MS,
+  });
+  sendJson(res, 200, {
+    success: true,
+    url: `${CLOUD_HIDDENROOM_URL.replace(/\/$/, '')}/api/store/download?token=${encodeURIComponent(token)}`,
+    expiresInMs: DOWNLOAD_TOKEN_TTL_MS,
+  });
+}
+
+async function downloadStorePublic(req, res, url) {
+  let payload;
+  try { payload = verifyDownloadToken(url.searchParams.get('token')); } catch { throw storeDownloadNotFound(); }
+  if (payload.kind !== 'store-beat-download' || !payload.uid || !payload.download_id) throw storeDownloadNotFound();
+  const authorized = await authorizedStoreBeatDownload(String(payload.download_id), String(payload.uid));
+  const encoded = encodeURIComponent(path.basename(authorized.file.relativeFile)).replace(/['()]/g, escape).replace(/\*/g, '%2A');
+  const ext = path.extname(authorized.file.relativeFile).toLowerCase();
+  return streamFile(req, res, authorized.file.resolved, authorized.file.stats, {
+    ...API_CORS_HEADERS,
+    'Content-Type': BEAT_MIME_TYPES[ext] || 'application/octet-stream',
+    'Content-Disposition': `attachment; filename="${path.basename(authorized.file.relativeFile).replace(/["\r\n]/g, '_')}"; filename*=UTF-8''${encoded}`,
+    'Cache-Control': 'private, no-store',
+    'X-Content-Type-Options': 'nosniff',
+  });
+}
+
 async function walkBeatFiles(currentDir, rootDir, depth = 0) {
   if (depth > 4) return [];
   const entries = await fsp.readdir(currentDir, { withFileTypes: true });
@@ -1461,6 +1550,12 @@ async function route(req, res) {
       if ((req.method === 'GET' || req.method === 'HEAD') && url.pathname === '/api/beat-store/stream') return await streamBeatFile(req, res, url);
       return failPublic(res, 404, 'Ruta Beat Store no encontrada.');
     }
+    if (url.pathname.startsWith('/api/store/')) {
+      if (req.method === 'OPTIONS') return send(res, 204, '', API_CORS_HEADERS);
+      if (req.method === 'POST' && url.pathname === '/api/store/download-token') return await createStoreDownloadToken(await requireCloudUser(req), req, res);
+      if ((req.method === 'GET' || req.method === 'HEAD') && url.pathname === '/api/store/download') return await downloadStorePublic(req, res, url);
+      return fail(res, 404, 'Ruta Store no encontrada.');
+    }
     if ((req.method === 'GET' || req.method === 'HEAD') && url.pathname === '/api/download-public') return await downloadPublic(req, res, url);
     if (url.pathname.startsWith('/api/')) {
       if (req.method === 'OPTIONS') return send(res, 204, '', API_CORS_HEADERS);
@@ -1494,4 +1589,3 @@ http.createServer(route).listen(PORT, '0.0.0.0', () => {
   console.log(`Cloud root: ${path.resolve(CLOUD_ROOT)}`);
   startServerStatusCollector();
 });
-

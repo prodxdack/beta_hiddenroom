@@ -2238,6 +2238,7 @@ function renderPortalMoreSheet(openKey = '') {
 
 function renderPortalNavigation() {
   renderPortalSidebar();
+  releasePortalMoreSheetState();
   document.querySelectorAll('.hr-portal-bottom-nav, .hr-portal-backdrop, .hr-portal-drawer')
     .forEach((node) => node.remove());
 
@@ -2252,7 +2253,7 @@ function renderPortalNavigation() {
       <button type="button" data-portal-more aria-controls="hr-portal-more" aria-expanded="false"><span>•••</span>Más</button>
     </nav>
     <button class="hr-portal-backdrop" type="button" aria-label="Cerrar menú" hidden></button>
-    <aside class="hr-portal-drawer" id="hr-portal-more" aria-label="Menú del portal" hidden>
+    <aside class="hr-portal-drawer" id="hr-portal-more" aria-label="Menú del portal" aria-hidden="true" hidden>
       <header>
         <div><small>Navegación</small><strong data-portal-sheet-title>Todas las secciones</strong></div>
         <button type="button" data-portal-sheet-close aria-label="Cerrar menú">×</button>
@@ -2260,6 +2261,23 @@ function renderPortalNavigation() {
       <div class="hr-portal-drawer__content">${renderPortalMoreSheet()}</div>
     </aside>
   `);
+}
+
+function releasePortalMoreSheetState() {
+  const sheet = document.getElementById('hr-portal-more');
+  const backdrop = document.querySelector('.hr-portal-backdrop');
+  const moreButton = document.querySelector('[data-portal-more]');
+
+  if (sheet) {
+    sheet.hidden = true;
+    sheet.setAttribute('aria-hidden', 'true');
+  }
+  if (backdrop) backdrop.hidden = true;
+  if (moreButton) moreButton.setAttribute('aria-expanded', 'false');
+  document.body.classList.remove('hr-portal-menu-open');
+  if (!document.body.classList.contains('hr-global-menu-open')) {
+    document.body.classList.remove('hr-overlay-open');
+  }
 }
 
 function togglePortalMoreSheet(forceOpen, filterKey = '') {
@@ -2275,9 +2293,14 @@ function togglePortalMoreSheet(forceOpen, filterKey = '') {
   }
 
   sheet.hidden = !open;
+  sheet.setAttribute('aria-hidden', String(!open));
   backdrop.hidden = !open;
   moreButton.setAttribute('aria-expanded', String(open && !filterKey));
-  document.body.classList.toggle('hr-portal-menu-open', open);
+  if (!open) {
+    releasePortalMoreSheetState();
+    return;
+  }
+  document.body.classList.add('hr-portal-menu-open');
   document.body.classList.toggle('hr-overlay-open', open || document.body.classList.contains('hr-global-menu-open'));
   if (open) sheet.querySelector('[data-portal-sheet-close]')?.focus();
 }
@@ -11173,9 +11196,12 @@ function showAdminUserEditModal(userUuid) {
   const overlay = document.createElement('div');
   overlay.id = 'js-admin-user-edit-modal';
   overlay.className = 'db-modal';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-labelledby', 'js-admin-user-edit-title');
   overlay.innerHTML = `
     <div class="db-modal__dialog db-modal__dialog--wide">
-      <h2 class="db-modal__title">Editar usuario</h2>
+      <h2 class="db-modal__title" id="js-admin-user-edit-title">Editar usuario</h2>
       <form id="js-admin-user-edit-form" class="db-form db-modal__body">
         <input type="hidden" name="user_uuid" value="${escapeAttr(userUuid)}" />
         <label class="db-field"><span>Display name</span>
@@ -12555,7 +12581,7 @@ function showOnboardingModal(needsEmail, needsPassword) {
       'position:fixed',
       'inset:0',
       'background:rgba(0,0,0,.88)',
-      'z-index:99999',
+      'z-index:var(--hr-z-overlay,10001)',
       'display:flex',
       'align-items:center',
       'justify-content:center',
@@ -12806,6 +12832,3 @@ export {
   hasPermission,
   hasAnyPermission,
 };
-
-
-

@@ -9,6 +9,7 @@ const corsHeaders = {
 type RequestedItem = {
   id?: unknown;
   quantity?: unknown;
+  license_id?: unknown;
 };
 
 type StoreProduct = {
@@ -118,6 +119,9 @@ Deno.serve(async (req) => {
 
   let requestedItems: Map<string, number>;
   try {
+    if (Array.isArray(body.items) && body.items.some((item: RequestedItem) => cleanText(item?.license_id, 100))) {
+      throw new Error("Las licencias de beats se procesan mediante Mercado Pago.");
+    }
     requestedItems = normalizeRequestedItems(body.items);
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : "Carrito inválido." }, 400);
@@ -145,6 +149,9 @@ Deno.serve(async (req) => {
   }
 
   const products = productRows as StoreProduct[];
+  if (products.some((product) => product.category === "beats")) {
+    return json({ error: "Las licencias de beats se procesan mediante Mercado Pago." }, 400);
+  }
   const currencies = new Set(products.map((product) => product.currency.toUpperCase()));
   if (currencies.size !== 1) {
     return json({ error: "Todos los productos deben usar la misma moneda." }, 400);

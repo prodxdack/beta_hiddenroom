@@ -148,6 +148,7 @@ async function hrSpaNavigate(input, { replace = false, fromPopState = false } = 
   const url = new URL(input, window.location.href);
   if (url.pathname.endsWith('/index.html')) url.pathname = url.pathname.slice(0, -'index.html'.length);
   if (!hrSpaIsCompatible(url)) return false;
+  window.releaseGlobalOverlayState?.();
   const root = hrSpaEnsureRoot();
   const navigationId = ++hrSpaActiveNavigation;
   const startedAt = performance.now();
@@ -173,6 +174,7 @@ async function hrSpaNavigate(input, { replace = false, fromPopState = false } = 
     hrSpaDebug('navigation complete', { url: url.href, cached: view.fromCache, ms: Math.round(performance.now() - startedAt) });
     return true;
   } catch (error) {
+    window.releaseGlobalOverlayState?.();
     hrSpaDebug('fallback', { url: url.href, error: error?.message || String(error) });
     window.location.href = url.href;
     return false;

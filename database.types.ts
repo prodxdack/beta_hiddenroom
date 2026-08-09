@@ -1675,31 +1675,43 @@ export type Database = {
       }
       store_downloads: {
         Row: {
+          beat_id: string | null
           available: boolean
           created_at: string
           download_count: number
           file_url: string | null
           id: string
+          license_id: string | null
+          license_name: string | null
+          license_snapshot: Json
           order_id: string
           product_id: string | null
           user_id: string
         }
         Insert: {
+          beat_id?: string | null
           available?: boolean
           created_at?: string
           download_count?: number
           file_url?: string | null
           id?: string
+          license_id?: string | null
+          license_name?: string | null
+          license_snapshot?: Json
           order_id: string
           product_id?: string | null
           user_id: string
         }
         Update: {
+          beat_id?: string | null
           available?: boolean
           created_at?: string
           download_count?: number
           file_url?: string | null
           id?: string
+          license_id?: string | null
+          license_name?: string | null
+          license_snapshot?: Json
           order_id?: string
           product_id?: string | null
           user_id?: string
@@ -1723,9 +1735,14 @@ export type Database = {
       }
       store_order_items: {
         Row: {
+          beat_id: string | null
           created_at: string
           id: string
+          license_id: string | null
+          license_name: string | null
+          license_snapshot: Json
           order_id: string
+          producer_name: string | null
           product_id: string | null
           product_name: string
           quantity: number
@@ -1733,9 +1750,14 @@ export type Database = {
           unit_price: number
         }
         Insert: {
+          beat_id?: string | null
           created_at?: string
           id?: string
+          license_id?: string | null
+          license_name?: string | null
+          license_snapshot?: Json
           order_id: string
+          producer_name?: string | null
           product_id?: string | null
           product_name: string
           quantity?: number
@@ -1743,9 +1765,14 @@ export type Database = {
           unit_price: number
         }
         Update: {
+          beat_id?: string | null
           created_at?: string
           id?: string
+          license_id?: string | null
+          license_name?: string | null
+          license_snapshot?: Json
           order_id?: string
+          producer_name?: string | null
           product_id?: string | null
           product_name?: string
           quantity?: number

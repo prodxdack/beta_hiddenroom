@@ -4534,7 +4534,7 @@ body.hr-has-beat-player .db-toast-region {
 .recovery-popup {
   position: fixed;
   inset: 0;
-  z-index: var(--hr-z-modal, 1000);
+  z-index: var(--hr-z-overlay);
   display: grid;
   place-items: center;
   padding: var(--hr-space-lg, 24px);
@@ -5384,7 +5384,7 @@ body.hr-has-beat-player .db-toast-region {
 .db-modal {
   position: fixed;
   inset: 0;
-  z-index: 9000;
+  z-index: var(--hr-z-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -9275,7 +9275,7 @@ html { color-scheme: dark; }
   align-items: start;
 }
 
-.admin-form { position: sticky; top: 20px; }
+.admin-form { position: sticky; top: calc(var(--hr-nav-height, 58px) + 20px); }
 .admin-form h2 { margin: 0; font: 700 20px var(--hr-font-display); text-transform: uppercase; }
 
 .check-grid {
@@ -9308,6 +9308,7 @@ html { color-scheme: dark; }
 
 .notice {
   position: fixed;
+  z-index: var(--hr-z-toast);
   right: 20px;
   bottom: 20px;
   transform: translateY(140%);
@@ -9316,6 +9317,7 @@ html { color-scheme: dark; }
 .notice.visible { transform: translateY(0); }
 
 .success-page {
+  position: relative;
   min-height: 100vh;
   padding: 40px 20px;
   display: flex;
@@ -9728,7 +9730,7 @@ body.beat-admin-mode .beat-admin {
 
   .beat-card__cover {
     position: sticky;
-    top: 0;
+    top: var(--hr-nav-height-mobile, 54px);
   }
 
   .beat-card__actions {
@@ -11265,7 +11267,7 @@ body.beat-admin-mode .beat-admin {
 
 .kairen-config {
   position: sticky;
-  top: 18px;
+  top: calc(var(--hr-nav-height, 58px) + 18px);
 }
 
 .kairen-config fieldset {
@@ -11878,12 +11880,12 @@ body.hr-has-beat-player { padding-bottom:calc(var(--hr-player-height) + var(--hr
 }
 /* Layer order: mobile drawer/backdrop above the global player. */
 body.hr-global-menu-open .hr-beat-player {
-  z-index: 1 !important;
+  z-index: var(--hr-z-nav) !important;
   pointer-events: none;
 }
 @media (max-width: 900px) {
-  .hr-global-drawer__backdrop { z-index: 10001 !important; }
-  .hr-global-drawer { z-index: 10002 !important; }
+  .hr-global-drawer__backdrop { z-index: var(--hr-z-overlay) !important; }
+  .hr-global-drawer { z-index: var(--hr-z-drawer) !important; }
 }
 /* =====================================================================
    GLOBAL COHERENCE PASS
