@@ -17,7 +17,8 @@ const state = {
 };
 
 const hrAcademiaLifecycle = new AbortController();
-window.HiddenRoomApp?.register(() => hrAcademiaLifecycle.abort());
+let hrAcademiaMounted = true;
+window.HiddenRoomApp?.register(() => { hrAcademiaMounted = false; hrAcademiaLifecycle.abort(); });
 
 const els = {
   app: document.getElementById("academy-app"),
@@ -49,7 +50,7 @@ function slugify(value) {
 }
 
 function setStatus(message, tone = "") {
-  if (!els.status) return;
+  if (!hrAcademiaMounted || hrAcademiaLifecycle.signal.aborted || !els.status) return;
   els.status.textContent = message || "";
   els.status.dataset.tone = tone;
 }
@@ -824,9 +825,12 @@ function renderAdmin() {
 }
 
 async function loadAcademia() {
+  if (!hrAcademiaMounted || hrAcademiaLifecycle.signal.aborted) return;
   setStatus("Cargando Academia...");
   const hiddenRoomSupabase = await waitForHiddenRoomSupabase();
+  if (!hrAcademiaMounted || hrAcademiaLifecycle.signal.aborted) return;
   state.supabase = await hiddenRoomSupabase.getClient();
+  if (!hrAcademiaMounted || hrAcademiaLifecycle.signal.aborted) return;
   const { data: userData } = await state.supabase.auth.getUser();
   state.user = userData?.user || null;
 
@@ -835,6 +839,7 @@ async function loadAcademia() {
     state.profile = profile || null;
     const roleAdmin = String(profile?.roles || "").split(",").map((role) => role.trim().toLowerCase()).includes("admin");
     const { data: academiaAdmin } = await state.supabase.rpc("has_academia_admin_permission");
+    if (!hrAcademiaMounted || hrAcademiaLifecycle.signal.aborted) return;
     state.isAdmin = Boolean(roleAdmin || academiaAdmin);
     if (els.user) els.user.textContent = profile?.display_name || profile?.username || state.user.email || "Usuario";
   } else if (els.user) {
@@ -852,6 +857,7 @@ async function loadAcademia() {
   ]);
   const error = firstError([coursesRes, modulesRes, contentsRes, contentFilesRes, courseAccessRes, moduleAccessRes, downloadAccessRes]);
   if (error) throw error;
+  if (!hrAcademiaMounted || hrAcademiaLifecycle.signal.aborted) return;
 
   state.courses = coursesRes.data || [];
   state.modules = modulesRes.data || [];
@@ -864,6 +870,7 @@ async function loadAcademia() {
   if (state.isAdmin) {
     const { data: users, error: usersError } = await state.supabase.from("users").select("id,user_id,email,display_name,username").order("display_name", { ascending: true });
     if (usersError) throw usersError;
+    if (!hrAcademiaMounted || hrAcademiaLifecycle.signal.aborted) return;
     state.users = users || [];
     window.HiddenRoomNavigation?.setAdminLinksVisible?.(true);
   }
@@ -1134,6 +1141,7 @@ function bindEvents() {
     const picker = event.target.closest?.(".db-user-picker");
     if (!picker) return;
     window.setTimeout(() => {
+      if (!hrAcademiaMounted || hrAcademiaLifecycle.signal.aborted) return;
       if (!picker.contains(document.activeElement)) picker.querySelector(".db-user-picker__menu")?.setAttribute("hidden", "");
     }, 80);
   }, { signal: hrAcademiaLifecycle.signal });

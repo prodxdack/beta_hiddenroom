@@ -188,8 +188,10 @@ function renderCatalog() {
     return (!search || haystack.includes(search)) && (!category || product.category === category);
   });
 
+  grid.classList.add("hr-filtering");
+  window.requestAnimationFrame(() => grid.classList.remove("hr-filtering"));
   if (!filtered.length) {
-    grid.innerHTML = '<div class="empty-state"><h2>Sin resultados</h2><p>Prueba otra búsqueda o categoría.</p></div>';
+    grid.innerHTML = '<div class="empty-state hr-empty-state"><h2>Sin resultados</h2><p>Prueba otra búsqueda o categoría.</p></div>';
     return;
   }
 
@@ -538,7 +540,7 @@ function emptyCartMarkup() {
 }
 
 function errorState(message) {
-  return `<div class="empty-state"><h2>No pudimos cargar esto</h2><p>${escapeHtml(message)}</p><a class="primary-button" href="index.html">Volver a la tienda</a></div>`;
+  return `<div class="empty-state hr-empty-state"><h2>No pudimos cargar esto</h2><p>${escapeHtml(message)}</p><a class="primary-button" href="index.html">Volver a la tienda</a></div>`;
 }
 
 function showNotice(message) {
@@ -564,7 +566,6 @@ export function escapeHtml(value) {
 
 // Futuras pasarelas:
 // TODO: createPayPalCheckout(customerData, cartItems)
-
 
 
 

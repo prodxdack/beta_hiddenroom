@@ -1,17 +1,18 @@
-const HR_SPA_ROUTES = new Set(['/','/store/','/store/beat_store/','/media/','/academia/']);
-const HR_SPA_EXCLUDED = ['/portal/','/portal/dashboard.html','/tickets/','/kairen/'];
+const HR_SPA_ROUTES = new Set(['/','/store/','/store/beat_store/','/media/','/academia/','/kairen/','/tickets/']);
+const HR_SPA_EXCLUDED = ['/portal/','/portal/dashboard.html','/tickets/generate.html','/tickets/validate.html','/tickets/view.html'];
 const HR_SPA_CACHE_TTL = 60 * 1000;
 const hrSpaViewCache = new Map();
 const hrSpaPending = new Map();
 let hrSpaNavigationId = 0;
 let hrSpaActiveCleanups = [];
 let hrSpaReady = false;
+let hrSpaActiveNavigation = 0;
 
 function hrSpaPath(url) {
   const path = url.pathname.replace(/\/index\.html$/, '/') || '/';
   return path.endsWith('/') ? path : `${path}/`;
 }
-function hrSpaCacheKey(url) { return `${url.origin}${hrSpaPath(url)}${url.search}${url.hash}`; }
+function hrSpaCacheKey(url) { return `${url.origin}${hrSpaPath(url)}${url.search}`; }
 function hrSpaDevEnabled() {
   return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || new URLSearchParams(window.location.search).has('hr_debug');
 }
@@ -47,6 +48,31 @@ function hrSpaEnsureRoot() {
   });
   document.body.appendChild(root);
   return root;
+}
+function hrSpaSkeletonMarkup(url) {
+  const path = hrSpaPath(url);
+  if (path === "/store/" || path === "/media/") {
+    const modifier = path === "/media/" ? " hr-skeleton-grid--media" : " hr-skeleton-grid--store";
+    return `<div class="hr-skeleton-grid${modifier}" aria-hidden="true">${Array.from({ length: 6 }, () => `<article class="hr-skeleton-card"><div class="hr-skeleton-block ${path === "/media/" ? "hr-skeleton-block--media" : ""}"></div><div class="hr-skeleton-line hr-skeleton-line--short"></div><div class="hr-skeleton-line"></div><div class="hr-skeleton-line hr-skeleton-line--medium"></div><div class="hr-skeleton-actions"><span></span><span></span></div></article>`).join("")}</div>`;
+  }
+  if (path === "/store/beat_store/") return `<div class="hr-skeleton-grid hr-skeleton-grid--beats" aria-hidden="true">${Array.from({ length: 6 }, () => '<article class="hr-skeleton-card hr-skeleton-card--beat"><div class="hr-skeleton-block hr-skeleton-block--cover"></div><div class="hr-skeleton-stack"><div class="hr-skeleton-line hr-skeleton-line--short"></div><div class="hr-skeleton-line"></div><div class="hr-skeleton-line hr-skeleton-line--medium"></div><div class="hr-skeleton-actions"><span></span><span></span></div></div></article>').join("")}</div>`;
+  if (path === "/kairen/" || path === "/tickets/") return `<div class="hr-skeleton-shell" aria-hidden="true"><div class="hr-skeleton-line hr-skeleton-line--short"></div><div class="hr-skeleton-line hr-skeleton-line--title"></div><div class="hr-skeleton-grid hr-skeleton-grid--shell">${Array.from({ length: path === "/tickets/" ? 3 : 2 }, () => '<article class="hr-skeleton-card"><div class="hr-skeleton-line"></div><div class="hr-skeleton-line hr-skeleton-line--medium"></div><div class="hr-skeleton-line hr-skeleton-line--short"></div><div class="hr-skeleton-actions"><span></span><span></span></div></article>').join("")}</div></div>`;
+  return '<div class="hr-skeleton-home" aria-hidden="true"><div class="hr-skeleton-block hr-skeleton-block--hero"></div><div class="hr-skeleton-home__lines"><span></span><span></span><span></span></div></div>';
+}
+function hrSpaShowSkeleton(root, url) {
+  root.replaceChildren();
+  root.insertAdjacentHTML("beforeend", hrSpaSkeletonMarkup(url));
+  root.setAttribute("aria-busy", "true");
+}
+function hrSpaUpdateActiveNavigation(url) {
+  const target = new URL(url, window.location.href);
+  document.querySelectorAll("#hr-global-nav a[href]").forEach((link) => {
+    const linkUrl = new URL(link.href, window.location.href);
+    const samePath = hrSpaPath(linkUrl) === hrSpaPath(target);
+    const sameQuery = linkUrl.search === target.search;
+    const sameHash = !linkUrl.hash || linkUrl.hash === target.hash;
+    link.toggleAttribute("aria-current", samePath && sameQuery && sameHash ? "page" : false);
+  });
 }
 function hrSpaApplyDocument(parsed, url) {
   const root = hrSpaEnsureRoot();
@@ -123,21 +149,27 @@ async function hrSpaNavigate(input, { replace = false, fromPopState = false } = 
   if (url.pathname.endsWith('/index.html')) url.pathname = url.pathname.slice(0, -'index.html'.length);
   if (!hrSpaIsCompatible(url)) return false;
   const root = hrSpaEnsureRoot();
+  const navigationId = ++hrSpaActiveNavigation;
   const startedAt = performance.now();
   let view;
   try {
+    if (!fromPopState) window.history[replace ? 'replaceState' : 'pushState']({ hrSpa: true }, '', url.href);
+    hrSpaUpdateActiveNavigation(url);
     view = await hrSpaGetView(url);
-    if (!view.fromCache) { document.body.classList.add('hr-spa-loading'); root.classList.add('hr-spa-content--leaving'); }
+    if (navigationId !== hrSpaActiveNavigation) return false;
+    if (!view.fromCache) { document.body.classList.add('hr-spa-loading'); root.classList.add('hr-spa-content--leaving'); hrSpaShowSkeleton(root, url); }
     const parsed = new DOMParser().parseFromString(view.html, 'text/html');
     hrSpaApplyDocument(parsed, url);
-    if (!fromPopState) window.history[replace ? 'replaceState' : 'pushState']({ hrSpa: true }, '', url.href);
+    root.removeAttribute("aria-busy");
     if (typeof window.renderGlobalNav === 'function') window.renderGlobalNav();
     if (typeof window.initGlobalFooter === 'function') window.initGlobalFooter();
     if (typeof window.hydrateGlobalSession === 'function') window.hydrateGlobalSession();
     document.querySelectorAll('.site-status').forEach((el) => { el.textContent = window.HiddenRoomSite?.status || el.textContent; });
     await hrSpaMount(parsed, url);
     if (url.hash) document.getElementById(url.hash.slice(1))?.scrollIntoView({ behavior: 'smooth' });
+    root.classList.add('hr-spa-content--entering');
     requestAnimationFrame(() => root.classList.remove('hr-spa-content--leaving'));
+    window.setTimeout(() => root.classList.remove('hr-spa-content--entering'), 220);
     hrSpaDebug('navigation complete', { url: url.href, cached: view.fromCache, ms: Math.round(performance.now() - startedAt) });
     return true;
   } catch (error) {
@@ -157,6 +189,7 @@ function hrSpaHandleClick(event) {
   if (!hrSpaIsCompatible(url)) return;
   if (url.pathname === window.location.pathname && url.search === window.location.search) {
     event.preventDefault(); window.history.pushState({ hrSpa: true }, '', url.href);
+    hrSpaUpdateActiveNavigation(url);
     if (url.hash) document.getElementById(url.hash.slice(1))?.scrollIntoView({ behavior: 'smooth' });
     return;
   }
@@ -183,5 +216,5 @@ function hrSpaInit() { if (hrSpaReady || !document.body.hasAttribute('data-hr-ch
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', hrSpaInit, { once: true }); else hrSpaInit();
 const hrSpaStyle = document.createElement('style');
 hrSpaStyle.id = 'hr-spa-style';
-hrSpaStyle.textContent = `#hr-spa-content{opacity:1;transition:opacity 160ms ease}#hr-spa-content.hr-spa-content--leaving{opacity:.35}body.hr-spa-loading{cursor:progress}@media(prefers-reduced-motion:reduce){#hr-spa-content{transition:none}}`;
+hrSpaStyle.textContent = `#hr-spa-content{opacity:1;transform:translateY(0);transition:opacity 160ms ease,transform 180ms ease}#hr-spa-content.hr-spa-content--leaving{opacity:.18;transform:translateY(4px)}#hr-spa-content.hr-spa-content--entering{animation:hr-spa-enter 180ms ease both}body.hr-spa-loading{cursor:progress}@keyframes hr-spa-enter{from{opacity:.72;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}@media(prefers-reduced-motion:reduce){#hr-spa-content{transition:none}#hr-spa-content.hr-spa-content--entering{animation:none}}`;
 document.head.appendChild(hrSpaStyle);

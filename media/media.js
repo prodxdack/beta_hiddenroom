@@ -82,17 +82,19 @@ async function loadPosts(reset = false) {
   if (reset) {
     state.page = 0;
     state.done = false;
-    postsGrid.innerHTML = "";
+    postsGrid.innerHTML = '<div class="hr-skeleton-grid hr-skeleton-grid--media" aria-hidden="true">' + Array.from({ length: 3 }, () => '<article class="hr-skeleton-card"><div class="hr-skeleton-block hr-skeleton-block--media"></div><div class="hr-skeleton-line hr-skeleton-line--short"></div><div class="hr-skeleton-line"></div><div class="hr-skeleton-line hr-skeleton-line--medium"></div></article>').join("") + '</div>';
   }
   if (state.done) return;
 
   state.loading = true;
+  postsGrid.classList.add("hr-filtering");
   status.textContent = "Cargando publicaciones…";
   loadMore.hidden = true;
 
   const from = state.page * PAGE_SIZE;
   const { data, error, count } = await filteredQuery().range(from, from + PAGE_SIZE - 1);
   state.loading = false;
+  postsGrid.classList.remove("hr-filtering");
 
   if (error) {
     console.error("[Media] feed:", error);
@@ -100,12 +102,14 @@ async function loadPosts(reset = false) {
     return;
   }
 
+  postsGrid.querySelector(".hr-skeleton-grid")?.remove();
   postsGrid.insertAdjacentHTML("beforeend", (data || []).map((post) => card(post)).join(""));
   state.page += 1;
   state.done = from + (data?.length || 0) >= (count || 0) || (data?.length || 0) < PAGE_SIZE;
 
   if (!postsGrid.children.length) {
     status.textContent = "No encontramos publicaciones con esos filtros.";
+    postsGrid.innerHTML = '<div class="hr-empty-state"><h2>Sin publicaciones</h2><p>Prueba otra búsqueda o categoría.</p></div>';
   } else {
     status.textContent = `${count || postsGrid.children.length} publicaciones en el archivo.`;
   }

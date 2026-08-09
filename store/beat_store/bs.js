@@ -397,9 +397,11 @@ function renderBeats() {
   const renderKey = `${state.renderVersion}|${query}|${genre}|${mode}|${filtered.map((item) => item.id).join(",")}`;
   if (renderKey === state.renderedKey) return;
   state.renderedKey = renderKey;
+  grid.classList.add("hr-filtering");
+  window.requestAnimationFrame(() => grid.classList.remove("hr-filtering"));
 
   if (!filtered.length) {
-    grid.innerHTML = `<div class="empty-state beat-empty"><h2>Sin beats</h2><p>${query ? "Prueba otra búsqueda." : "No hay beats activos publicados."}</p></div>`;
+    grid.innerHTML = `<div class="empty-state hr-empty-state beat-empty"><h2>Sin beats</h2><p>${query ? "Prueba otra búsqueda." : "No hay beats activos publicados."}</p></div>`;
     return;
   }
 
@@ -1834,7 +1836,7 @@ function formatPrice(amount, currency = "MXN") {
 }
 
 function errorState(message) {
-  return `<div class="empty-state beat-empty"><h2>No pudimos cargar Beat Store</h2><p>${escapeHtml(message)}</p></div>`;
+  return `<div class="empty-state hr-empty-state beat-empty"><h2>No pudimos cargar Beat Store</h2><p>${escapeHtml(message)}</p></div>`;
 }
 
 function showNotice(message) {
