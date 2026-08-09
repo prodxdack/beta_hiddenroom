@@ -963,6 +963,7 @@ function setGlobalBeatPlayer(detail, options = {}) {
     fallbackAudio.src = detail.src;
     fallbackAudio.load();
   }
+  player?.classList.remove("is-empty");
   player?.classList.add("is-loaded");
   if (player) player.dataset.state = "loading";
   if (title) title.textContent = detail.title || "Beat Store";
@@ -1519,7 +1520,6 @@ if (track) {
   });
 
 }
-
 
 
 
