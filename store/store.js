@@ -69,15 +69,32 @@ function getCart() {
     const stored = JSON.parse(localStorage.getItem(CART_STORAGE_KEY) || "[]");
     if (!Array.isArray(stored)) return [];
 
-    return stored
-      .map((item) => ({
-        id: String(item?.id ?? ""),
-        quantity: Math.max(1, Math.min(10, Number.parseInt(item?.quantity, 10) || 1)),
-      }))
-      .filter((item) => item.id);
+    return stored.map(normalizeCartItem).filter((item) => item.id);
   } catch {
     return [];
   }
+}
+
+function normalizeCartItem(item) {
+  const licenseId = String(item?.license_id ?? "").trim();
+  return {
+    id: String(item?.id ?? "").trim(),
+    quantity: licenseId ? 1 : Math.max(1, Math.min(10, Number.parseInt(item?.quantity, 10) || 1)),
+    ...(licenseId ? {
+      beat_id: String(item?.beat_id ?? "").trim(),
+      license_id: licenseId,
+      license_price: Number(item?.license_price) || 0,
+      license_name: String(item?.license_name ?? "").trim(),
+      license_description: String(item?.license_description ?? "").trim(),
+      license_format: String(item?.license_format ?? "").trim(),
+      license_terms: String(item?.license_terms ?? "").trim(),
+      beat_producer: String(item?.beat_producer ?? "").trim(),
+    } : {}),
+  };
+}
+
+function cartIdentity(item) {
+  return `${item?.id ?? ""}::${item?.license_id ?? ""}`;
 }
 
 function saveCart(cart) {
@@ -95,7 +112,7 @@ function addToCart(productId, quantity = 1) {
   if (!product || !productCanBePurchased(product)) return;
 
   const cart = getCart();
-  const existing = cart.find((item) => item.id === productId);
+  const existing = cart.find((item) => cartIdentity(item) === `${productId}::`);
   const maximum = product.stock === null ? 10 : Math.min(10, product.stock);
 
   if (existing) existing.quantity = Math.min(maximum, existing.quantity + quantity);
@@ -107,11 +124,11 @@ function addToCart(productId, quantity = 1) {
 
 function setQuantity(productId, quantity, product) {
   const cart = getCart();
-  const item = cart.find((candidate) => candidate.id === productId);
+  const item = cart.find((candidate) => cartIdentity(candidate) === productId || (!productId.includes("::") && candidate.id === productId));
   if (!item) return;
 
   if (quantity <= 0) {
-    saveCart(cart.filter((candidate) => candidate.id !== productId));
+    saveCart(cart.filter((candidate) => cartIdentity(candidate) !== productId && (productId.includes("::") || candidate.id !== productId)));
     return;
   }
 
@@ -131,17 +148,50 @@ async function validatedCart() {
   const cart = getCart();
   const liveProducts = await fetchProductsByIds(cart.map((item) => item.id));
   products = liveProducts;
+  const licenseItems = cart.filter((item) => item.license_id);
+  const assignmentsByKey = new Map();
+  if (licenseItems.length) {
+    const { data: assignments, error } = await supabase
+      .from("beat_license_assignments")
+      .select("beat_id, license_id, price, is_enabled, beat_licenses(id, name, description, terms, format, stream_limit, unlimited_streams, is_active)")
+      .in("beat_id", licenseItems.map((item) => item.beat_id || item.id))
+      .in("license_id", licenseItems.map((item) => item.license_id));
+    if (error) throw new Error(`No se pudo validar las licencias: ${error.message}`);
+    (assignments ?? []).forEach((assignment) => assignmentsByKey.set(`${assignment.beat_id}::${assignment.license_id}`, assignment));
+  }
   const validItems = [];
 
   for (const cartItem of cart) {
     const product = liveProducts.find((candidate) => candidate.id === cartItem.id);
     if (!product || !productCanBePurchased(product)) continue;
+    let license = null;
+    let assignment = null;
+    if (cartItem.license_id) {
+      assignment = assignmentsByKey.get(`${cartItem.beat_id || cartItem.id}::${cartItem.license_id}`);
+      license = assignment?.beat_licenses;
+      if (product.category !== "beats" || !assignment?.is_enabled || !license?.is_active) continue;
+    }
 
     const maximum = product.stock === null ? 10 : Math.min(10, product.stock);
-    validItems.push({ ...product, quantity: Math.min(cartItem.quantity, maximum) });
+    validItems.push({
+      ...product,
+      ...cartItem,
+      price: cartItem.license_id ? Number(assignment.price) : product.price,
+      license_price: cartItem.license_id ? Number(assignment.price) : undefined,
+      license_name: license?.name || cartItem.license_name,
+      license_description: license?.description || cartItem.license_description,
+      license_format: license?.format || cartItem.license_format,
+      license_terms: license?.terms || cartItem.license_terms,
+      license_snapshot: license ? { name: license.name, description: license.description, terms: license.terms, format: license.format, stream_limit: license.stream_limit, unlimited_streams: license.unlimited_streams, price: Number(assignment.price), currency: product.currency } : undefined,
+      quantity: cartItem.license_id ? 1 : Math.min(cartItem.quantity, maximum),
+    });
   }
 
-  saveCart(validItems.map(({ id, quantity }) => ({ id, quantity })));
+  saveCart(validItems.map(({ id, quantity, beat_id, license_id, license_price, license_name, license_description, license_format, license_terms, beat_producer }) => ({
+    id,
+    quantity,
+    ...(license_id ? { beat_id, license_id, license_price, license_name, license_description, license_format, license_terms, beat_producer } : {}),
+  })));
   return validItems;
 }
 
@@ -274,16 +324,17 @@ async function renderCart() {
         <div>
           <span class="product-category">${escapeHtml(categoryLabel(item.category))}</span>
           <h2>${escapeHtml(item.name)}</h2>
+          ${item.license_id ? `<p class="cart-license-detail"><strong>${escapeHtml(item.license_name || "Licencia")}</strong>${item.beat_producer ? ` · ${escapeHtml(item.beat_producer)}` : ""}</p>` : ""}
           <p>${formatPrice(item.price, item.currency)} por unidad</p>
-          <div class="quantity-control" aria-label="Cantidad de ${escapeHtml(item.name)}">
+          ${item.license_id ? '<p class="cart-digital-note">Licencia digital · cantidad fija</p>' : `<div class="quantity-control" aria-label="Cantidad de ${escapeHtml(item.name)}">
             <button type="button" data-quantity="${escapeHtml(item.id)}" data-change="-1" aria-label="Reducir cantidad">−</button>
             <span>${item.quantity}</span>
             <button type="button" data-quantity="${escapeHtml(item.id)}" data-change="1" aria-label="Aumentar cantidad">+</button>
-          </div>
+          </div>`}
         </div>
         <div class="cart-row-side">
           <strong>${formatPrice(Number(item.price) * item.quantity, item.currency)}</strong><br>
-          <button class="remove-button" type="button" data-remove="${escapeHtml(item.id)}">Eliminar</button>
+          <button class="remove-button" type="button" data-remove="${escapeHtml(cartIdentity(item))}">Eliminar</button>
         </div>
       </article>`).join("");
 
@@ -293,13 +344,13 @@ async function renderCart() {
       const removeButton = event.target.closest("[data-remove]");
 
       if (quantityButton) {
-        const item = items.find((candidate) => candidate.id === quantityButton.dataset.quantity);
-        setQuantity(item.id, item.quantity + Number(quantityButton.dataset.change), item);
+        const item = items.find((candidate) => cartIdentity(candidate) === quantityButton.dataset.quantity || (!quantityButton.dataset.quantity.includes("::") && candidate.id === quantityButton.dataset.quantity));
+        setQuantity(quantityButton.dataset.quantity, item.quantity + Number(quantityButton.dataset.change), item);
         await renderCart();
       }
       if (removeButton) {
-        const item = items.find((candidate) => candidate.id === removeButton.dataset.remove);
-        setQuantity(item.id, 0, item);
+        const item = items.find((candidate) => cartIdentity(candidate) === removeButton.dataset.remove || (!removeButton.dataset.remove.includes("::") && candidate.id === removeButton.dataset.remove));
+        setQuantity(removeButton.dataset.remove, 0, item);
         await renderCart();
       }
     };
@@ -317,9 +368,23 @@ async function initializeCheckout() {
   const accountNotice = document.getElementById("checkout-account-notice");
   const paymentPanel = document.getElementById("payment-panel");
   const paymentStatus = document.getElementById("payment-status");
+  const paymentBack = document.getElementById("payment-back");
 
   let items = [];
   let paymentForm = null;
+
+  const showCheckoutForm = () => {
+    paymentForm?.unmount();
+    paymentForm = null;
+    paymentPanel.hidden = true;
+    form.hidden = false;
+    button.disabled = false;
+    button.textContent = "Continuar al pago";
+    form.querySelector("[name=\"name\"]")?.focus({ preventScroll: true });
+  };
+
+  paymentBack?.addEventListener("click", showCheckoutForm);
+
   try {
     items = await validatedCart();
   } catch (error) {
@@ -334,6 +399,11 @@ async function initializeCheckout() {
   }
 
   summary.innerHTML = items.length ? orderSummaryMarkup(items, false) : emptyCartMarkup();
+  const containsBeatLicense = items.some((item) => item.license_id);
+  if (containsBeatLicense && !currentSession?.user) {
+    button.disabled = true;
+    errorElement.textContent = "Inicia sesiÃ³n para comprar licencias de beats y conservar sus descargas.";
+  }
   if (!items.length) {
     button.disabled = true;
     errorElement.textContent ||= "No hay productos disponibles en el carrito.";
@@ -346,6 +416,9 @@ async function initializeCheckout() {
     try {
       items = await validatedCart();
       if (!items.length) throw new Error("No hay productos en el carrito.");
+      if (items.some((item) => item.license_id) && !currentSession?.user) {
+        throw new Error("Inicia sesiÃ³n para comprar licencias de beats y conservar sus descargas.");
+      }
 
       const formData = new FormData(form);
       const customerData = {
@@ -360,6 +433,7 @@ async function initializeCheckout() {
 
       button.disabled = true;
       button.textContent = "Preparando pago...";
+      form.hidden = true;
       paymentPanel.hidden = false;
       paymentStatus.textContent = "Carga el formulario seguro para ingresar tu tarjeta.";
 
@@ -378,21 +452,26 @@ async function initializeCheckout() {
         },
         onSubmit: async (cardData) => {
           paymentStatus.textContent = "Procesando pago...";
-          const result = await createMercadoPagoOrder(customerData, items, cardData);
-          if (["approved", "paid", "authorized"].includes(result.status)) {
-            clearCart();
-            window.location.assign(`success.html?provider=mercadopago&order_id=${encodeURIComponent(result.order_id)}`);
-            return;
+          try {
+            const result = await createMercadoPagoOrder(customerData, items, cardData);
+            if (["approved", "paid", "authorized"].includes(result.status)) {
+              clearCart();
+              window.location.assign(`success.html?provider=mercadopago&order_id=${encodeURIComponent(result.order_id)}`);
+              return;
+            }
+            paymentStatus.textContent = `Mercado Pago respondio: ${result.status || "pendiente"}.`;
+            throw new Error("El pago no fue aprobado.");
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "Mercado Pago rechazo la solicitud.";
+            paymentStatus.textContent = message;
+            throw error;
           }
-          paymentStatus.textContent = `Mercado Pago respondio: ${result.status || "pendiente"}.`;
-          throw new Error("El pago no fue aprobado.");
         },
       });
       await paymentForm.mount();
     } catch (error) {
       errorElement.textContent = error.message || "No se pudo iniciar el pago.";
-      button.disabled = false;
-      button.textContent = "Continuar al pago";
+      showCheckoutForm();
     }
   });
 }
@@ -411,7 +490,7 @@ export async function createMercadoPagoOrder(customerData, cartItems, cardData) 
     body: JSON.stringify({
       provider: "mercadopago",
       customer: customerData,
-      items: cartItems.map((item) => ({ id: item.id, quantity: item.quantity })),
+      items: cartItems.map((item) => ({ id: item.id, quantity: item.quantity, beat_id: item.beat_id, license_id: item.license_id })),
       card: cardData,
     }),
   });
@@ -446,8 +525,10 @@ export async function createStripeCheckout(customerData, cartItems) {
 
 function initializeSuccess() {
   clearCart();
+  document.getElementById("success-refresh")?.addEventListener("click", refreshSuccessOrderState);
+  refreshSuccessOrderState();
   const query = new URLSearchParams(window.location.search);
-  const sessionId = query.get("session_id");
+  const sessionId = null; // Stripe legacy remains available but is out of the active release flow.
   const provider = query.get("provider");
   const detail = document.getElementById("success-detail");
   const accountAction = document.getElementById("success-account-action");
@@ -461,6 +542,42 @@ function initializeSuccess() {
   } else {
     accountAction.innerHTML = "<p>Revisa tu correo para consultar los detalles de tu compra.</p>";
   }
+}
+
+async function refreshSuccessOrderState() {
+  const query = new URLSearchParams(window.location.search);
+  const orderId = query.get("order_id");
+  const sessionId = null; // Stripe legacy remains available but is out of the active release flow.
+  const statusElement = document.getElementById("success-status");
+  const detail = document.getElementById("success-detail");
+  const refresh = document.getElementById("success-refresh");
+  if (!statusElement || !detail) return;
+  if ((!orderId && !sessionId) || !currentSession?.user) {
+    statusElement.textContent = "Procesando pago";
+    detail.textContent = "El pago se esta validando. Inicia sesion para consultar el estado y las descargas.";
+    return;
+  }
+  const orderQuery = supabase.from("store_orders").select("status");
+  const { data: order, error } = await (orderId
+    ? orderQuery.eq("id", orderId).maybeSingle()
+    : orderQuery.eq("stripe_session_id", sessionId).maybeSingle());
+  if (error || !order) {
+    statusElement.textContent = "Procesando pago";
+    detail.textContent = "La orden se esta vinculando a tu cuenta. Puedes consultar Mis compras en unos segundos.";
+    if (refresh) refresh.hidden = false;
+    return;
+  }
+  const states = {
+    paid: ["Pago confirmado", "Tu pago fue confirmado. La descarga aparece en Mis compras."],
+    cancelled: ["Pago cancelado", "La orden fue cancelada y no se habilito ninguna descarga."],
+    refunded: ["Pago reembolsado", "La orden fue reembolsada."],
+    pending: ["Pago pendiente", "Mercado Pago aun esta confirmando la orden."],
+  };
+  const [label, message] = states[order.status] || ["Procesando pago", "La orden esta siendo validada por el proveedor."];
+  statusElement.textContent = label;
+  statusElement.classList.toggle("hr-badge-success", order.status === "paid");
+  detail.textContent = message;
+  if (refresh) refresh.hidden = ["paid", "cancelled", "refunded"].includes(order.status);
 }
 
 function syncAccountNavigation() {
@@ -481,7 +598,8 @@ function orderSummaryMarkup(items, includeButton) {
     <h2>Resumen</h2>
     ${items.map((item) => `
       <div class="summary-line">
-        <span>${escapeHtml(item.name)} × ${item.quantity}</span>
+        ${item.license_id ? `<details class="summary-license-details"><summary>Detalles de la licencia</summary><p>${item.license_snapshot?.format ? `Formato: ${escapeHtml(item.license_snapshot.format)}. ` : ""}${item.license_snapshot?.terms ? escapeHtml(item.license_snapshot.terms) : ""}</p></details>` : ""}
+        <span><strong>${escapeHtml(item.name)}</strong>${item.license_id ? `<small class="summary-license">${escapeHtml(item.license_name || "Licencia digital")}${item.beat_producer ? ` · ${escapeHtml(item.beat_producer)}` : ""}</small>` : ""} × ${item.quantity}</span>
         <span>${formatPrice(Number(item.price) * item.quantity, item.currency)}</span>
       </div>`).join("")}
     <div class="summary-line summary-total">
@@ -566,7 +684,3 @@ export function escapeHtml(value) {
 
 // Futuras pasarelas:
 // TODO: createPayPalCheckout(customerData, cartItems)
-
-
-
-

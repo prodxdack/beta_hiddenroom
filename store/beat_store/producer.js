@@ -2,6 +2,7 @@
 const SUPABASE_URL = "https://rpcunbkstadgngqrjafp.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_7v_FIgTjWjJgtT1YHIAYSw_bRBmQjZO";
 const CLOUD_ORIGIN = "https://cloud.hiddenroom.mx";
+const CART_STORAGE_KEY = "hidden_room_store_cart";
 const supabase = await window.HiddenRoomSupabase.getClient();
 
 const profileSlug = new URLSearchParams(window.location.search).get("producer") || "";
@@ -234,6 +235,7 @@ function openLicensesModal(productId) {
   modalTitle.textContent = product.name;
   modalSubtitle.textContent = producerDisplayName(state.profile.display_name);
   modalContent.innerHTML = beatLicensesContentMarkup(product);
+  if (modal.parentElement !== document.body) document.body.appendChild(modal);
   modal.hidden = false;
   document.body.classList.add("beat-license-modal-open");
 }
@@ -246,7 +248,52 @@ function closeLicensesModal() {
 
 function handleModalClick(event) {
   if (event.target.closest("[data-license-modal-close]")) closeLicensesModal();
-  if (event.target.closest("[data-license-soon]")) showNotice("Próximamente");
+  const buyButton = event.target.closest("[data-buy-license]");
+  const addButton = event.target.closest("[data-add-license]");
+  if (buyButton) {
+    if (addLicenseToCart(buyButton.dataset.buyLicense, buyButton.dataset.licenseId)) window.location.assign("../cart.html");
+    return;
+  }
+  if (addButton) addLicenseToCart(addButton.dataset.addLicense, addButton.dataset.licenseId);
+}
+
+function addLicenseToCart(productId, licenseId) {
+  const product = state.products.find((candidate) => candidate.id === productId);
+  const assignment = state.assignments.find((candidate) => candidate.beat_id === productId && candidate.license_id === licenseId && candidate.is_enabled !== false && candidate.beat_licenses?.is_active !== false);
+  const license = assignment?.beat_licenses;
+  if (!product || !assignment || !license) return false;
+
+  let cart = [];
+  try {
+    const stored = JSON.parse(localStorage.getItem(CART_STORAGE_KEY) || "[]");
+    cart = Array.isArray(stored) ? stored : [];
+  } catch {
+    cart = [];
+  }
+
+  const existing = cart.find((entry) => entry?.id === product.id && entry?.license_id === licenseId);
+  if (existing) {
+    showNotice("Esta licencia ya esta en tu carrito");
+    return true;
+  }
+
+  cart.push({
+    id: product.id,
+    beat_id: product.id,
+    license_id: licenseId,
+    license_price: Number(assignment.price),
+    license_name: license.name || "Licencia",
+    license_description: license.description || "",
+    license_format: license.format || "",
+    license_terms: license.terms || "",
+    beat_producer: producerDisplayName(state.profile.display_name),
+    quantity: 1,
+  });
+  localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
+  document.querySelectorAll(".cart-count").forEach((element) => { element.textContent = String(cart.reduce((sum, entry) => sum + Math.max(1, Number(entry?.quantity) || 1), 0)); });
+  window.dispatchEvent(new CustomEvent("hr:store-cart-updated"));
+  showNotice("Licencia agregada al carrito");
+  return true;
 }
 
 function beatLicensesContentMarkup(product) {
@@ -267,7 +314,7 @@ function beatLicensesContentMarkup(product) {
       <header><div><h5>${escapeHtml(license.name)}</h5><p>${escapeHtml(license.description)}</p></div><strong>${escapeHtml(formatPrice(license.price, product.currency))}</strong></header>
       <dl><div><dt>Límite</dt><dd>${escapeHtml(license.streams)}</dd></div>${license.format ? `<div><dt>Formato</dt><dd>${escapeHtml(license.format)}</dd></div>` : ""}</dl>
       ${license.terms ? `<p class="beat-license-terms">${escapeHtml(license.terms)}</p>` : ""}
-      <div class="beat-license-actions"><button class="secondary-button" type="button" data-license-soon>Comprar próximamente</button><button class="secondary-button" type="button" data-license-soon>Añadir al carrito próximamente</button></div>
+      <div class="beat-license-actions"><button class="primary-button" type="button" data-buy-license="${escapeHtml(product.id)}" data-license-id="${escapeHtml(license.id)}">Comprar ahora</button><button class="secondary-button" type="button" data-add-license="${escapeHtml(product.id)}" data-license-id="${escapeHtml(license.id)}">Añadir al carrito</button></div>
     </article>`).join("")}</div>`;
 }
 

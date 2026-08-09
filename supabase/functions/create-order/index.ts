@@ -10,17 +10,44 @@ const corsHeaders = {
 type RequestedItem = {
   id?: unknown;
   quantity?: unknown;
+  beat_id?: unknown;
+  license_id?: unknown;
+};
+
+type RequestedCartItem = {
+  id: string;
+  quantity: number;
+  beatId: string | null;
+  licenseId: string | null;
 };
 
 type StoreProduct = {
   id: string;
   name: string;
+  producer: string | null;
   category: string;
   price: number | string;
   currency: string;
   stock: number | null;
   is_digital: boolean;
   is_active: boolean;
+};
+
+type BeatAssignment = {
+  beat_id: string;
+  license_id: string;
+  price: number | string;
+  is_enabled: boolean;
+  beat_licenses: {
+    id: string;
+    name: string;
+    description: string;
+    terms: string | null;
+    stream_limit: number | null;
+    unlimited_streams: boolean;
+    format: string | null;
+    is_active: boolean;
+  } | null;
 };
 
 function json(body: Record<string, unknown>, status = 200) {
@@ -38,11 +65,15 @@ function validEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
+function validUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 function normalizeRequestedItems(value: unknown) {
   if (!Array.isArray(value) || value.length === 0) throw new Error("El carrito esta vacio.");
   if (value.length > 30) throw new Error("El carrito contiene demasiadas lineas.");
 
-  const quantities = new Map<string, number>();
+  const items = new Map<string, RequestedCartItem>();
   value.forEach((item: RequestedItem) => {
     const id = cleanText(item?.id, 100);
     const quantity = Number(item?.quantity);
@@ -51,12 +82,18 @@ function normalizeRequestedItems(value: unknown) {
       throw new Error("Hay una cantidad invalida.");
     }
 
-    const combined = (quantities.get(id) ?? 0) + quantity;
+    const beatId = cleanText(item?.beat_id, 100) || null;
+    const licenseId = cleanText(item?.license_id, 100) || null;
+    if ((beatId && !validUuid(beatId)) || (licenseId && !validUuid(licenseId))) {
+      throw new Error("La seleccion de beat o licencia no es valida.");
+    }
+    const key = `${id}::${licenseId ?? ""}`;
+    const combined = (items.get(key)?.quantity ?? 0) + quantity;
     if (combined > 10) throw new Error("La cantidad maxima por producto es 10.");
-    quantities.set(id, combined);
+    items.set(key, { id, quantity: combined, beatId, licenseId });
   });
 
-  return quantities;
+  return [...items.values()];
 }
 
 function paymentStatus(value: unknown) {
@@ -66,6 +103,20 @@ function paymentStatus(value: unknown) {
 function paymentIdFrom(orderResult: Record<string, any>) {
   const payment = orderResult.transactions?.payments?.[0];
   return String(payment?.id ?? payment?.payment_id ?? "");
+}
+
+function providerErrorDetails(error: unknown) {
+  const source = (error && typeof error === "object") ? error as Record<string, any> : {};
+  const cause = Array.isArray(source.cause) ? source.cause[0] : source.cause;
+  const status = Number(source.status ?? source.statusCode ?? cause?.status);
+  const code = cleanText(source.code ?? cause?.code ?? cause?.error, 80);
+  const message = cleanText(source.message ?? cause?.message ?? cause?.description, 220)
+    .replace(/[\r\n]+/g, " ");
+  return {
+    status: Number.isInteger(status) && status >= 400 && status < 500 ? status : 502,
+    code,
+    message,
+  };
 }
 
 Deno.serve(async (req) => {
@@ -101,11 +152,15 @@ Deno.serve(async (req) => {
   const paymentMethodId = cleanText(card.payment_method_id, 80);
   const paymentType = cleanText(card.payment_type_id || "credit_card", 40);
   const installments = Number(card.installments);
+  const brickPayer = (card.payer ?? {}) as Record<string, any>;
+  const identification = (brickPayer.identification ?? {}) as Record<string, any>;
+  const payerIdentificationType = cleanText(identification.type, 30);
+  const payerIdentificationNumber = cleanText(identification.number, 40);
   if (!token || !paymentMethodId || !Number.isInteger(installments) || installments < 1) {
     return json({ error: "Los datos de tarjeta estan incompletos." }, 400);
   }
 
-  let requestedItems: Map<string, number>;
+  let requestedItems: RequestedCartItem[];
   try {
     requestedItems = normalizeRequestedItems(body.items);
   } catch (error) {
@@ -121,10 +176,10 @@ Deno.serve(async (req) => {
     userId = authData.user?.id ?? null;
   }
 
-  const productIds = [...requestedItems.keys()];
+  const productIds = [...new Set(requestedItems.map((item) => item.id))];
   const { data: productRows, error: productsError } = await admin
     .from("store_products")
-    .select("id, name, category, price, currency, stock, is_digital, is_active")
+    .select("id, name, category, price, currency, stock, is_digital, is_active, producer")
     .in("id", productIds);
 
   if (productsError) return json({ error: productsError.message }, 500);
@@ -133,23 +188,57 @@ Deno.serve(async (req) => {
   }
 
   const products = productRows as StoreProduct[];
+  const productById = new Map(products.map((product) => [product.id, product]));
+  const beatItems = requestedItems.filter((item) => productById.get(item.id)?.category === "beats");
+  if (beatItems.some((item) => !item.licenseId || !userId)) {
+    return json({ error: "Las licencias de beats requieren iniciar sesion para conservar la compra y la descarga." }, 401);
+  }
+  if (requestedItems.some((item) => productById.get(item.id)?.category !== "beats" && (item.licenseId || item.beatId))) {
+    return json({ error: "La seleccion de licencia no corresponde a un beat." }, 400);
+  }
+
+  const licenseKeys = beatItems.map((item) => item.licenseId as string);
+  const assignmentByKey = new Map<string, BeatAssignment>();
+  if (beatItems.length) {
+    const { data: assignments, error: assignmentsError } = await admin
+      .from("beat_license_assignments")
+      .select("beat_id, license_id, price, is_enabled, beat_licenses(id, name, description, terms, stream_limit, unlimited_streams, format, is_active)")
+      .in("beat_id", beatItems.map((item) => item.id))
+      .in("license_id", [...new Set(licenseKeys)]);
+    if (assignmentsError) return json({ error: assignmentsError.message }, 500);
+    for (const assignment of (assignments ?? []) as BeatAssignment[]) {
+      assignmentByKey.set(`${assignment.beat_id}::${assignment.license_id}`, assignment);
+    }
+  }
   const currencies = new Set(products.map((product) => product.currency.toUpperCase()));
   if (currencies.size !== 1) {
     return json({ error: "Todos los productos deben usar la misma moneda." }, 400);
   }
 
   for (const product of products) {
-    const quantity = requestedItems.get(product.id) ?? 0;
+    const productItems = requestedItems.filter((item) => item.id === product.id);
+    const quantity = productItems.reduce((sum, item) => sum + item.quantity, 0);
     if (!product.is_active) return json({ error: `${product.name} ya no esta disponible.` }, 400);
     if (product.stock !== null && product.stock < quantity) {
       return json({ error: `No hay stock suficiente de ${product.name}.` }, 400);
     }
+    for (const item of productItems) {
+      if (product.category !== "beats") continue;
+      if (item.quantity !== 1) return json({ error: "Una licencia digital solo puede comprarse una vez por linea." }, 400);
+      if (item.beatId && item.beatId !== product.id) return json({ error: "El beat seleccionado no coincide con el producto." }, 400);
+      const assignment = assignmentByKey.get(`${product.id}::${item.licenseId}`);
+      if (!assignment || !assignment.is_enabled || !assignment.beat_licenses?.is_active) {
+        return json({ error: `${product.name}: la licencia seleccionada ya no esta disponible.` }, 409);
+      }
+    }
   }
 
   const currency = [...currencies][0];
-  const subtotal = products.reduce((sum, product) => (
-    sum + Number(product.price) * (requestedItems.get(product.id) ?? 0)
-  ), 0);
+  const subtotal = requestedItems.reduce((sum, item) => {
+    const product = productById.get(item.id)!;
+    const assignment = item.licenseId ? assignmentByKey.get(`${item.id}::${item.licenseId}`) : null;
+    return sum + Number(assignment?.price ?? product.price) * item.quantity;
+  }, 0);
   const roundedTotal = Math.round(subtotal * 100) / 100;
   const reference = `hr_${crypto.randomUUID()}`;
 
@@ -174,16 +263,23 @@ Deno.serve(async (req) => {
     return json({ error: storeOrderError?.message || "No se pudo crear la orden." }, 500);
   }
 
-  const orderItems = products.map((product) => {
-    const quantity = requestedItems.get(product.id) ?? 0;
-    const unitPrice = Number(product.price);
+  const orderItems = requestedItems.map((item) => {
+    const product = productById.get(item.id)!;
+    const assignment = item.licenseId ? assignmentByKey.get(`${item.id}::${item.licenseId}`) : null;
+    const license = assignment?.beat_licenses;
+    const unitPrice = Number(assignment?.price ?? product.price);
     return {
       order_id: storeOrder.id,
       product_id: product.id,
       product_name: product.name,
-      quantity,
+      beat_id: item.licenseId ? product.id : null,
+      license_id: item.licenseId,
+      producer_name: product.producer ?? null,
+      license_name: license?.name ?? null,
+      license_snapshot: license ? { id: license.id, name: license.name, description: license.description, terms: license.terms, stream_limit: license.stream_limit, unlimited_streams: license.unlimited_streams, format: license.format, price: unitPrice, currency: product.currency } : {},
+      quantity: item.quantity,
       unit_price: unitPrice,
-      total: Math.round(unitPrice * quantity * 100) / 100,
+      total: Math.round(unitPrice * item.quantity * 100) / 100,
     };
   });
 
@@ -220,7 +316,15 @@ Deno.serve(async (req) => {
     processing_mode: "automatic",
     total_amount: roundedTotal.toFixed(2),
     external_reference: reference,
-    payer: { email },
+    payer: {
+      email,
+      ...(payerIdentificationType && payerIdentificationNumber ? {
+        identification: {
+          type: payerIdentificationType,
+          number: payerIdentificationNumber,
+        },
+      } : {}),
+    },
     transactions: {
       payments: [{
         amount: roundedTotal.toFixed(2),
@@ -274,7 +378,18 @@ Deno.serve(async (req) => {
     });
   } catch (error) {
     await admin.from("store_orders").update({ status: "cancelled" }).eq("id", storeOrder.id);
-    console.error("Mercado Pago order error", error);
-    return json({ error: "Mercado Pago rechazo la solicitud de pago." }, 502);
+    const details = providerErrorDetails(error);
+    console.error("Mercado Pago order error", {
+      status: details.status,
+      code: details.code,
+      message: details.message,
+    });
+    const reason = details.code || details.message;
+    return json({
+      error: reason
+        ? `Mercado Pago rechazo la solicitud: ${reason}`
+        : "Mercado Pago rechazo la solicitud de pago.",
+      provider_code: details.code || null,
+    }, details.status);
   }
 });
