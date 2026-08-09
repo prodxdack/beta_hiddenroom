@@ -750,6 +750,26 @@ function shouldRenderGlobalBeatPlayer() {
   return !excludedGames;
 }
 
+const HR_WAVEFORM_FALLBACK_BARS = [
+  22, 36, 48, 30, 62, 78, 44, 68, 92, 56, 38, 72, 84, 46, 28, 58,
+  74, 96, 64, 42, 30, 52, 80, 68, 40, 26, 58, 88, 72, 48, 34, 64,
+  82, 54, 30, 46, 70, 94, 62, 38, 24, 50, 76, 58, 34, 22,
+];
+
+function globalWaveformFallbackMarkup() {
+  return `<div class="hr-beat-player__wave-fallback" aria-hidden="true">
+    ${HR_WAVEFORM_FALLBACK_BARS.map((height) => `<span style="--hr-wave-bar-height:${height}%"></span>`).join("")}
+  </div>`;
+}
+
+function setGlobalWaveformMode(mode = "fallback") {
+  const waveform = document.getElementById("beat-player-waveform");
+  if (!waveform) return;
+  waveform.dataset.mode = mode;
+  const fallback = waveform.querySelector(".hr-beat-player__wave-fallback");
+  if (fallback) fallback.hidden = mode === "wave";
+}
+
 function renderGlobalBeatPlayer() {
   if (!shouldRenderGlobalBeatPlayer()) return "";
   document.body.classList.add("hr-has-beat-player");
@@ -766,7 +786,7 @@ function renderGlobalBeatPlayer() {
       </div>
       <div class="hr-beat-player__controls">
         <div class="hr-beat-player__wave-wrap">
-          <div class="hr-beat-player__wave" id="beat-player-waveform" role="slider" aria-label="Progreso del preview" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" aria-valuetext="0:00 de 0:00" tabindex="0"></div>
+          <div class="hr-beat-player__wave" id="beat-player-waveform" role="slider" aria-label="Progreso del preview" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" aria-valuetext="0:00 de 0:00" tabindex="0">${globalWaveformFallbackMarkup()}</div>
           <input class="hr-beat-player__seek hr-beat-player__seek--fallback" id="beat-player-seek" type="range" min="0" max="1000" value="0" step="1" aria-label="Progreso del preview" disabled hidden>
         </div>
         <span class="hr-beat-player__time" id="beat-player-time">0:00 / 0:00</span>
@@ -897,6 +917,7 @@ function syncGlobalBeatPlayerControls(toggle, seek, time, mute, volume, waveform
     waveform.setAttribute("aria-valuemax", String(Math.round(duration)));
     waveform.setAttribute("aria-valuenow", String(Math.round(current)));
     waveform.setAttribute("aria-valuetext", `${formatGlobalBeatTime(current)} de ${formatGlobalBeatTime(duration)}`);
+    waveform.style.setProperty("--hr-wave-progress", `${duration > 0 ? (current / duration) * 100 : 0}%`);
   }
   if (time) time.textContent = `${formatGlobalBeatTime(current)} / ${formatGlobalBeatTime(duration)}`;
   if (mute) {
@@ -935,6 +956,7 @@ function setGlobalBeatPlayer(detail, options = {}) {
   hrCurrentBeatDetail = detail;
 
   destroyBeatWaveform();
+  setGlobalWaveformMode("loading");
   if (fallbackAudio) {
     fallbackAudio.pause();
     fallbackAudio.removeAttribute("controls");
@@ -976,6 +998,7 @@ async function loadBeatWaveform(src, options = {}) {
   hrWaveSurferReady = false;
   hrWaveSurferSrc = src;
   waveform.hidden = false;
+  setGlobalWaveformMode("loading");
   if (seek) seek.hidden = true;
   if (player) player.dataset.state = "loading";
 
@@ -998,6 +1021,7 @@ async function loadBeatWaveform(src, options = {}) {
 
   hrWaveSurfer.on("ready", () => {
     hrWaveSurferReady = true;
+    setGlobalWaveformMode("wave");
     const restoreAt = Number(options.currentTime ?? (options.restoreTime ? hrCurrentBeatDetail?.currentTime : 0));
     if (Number.isFinite(restoreAt) && restoreAt > 0 && hrWaveSurfer.getDuration()) {
       hrWaveSurfer.seekTo(Math.max(0, restoreAt) / hrWaveSurfer.getDuration());
@@ -1058,6 +1082,7 @@ function destroyBeatWaveform() {
   hrWaveSurfer = null;
   hrWaveSurferSrc = "";
   hrWaveSurferReady = false;
+  setGlobalWaveformMode("fallback");
 }
 
 function loadBeatFallbackAudio(detail, options = {}) {
@@ -1067,8 +1092,11 @@ function loadBeatFallbackAudio(detail, options = {}) {
   const seek = document.getElementById("beat-player-seek");
   if (!audio) return;
   hrWaveSurferFailed = true;
-  if (waveform) waveform.hidden = Boolean(!options.keepWaveform);
-  if (seek) seek.hidden = Boolean(options.keepWaveform);
+  if (waveform) {
+    waveform.hidden = false;
+    setGlobalWaveformMode("fallback");
+  }
+  if (seek) seek.hidden = true;
   if (!options.keepCurrentAudio) {
     audio.src = detail.src;
     audio.load();
@@ -1491,7 +1519,6 @@ if (track) {
   });
 
 }
-
 
 
 
