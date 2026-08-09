@@ -1,0 +1,407 @@
+
+html.home-page-root,
+body.home-page {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+body.home-page {
+  position: relative;
+}
+
+
+/* ================================================================
+   3. GRAIN OVERLAY
+================================================================ */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-grain);
+  pointer-events: none;
+  opacity: 0.045;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-size: 180px;
+  animation: grain 0.4s steps(1) infinite;
+}
+
+
+/* ================================================================
+   4. CUSTOM CURSOR
+================================================================ */
+.cursor {
+  position: fixed;
+  top: 0; left: 0;
+  width: 10px; height: 10px;
+  background: var(--red);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: var(--z-cursor-dot);
+  transition: transform 0.15s ease, opacity var(--duration-fast);
+  mix-blend-mode: difference;
+}
+
+.cursor-ring {
+  position: fixed;
+  top: 0; left: 0;
+  width: 36px; height: 36px;
+  border: 1px solid rgba(219, 1, 0, 0.5);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: var(--z-cursor-ring);
+  transition: transform var(--duration-base) var(--ease-standard),
+              opacity var(--duration-fast);
+}
+
+/* Pages without custom cursor JS get the default pointer back */
+body:not(:has(.cursor)) { cursor: default; }
+
+
+/* ================================================================
+   6. BUTTON SYSTEM
+   Base shared properties, then per-variant overrides.
+================================================================ */
+
+/* â€” Shared button foundation â€” */
+.btn-primary,
+.btn-outline {
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  padding: var(--md, 16px) 36px;
+  cursor: none;
+  text-decoration: none;
+  display: inline-block;
+  transition: var(--transition-color);
+  position: relative;
+  overflow: hidden;
+}
+
+/* â€” Primary: solid red â€” */
+.btn-primary {
+  color: var(--white);
+  background: var(--red);
+  border: none;
+}
+.btn-primary::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.08);
+  opacity: 0;
+  transition: var(--transition-opacity);
+}
+.btn-primary:hover::after { opacity: 1; }
+
+/* â€” Outline: ghost with dim border â€” */
+.btn-outline {
+  color: var(--white-dim);
+  background: transparent;
+  border: var(--border-dim);
+}
+.btn-outline:hover {
+  color: var(--magenta);
+  border-color: var(--magenta-dim);
+  background: var(--magenta-ghost);
+}
+
+
+/* ================================================================
+   7. SECTION SHARED / LABELS
+================================================================ */
+section { position: relative; }
+
+/* Red eyebrow label with leading rule line */
+.section-label {
+  font-size: var(--text-sm);
+  letter-spacing: var(--tracking-wide + 0.1em); /* 0.3em */
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--red);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: var(--space-2xl);
+}
+.section-label::before {
+  content: '';
+  display: inline-block;
+  width: 28px;
+  height: 1px;
+  background: var(--red);
+}
+
+/* Muted number/text inside a label â€” magenta touch */
+.section-num {
+  font-family: var(--font-display);
+  font-size: var(--text-sm);
+  color: var(--white-dim);
+  letter-spacing: 0.1em;
+}
+
+
+/* ================================================================
+   8. REVEAL ANIMATION
+================================================================ */
+.reveal {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: var(--transition-reveal);
+}
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+
+/* ================================================================
+   9. HERO SECTION
+================================================================ */
+.hero {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 0 0 var(--space-4xl);
+  overflow: hidden;
+}
+
+/* Background layers */
+.hero-bg { position: absolute; inset: 0; z-index: var(--z-base); }
+
+.hero-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 60% 50% at 70% 40%, rgba(100, 0, 0, 0.18) 0%, transparent 70%),
+    radial-gradient(ellipse 40% 60% at 20% 60%, rgba(219, 1, 0, 0.06) 0%, transparent 60%),
+    linear-gradient(160deg, #0e0808 0%, #060606 40%, #0a0000 100%);
+}
+
+.hero-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.15) 2px,
+    rgba(0, 0, 0, 0.15) 4px
+  );
+  pointer-events: none;
+}
+
+.hero-accent {
+  position: absolute;
+  right: 18%; top: 0; bottom: 0;
+  width: 1px;
+  background: linear-gradient(to bottom, transparent 0%, var(--red) 30%, var(--red) 70%, transparent 100%);
+  opacity: 0.2;
+}
+
+/* Ghost display number */
+.hero-number {
+  position: absolute;
+  top: 50%; right: var(--padding-page);
+  transform: translateY(-50%);
+  font-family: var(--font-display);
+  font-size: clamp(120px, 18vw, 280px);
+  font-weight: 900;
+  color: var(--red-ghost);
+  line-height: 1;
+  letter-spacing: -0.05em;
+  user-select: none;
+  z-index: var(--z-base);
+}
+
+/* Eyebrow label */
+.hero-eyebrow {
+  position: relative;
+  z-index: var(--z-above);
+  font-size: 11px;
+  letter-spacing: var(--tracking-widest);
+  text-transform: uppercase;
+  color: var(--red);
+  margin-bottom: var(--space-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--md, 16px);
+  gap: 16px;
+  animation: fadeUp 0.8s 0.2s both;
+}
+.hero-eyebrow::before {
+  content: '';
+  display: inline-block;
+  width: 40px; height: 1px;
+  background: var(--red);
+}
+
+/* Main title */
+.hero-title {
+  position: relative;
+  z-index: var(--z-above);
+  font-family: var(--font-display);
+  font-size: clamp(72px, 13vw, 210px);
+  font-weight: 900;
+  line-height: 0.88;
+  letter-spacing: -0.03em;
+  text-transform: uppercase;
+  color: var(--white);
+  margin-bottom: var(--space-xl);
+  animation: fadeUp 0.8s 0.4s both;
+}
+.hero-title span {
+  display: block;
+  color: transparent;
+  -webkit-text-stroke: 1px rgba(240, 236, 228, 0.25);
+}
+
+/* Subtitle row */
+.hero-subtitle {
+  position: relative;
+  z-index: var(--z-above);
+  font-size: 13px;
+  letter-spacing: var(--tracking-wider);
+  color: var(--white-dim);
+  text-transform: uppercase;
+  margin-bottom: var(--space-2xl);
+  animation: fadeUp 0.8s 0.6s both;
+}
+.hero-subtitle strong { color: var(--red); font-weight: 400; }
+
+/* Bottom row: CTAs + coords */
+.hero-bottom {
+  position: relative;
+  z-index: var(--z-above);
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  animation: fadeUp 0.8s 0.8s both;
+}
+
+.hero-coords {
+  font-size: var(--text-sm);
+  letter-spacing: 0.15em;
+  color: rgba(240, 236, 228, 0.2);
+  text-align: right;
+  line-height: 1.8;
+}
+
+/* Scroll indicator */
+.scroll-indicator {
+  position: absolute;
+  bottom: var(--space-4xl);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-above);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.scroll-line {
+  width: 1px; height: 60px;
+  background: linear-gradient(to bottom, var(--red), var(--white-dim));
+  animation: scrollPulse 2s ease-in-out infinite;
+}
+
+.scroll-text {
+  font-size: var(--text-xs);
+  letter-spacing: 0.3em;
+  color: var(--white-faint);
+  text-transform: uppercase;
+  writing-mode: vertical-rl;
+  margin-top: var(--space-sm);
+}
+
+
+/* ================================================================
+   10. MARQUEE STRIP
+================================================================ */
+.marquee-strip {
+  background: var(--red);
+  overflow: hidden;
+  padding: 12px 0;
+  position: relative;
+  z-index: 2;
+}
+
+.marquee-track {
+  display: flex;
+  width: max-content;
+  animation: marquee 20s linear infinite;
+}
+
+.marquee-item {
+  font-family: var(--font-display);
+  font-size: var(--text-base);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wider);
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.9);
+  white-space: nowrap;
+  padding: 0 40px;
+  display: flex;
+  align-items: center;
+  gap: 40px;
+}
+.marquee-item::after { content: 'âœ¦'; font-size: 8px; color: rgba(255, 255, 255, 0.5); }
+.marquee-item:nth-child(even)::after { color: var(--magenta); }
+
+
+/* ================================================================
+   11. PILLARS / GALLERY
+================================================================ */
+.pillars {
+  padding: var(--padding-section) 0;
+  background: var(--near-black);
+}
+
+.pillars-header {
+  margin-bottom: var(--space-4xl);
+  align-items: end;
+}
+
+.pillars-title {
+  font-family: var(--font-display);
+  font-size: clamp(36px, 5vw, 72px);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: var(--tracking-tight);
+  text-transform: uppercase; /* previously inline on element */
+}
+
+.pillars-desc {
+  font-size: var(--text-md);
+  line-height: 1.8;
+  color: var(--white-dim);
+  max-width: 380px;
+}
+
+/* Gallery slider */
+.gallery-slider {
+  position: relative;
+  overflow: hidden;
+  height: 600px;
+}
+
+.gallery-track {
+  display: flex;
+  height: 100%;
+  transition: var(--transition-gallery);
+}
+
+.gallery-track img {
+  min-width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: grayscale(0.3);
+}
+
