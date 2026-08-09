@@ -58,9 +58,40 @@
               <option value="name">Nombre</option>
             </select>
           </label>
+          <details class="beat-filter-details">
+            <summary>Más filtros</summary>
+            <div class="beat-filter-details__grid">
+              <label class="hr-field">
+                <span>Productor</span>
+                <select id="beat-producer-filter" class="hr-select">
+                  <option value="">Todos</option>
+                </select>
+              </label>
+              <label class="hr-field">
+                <span>Precio mínimo</span>
+                <input id="beat-price-min" class="hr-input" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0">
+              </label>
+              <label class="hr-field">
+                <span>Precio máximo</span>
+                <input id="beat-price-max" class="hr-input" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Sin límite">
+              </label>
+              <label class="hr-field">
+                <span>BPM mínimo</span>
+                <input id="beat-bpm-min" class="hr-input" type="number" min="1" max="300" step="1" inputmode="numeric" placeholder="40">
+              </label>
+              <label class="hr-field">
+                <span>BPM máximo</span>
+                <input id="beat-bpm-max" class="hr-input" type="number" min="1" max="300" step="1" inputmode="numeric" placeholder="220">
+              </label>
+            </div>
+          </details>
         </div>
 
-        <div id="beat-grid" class="beat-grid product-grid hr-card-grid" aria-live="polite">
+        <div class="beat-results-toolbar hr-cluster">
+          <p id="beat-results-status" class="beat-results-status" role="status" aria-live="polite">Cargando beats...</p>
+          <button id="beat-clear-filters" class="secondary-button hr-btn hr-btn-outline" type="button" disabled>Limpiar filtros</button>
+        </div>
+        <div id="beat-grid" class="beat-grid product-grid hr-card-grid" aria-live="polite" aria-busy="true">
           <p class="hr-table-loading">Cargando Beat Store...</p>
         </div>
       </div>
@@ -195,8 +226,6 @@
 <script src="/spa.js?v=20260808-phase3-polish"></script>
 </body>
 </html>
-
-
 
 
 

@@ -15,6 +15,13 @@ const grid = document.getElementById("beat-grid");
 const searchInput = document.getElementById("beat-search");
 const sortSelect = document.getElementById("beat-sort");
 const genreSelect = document.getElementById("beat-genre");
+const producerSelect = document.getElementById("beat-producer-filter");
+const priceMinInput = document.getElementById("beat-price-min");
+const priceMaxInput = document.getElementById("beat-price-max");
+const bpmMinInput = document.getElementById("beat-bpm-min");
+const bpmMaxInput = document.getElementById("beat-bpm-max");
+const resultStatus = document.getElementById("beat-results-status");
+const clearFiltersButton = document.getElementById("beat-clear-filters");
 const adminPanel = document.getElementById("beat-admin-panel");
 const adminForm = document.getElementById("beat-admin-form");
 const adminList = document.getElementById("beat-admin-products");
@@ -42,6 +49,9 @@ const beatLicenseModalTitle = document.getElementById("beat-license-modal-title"
 const beatLicenseModalSubtitle = document.getElementById("beat-license-modal-subtitle");
 const beatLicenseModalContent = document.getElementById("beat-license-modal-content");
 let beatSearchTimer = 0;
+let beatFilterUrlTimer = 0;
+let beatLastUrlState = "";
+let beatLicenseLastTrigger = null;
 let beatCoverObjectUrl = "";
 const beatCoverCropState = { x: 0.5, y: 0.5, zoom: 1 };
 const beatCoverPointers = new Map();
@@ -65,22 +75,41 @@ async function initBeatStore() {
   state.items = mergeProductsAndBeats(products, beats);
   buildBeatSearchIndex();
   renderGenreOptions();
+  renderProducerOptions();
+  applyBeatUrlState();
   renderBeats();
   initializeAdminPanel();
 
   window.addEventListener("popstate", () => {
+    applyBeatUrlState();
+    renderBeats();
     if (state.isAdmin) setAdminMode(wantsAdminMode());
   }, { signal: hrBeatStoreLifecycle.signal });
 
   searchInput?.addEventListener("input", () => {
     window.clearTimeout(beatSearchTimer);
-    beatSearchTimer = window.setTimeout(renderBeats, 90);
+    beatSearchTimer = window.setTimeout(() => {
+      renderBeats();
+      syncBeatUrlState(true);
+    }, 90);
   }, { signal: hrBeatStoreLifecycle.signal });
-  sortSelect?.addEventListener("change", renderBeats, { signal: hrBeatStoreLifecycle.signal });
-  genreSelect?.addEventListener("change", renderBeats, { signal: hrBeatStoreLifecycle.signal });
+  [sortSelect, genreSelect, producerSelect].forEach((control) => control?.addEventListener("change", () => {
+    renderBeats();
+    syncBeatUrlState(true);
+  }, { signal: hrBeatStoreLifecycle.signal }));
+  [priceMinInput, priceMaxInput, bpmMinInput, bpmMaxInput].forEach((control) => control?.addEventListener("input", () => {
+    window.clearTimeout(beatFilterUrlTimer);
+    beatFilterUrlTimer = window.setTimeout(() => { renderBeats(); syncBeatUrlState(true); }, 120);
+  }, { signal: hrBeatStoreLifecycle.signal }));
+  clearFiltersButton?.addEventListener("click", () => {
+    clearBeatFilters();
+    renderBeats();
+    syncBeatUrlState(true);
+  }, { signal: hrBeatStoreLifecycle.signal });
   grid?.addEventListener("click", handleGridClick);
   grid?.addEventListener("keydown", handleGridKeydown);
   window.addEventListener("hr:beat-player-state", syncBeatCardPlayState, { signal: hrBeatStoreLifecycle.signal });
+  syncBeatCardPlayState({ detail: window.HiddenRoomBeatPlayer || {} });
   adminForm?.addEventListener("submit", handleAdminSubmit);
   adminForm?.addEventListener("change", handleBeatLicenseAssignmentChange);
   adminList?.addEventListener("click", handleAdminListClick);
@@ -379,7 +408,8 @@ function buildBeatSearchIndex() {
     const product = item.product;
     const beat = item.beat;
     const genre = beatGenre(item);
-    const haystack = [product?.name, product?.description, product?.producer, product?.slug, beat?.title, beat?.file, beat?.slug, genre, itemMusicMeta(item).map((entry) => entry.value).join(" ")]
+    const profile = producerProfileForProduct(product);
+    const haystack = [product?.name, product?.description, product?.producer, profile?.display_name, product?.slug, beat?.title, beat?.file, beat?.slug, genre, itemMusicMeta(item).map((entry) => entry.value).join(" ")]
       .filter(Boolean).join(" ").toLowerCase();
     state.searchIndex.set(item.id, haystack);
     state.genreIndex.set(item.id, normalizeKey(genre));
@@ -391,12 +421,30 @@ function buildBeatSearchIndex() {
 function renderBeats() {
   const query = String(searchInput?.value || "").trim().toLowerCase();
   const genre = String(genreSelect?.value || "").trim();
+  const producer = String(producerSelect?.value || "").trim();
+  const priceMin = numericFilterValue(priceMinInput);
+  const priceMax = numericFilterValue(priceMaxInput);
+  const bpmMin = numericFilterValue(bpmMinInput);
+  const bpmMax = numericFilterValue(bpmMaxInput);
   const mode = sortSelect?.value || "featured";
   const sorted = sortItems(state.items, mode);
-  const filtered = sorted.filter((item) => (!query || state.searchIndex.get(item.id)?.includes(query)) && (!genre || state.genreIndex.get(item.id) === genre));
-  const renderKey = `${state.renderVersion}|${query}|${genre}|${mode}|${filtered.map((item) => item.id).join(",")}`;
+  const filtered = sorted.filter((item) => {
+    const price = Number(item.product?.price || 0);
+    const bpm = Number(item.product?.beat_bpm || item.beat?.bpm || 0);
+    const profile = producerProfileForProduct(item.product);
+    const itemProducer = normalizeKey(profile?.slug || item.product?.producer || "");
+    return (!query || state.searchIndex.get(item.id)?.includes(query))
+      && (!genre || state.genreIndex.get(item.id) === genre)
+      && (!producer || itemProducer === producer)
+      && (priceMin === null || price >= priceMin)
+      && (priceMax === null || price <= priceMax)
+      && (bpmMin === null || bpm >= bpmMin)
+      && (bpmMax === null || bpm <= bpmMax);
+  });
+  const renderKey = `${state.renderVersion}|${query}|${genre}|${producer}|${priceMin ?? ""}|${priceMax ?? ""}|${bpmMin ?? ""}|${bpmMax ?? ""}|${mode}|${filtered.map((item) => item.id).join(",")}`;
   if (renderKey === state.renderedKey) return;
   state.renderedKey = renderKey;
+  updateBeatFilterUi(filtered.length, state.items.length, renderKey);
   grid.classList.add("hr-filtering");
   window.requestAnimationFrame(() => grid.classList.remove("hr-filtering"));
 
@@ -471,6 +519,71 @@ function renderGenreOptions() {
     .sort((a, b) => a[1].localeCompare(b[1]));
   genreSelect.innerHTML = `<option value="">Todos</option>${genres.map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join("")}`;
   genreSelect.value = genres.some(([value]) => value === current) ? current : "";
+}
+
+function renderProducerOptions() {
+  if (!producerSelect) return;
+  const current = producerSelect.value;
+  const producers = Array.from(new Map(state.items.map((item) => {
+    const profile = producerProfileForProduct(item.product);
+    const value = normalizeKey(profile?.slug || item.product?.producer || "");
+    return [value, producerDisplayName(profile?.display_name || item.product?.producer || "")];
+  }).filter(([value, label]) => value && label)).entries()).sort((a, b) => a[1].localeCompare(b[1]));
+  producerSelect.innerHTML = `<option value="">Todos</option>${producers.map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join("")}`;
+  producerSelect.value = producers.some(([value]) => value === current) ? current : "";
+}
+
+function numericFilterValue(input) {
+  if (!input || input.value === "") return null;
+  const value = Number(input.value);
+  return Number.isFinite(value) ? value : null;
+}
+
+function applyBeatUrlState() {
+  const params = new URLSearchParams(window.location.search);
+  if (searchInput) searchInput.value = params.get("q") || "";
+  if (genreSelect) genreSelect.value = params.get("genre") || "";
+  if (producerSelect) producerSelect.value = params.get("producer") || "";
+  if (priceMinInput) priceMinInput.value = params.get("min_price") || "";
+  if (priceMaxInput) priceMaxInput.value = params.get("max_price") || "";
+  if (bpmMinInput) bpmMinInput.value = params.get("min_bpm") || "";
+  if (bpmMaxInput) bpmMaxInput.value = params.get("max_bpm") || "";
+  if (sortSelect) sortSelect.value = params.get("sort") || "featured";
+  beatLastUrlState = beatUrlStateKey();
+}
+
+function beatUrlStateKey() {
+  return [searchInput?.value || "", genreSelect?.value || "", producerSelect?.value || "", priceMinInput?.value || "", priceMaxInput?.value || "", bpmMinInput?.value || "", bpmMaxInput?.value || "", sortSelect?.value || "featured"].join("|");
+}
+
+function syncBeatUrlState(push = false) {
+  window.clearTimeout(beatFilterUrlTimer);
+  beatFilterUrlTimer = window.setTimeout(() => {
+    const key = beatUrlStateKey();
+    if (!push && key === beatLastUrlState) return;
+    const url = new URL(window.location.href);
+    const values = { q: searchInput?.value.trim(), genre: genreSelect?.value, producer: producerSelect?.value, min_price: priceMinInput?.value, max_price: priceMaxInput?.value, min_bpm: bpmMinInput?.value, max_bpm: bpmMaxInput?.value };
+    for (const [name, value] of Object.entries(values)) value ? url.searchParams.set(name, value) : url.searchParams.delete(name);
+    if (sortSelect?.value && sortSelect.value !== "featured") url.searchParams.set("sort", sortSelect.value);
+    else url.searchParams.delete("sort");
+    window.history.pushState({}, "", url);
+    beatLastUrlState = key;
+  }, push ? 0 : 120);
+}
+
+function updateBeatFilterUi(resultCount, totalCount) {
+  if (resultStatus) resultStatus.textContent = resultCount === totalCount ? `${totalCount} beats` : `${resultCount} de ${totalCount} beats`;
+  if (clearFiltersButton) clearFiltersButton.disabled = !hasBeatFilters();
+}
+
+function hasBeatFilters() {
+  return Boolean(searchInput?.value.trim() || genreSelect?.value || producerSelect?.value || priceMinInput?.value || priceMaxInput?.value || bpmMinInput?.value || bpmMaxInput?.value || (sortSelect?.value && sortSelect.value !== "featured"));
+}
+
+function clearBeatFilters() {
+  [searchInput, producerSelect, priceMinInput, priceMaxInput, bpmMinInput, bpmMaxInput].forEach((input) => { if (input) input.value = ""; });
+  if (genreSelect) genreSelect.value = "";
+  if (sortSelect) sortSelect.value = "featured";
 }
 
 function sortItems(items, mode) {
@@ -605,18 +718,20 @@ function handleGridClick(event) {
     return;
   }
   if (addButton) {
-    openBeatLicensesModal(addButton.dataset.addBeat);
+    openBeatLicensesModal(addButton.dataset.addBeat, addButton);
     return;
   }
   if (soonButton) showNotice("Proximamente");
 }
 
-function openBeatLicensesModal(itemId) {
+function openBeatLicensesModal(itemId, trigger = null) {
   const item = state.items.find((candidate) => candidate.id === itemId);
   if (!item || !beatLicenseModal || !beatLicenseModalContent) return;
   beatLicenseModalTitle.textContent = itemTitle(item);
   beatLicenseModalSubtitle.textContent = productProducer(item) || "Productor por confirmar";
   beatLicenseModalContent.innerHTML = beatLicensesContentMarkup(item);
+  beatLicenseLastTrigger = trigger;
+  trigger?.setAttribute("aria-expanded", "true");
   beatLicenseModal.hidden = false;
   document.body.classList.add("beat-license-modal-open");
   beatLicenseModal.querySelector("[data-license-modal-close]")?.focus?.();
@@ -627,6 +742,9 @@ function closeBeatLicensesModal() {
   beatLicenseModal.hidden = true;
   document.body.classList.remove("beat-license-modal-open");
   if (beatLicenseModalContent) beatLicenseModalContent.innerHTML = "";
+  beatLicenseLastTrigger?.setAttribute("aria-expanded", "false");
+  beatLicenseLastTrigger?.focus?.();
+  beatLicenseLastTrigger = null;
 }
 
 function handleBeatLicenseModalClick(event) {
@@ -638,7 +756,23 @@ function handleBeatLicenseModalClick(event) {
 }
 
 function handleBeatLicenseModalKeydown(event) {
-  if (event.key === "Escape" && beatLicenseModal && !beatLicenseModal.hidden) closeBeatLicensesModal();
+  if (!beatLicenseModal || beatLicenseModal.hidden) return;
+  if (event.key === "Escape") {
+    closeBeatLicensesModal();
+    return;
+  }
+  if (event.key !== "Tab") return;
+  const focusable = [...beatLicenseModal.querySelectorAll("button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])")];
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
 }
 
 function toggleBeatPreview(itemId) {
