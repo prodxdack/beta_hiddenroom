@@ -31,3 +31,10 @@
 - Keep game assets preloaded intentionally.
 - Avoid layout work inside animation loops.
 - Use canvas dimensions and CSS constraints that do not shift during play.
+
+## Progressive SPA
+
+- `spa.js` uses a short-lived in-memory HTML cache (60 seconds) keyed by normalized route plus query/hash; failed responses are never cached and `HiddenRoomApp.invalidate()` clears stale views.
+- Prefetch is limited to compatible same-origin public routes on hover/focus, deduplicated, and skipped for `saveData`, slow connections, portal/admin/downloads, traditional routes, and external URLs.
+- Page modules must register cleanup through `HiddenRoomApp.register()` so SPA remounts do not retain listeners or timers. The global Beat Player remains outside `#hr-spa-content`.
+- Keep cache/prefetch observability behind localhost or `?hr_debug`; production navigation should remain quiet.

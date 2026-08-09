@@ -663,6 +663,7 @@ let hrWaveSurferSrc = "";
 let hrWaveSurferReady = false;
 let hrWaveSurferFailed = false;
 let hrCurrentBeatDetail = null;
+let hrGlobalBeatPlayerHydrated = false;
 
 function shouldRenderGlobalBeatPlayer() {
   const path = window.location.pathname;
@@ -1141,11 +1142,13 @@ function renderGlobalNav() {
         <li class="hr-global-notifications__empty">Cargando notificaciones...</li>
       </ul>
     </aside>
-    ${renderGlobalBeatPlayer()}
+    ${document.getElementById("hr-beat-player") ? "" : renderGlobalBeatPlayer()}
   `;
 
   const globalBeatPlayer = target.querySelector("#hr-beat-player");
-  if (globalBeatPlayer) document.body.appendChild(globalBeatPlayer);
+  const persistentBeatPlayer = globalBeatPlayer || document.getElementById("hr-beat-player");
+  if (persistentBeatPlayer && persistentBeatPlayer.parentElement !== document.body) document.body.appendChild(persistentBeatPlayer);
+  if (persistentBeatPlayer) document.body.classList.add("hr-has-beat-player");
   const globalDrawer = target.querySelector(".hr-global-drawer");
   const globalDrawerBackdrop = target.querySelector(".hr-global-drawer__backdrop");
   if (globalDrawerBackdrop) document.body.appendChild(globalDrawerBackdrop);
@@ -1176,7 +1179,10 @@ function renderGlobalNav() {
     if (event.target.closest("a")) toggleGlobalDrawer(false);
   });
   attachGlobalDrawerSwipe(globalDrawer);
-  hydrateGlobalBeatPlayer();
+  if (!hrGlobalBeatPlayerHydrated) {
+    hydrateGlobalBeatPlayer();
+    hrGlobalBeatPlayerHydrated = true;
+  }
 }
 
 function syncPortalSubNav() {
@@ -1224,7 +1230,7 @@ function initGlobalFooter() {
   const body = document.body;
   if (!body?.hasAttribute("data-hr-chrome")) return;
 
-  const existingFooter = body.querySelector(":scope > footer");
+  const existingFooter = body.querySelector(":scope > footer") || body.querySelector("#hr-spa-content > footer");
   if (existingFooter) {
     existingFooter.classList.add("hr-site-footer");
 

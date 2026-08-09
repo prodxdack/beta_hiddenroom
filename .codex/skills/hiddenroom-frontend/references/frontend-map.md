@@ -43,3 +43,7 @@ python -m http.server 4175 --bind 127.0.0.1
 ```
 
 Inspect at `/`, `/media/`, `/media/admin.html`, `/store/`, `/tickets/`, `/portal/`, and `/portal/dashboard.html` as relevant.
+
+## Progressive SPA shell
+
+site.js keeps the global chrome and Beat Player outside #hr-spa-content. spa.js progressively intercepts only /, /store/, /store/beat_store/, /media/, and /academia/; it fetches and parses compatible HTML, mounts module scripts with lifecycle cleanup, updates history/meta/body state, and falls back to a full navigation on failure. It keeps a short-lived in-memory HTML view cache keyed by origin, normalized path, query, and hash; hover/focus prefetch is opt-in by route compatibility and disabled for data-saving or slow connections. Portal, Tickets, Kairen, Minijuegos, admin routes, downloads, and external/auth-sensitive routes remain traditional until explicitly migrated.

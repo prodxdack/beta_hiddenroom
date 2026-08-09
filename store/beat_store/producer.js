@@ -1,11 +1,8 @@
-import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
 
 const SUPABASE_URL = "https://rpcunbkstadgngqrjafp.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_7v_FIgTjWjJgtT1YHIAYSw_bRBmQjZO";
 const CLOUD_ORIGIN = "https://cloud.hiddenroom.mx";
-const supabase = window.HiddenRoomSupabase?.getClient
-  ? await window.HiddenRoomSupabase.getClient()
-  : createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const supabase = await window.HiddenRoomSupabase.getClient();
 
 const profileSlug = new URLSearchParams(window.location.search).get("producer") || "";
 const grid = document.getElementById("producer-beat-grid");
@@ -142,8 +139,9 @@ function coverMarkup(product) {
 function coverUrlForProduct(product) {
   const raw = String(product.beat_cover_path || product.image_url || "").trim();
   if (!raw) return "";
-  if (/^https?:\/\//i.test(raw)) return raw;
-  const clean = raw.replaceAll("\\", "/").replace(/^\/+/, "").replace(/^beats_store\//i, "");
+  if (/^(?:https?:|data:|blob:)/i.test(raw)) return raw;
+  if (raw.startsWith("/")) return new URL(raw, window.location.origin).href;
+  const clean = raw.replaceAll("\\", "/").replace(/^beats_store\//i, "");
   return new URL(`/api/beat-store/stream?file=${encodeURIComponent(clean)}`, CLOUD_ORIGIN).href;
 }
 function previewUrlForProduct(product) {

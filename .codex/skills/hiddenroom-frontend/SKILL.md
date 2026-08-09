@@ -8,7 +8,7 @@ description: Hidden Room frontend engineering for the static GitHub Pages app. U
 ## Workflow
 
 1. Map the target page from its folder and body attributes before editing.
-2. Preserve the static architecture: no build step, no framework, ES modules from CDN where already used.
+2. Preserve the static architecture: no build step, no framework, ES modules from CDN where already used. Progressive client-side navigation is allowed when it preserves direct GitHub Pages URLs and traditional fallback.
 3. Use `site.js` for global chrome/session/navigation behavior and module files for feature logic.
 4. Keep Supabase anon-key access in browser code limited to user-scoped or public operations protected by RLS.
 5. Prefer DOM delegation and explicit `data-*` hooks over brittle text selectors.

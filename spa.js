@@ -1,0 +1,187 @@
+const HR_SPA_ROUTES = new Set(['/','/store/','/store/beat_store/','/media/','/academia/']);
+const HR_SPA_EXCLUDED = ['/portal/','/portal/dashboard.html','/tickets/','/kairen/'];
+const HR_SPA_CACHE_TTL = 60 * 1000;
+const hrSpaViewCache = new Map();
+const hrSpaPending = new Map();
+let hrSpaNavigationId = 0;
+let hrSpaActiveCleanups = [];
+let hrSpaReady = false;
+
+function hrSpaPath(url) {
+  const path = url.pathname.replace(/\/index\.html$/, '/') || '/';
+  return path.endsWith('/') ? path : `${path}/`;
+}
+function hrSpaCacheKey(url) { return `${url.origin}${hrSpaPath(url)}${url.search}${url.hash}`; }
+function hrSpaDevEnabled() {
+  return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || new URLSearchParams(window.location.search).has('hr_debug');
+}
+function hrSpaDebug(event, details = {}) {
+  if (hrSpaDevEnabled()) console.info(`[HR SPA] ${event}`, details);
+}
+function pathStartsWithMinijuegos(url) { return hrSpaPath(url).startsWith('/minijuegos/'); }
+function hrSpaIsCompatible(url) {
+  if (url.origin !== window.location.origin) return false;
+  const path = hrSpaPath(url);
+  if (pathStartsWithMinijuegos(url)) return false;
+  if (HR_SPA_EXCLUDED.some((prefix) => path === prefix || path.startsWith(`${prefix}admin`))) return false;
+  return HR_SPA_ROUTES.has(path);
+}
+function hrSpaCanPrefetch(url) {
+  if (!hrSpaIsCompatible(url) || url.href === window.location.href) return false;
+  if (url.pathname === window.location.pathname && url.search === window.location.search) return false;
+  if (document.querySelector(`a[href="${CSS.escape(url.href)}"][download]`)) return false;
+  const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if (connection?.saveData) return false;
+  if (['slow-2g', '2g'].includes(connection?.effectiveType) || Number(connection?.downlink) > 0 && connection.downlink < 1.5) return false;
+  return true;
+}
+function hrSpaEnsureRoot() {
+  let root = document.getElementById('hr-spa-content');
+  if (root) return root;
+  root = document.createElement('div');
+  root.id = 'hr-spa-content';
+  const keep = new Set(['hr-global-nav', 'cursor', 'cursorRing', 'hr-beat-player']);
+  [...document.body.children].forEach((child) => {
+    if (keep.has(child.id) || child.matches('.hr-global-drawer, .hr-global-drawer__backdrop') || child.tagName === 'SCRIPT') return;
+    root.appendChild(child);
+  });
+  document.body.appendChild(root);
+  return root;
+}
+function hrSpaApplyDocument(parsed, url) {
+  const root = hrSpaEnsureRoot();
+  const sourceBody = parsed.body;
+  const nodes = [...sourceBody.children].filter((node) => node.id !== 'hr-global-nav' && node.id !== 'hr-beat-player' && node.id !== 'cursor' && node.id !== 'cursorRing' && node.tagName !== 'SCRIPT');
+  root.replaceChildren(...nodes.map((node) => node.cloneNode(true)));
+  document.title = parsed.title || document.title;
+  const parsedDescription = parsed.querySelector('meta[name="description"]')?.getAttribute('content');
+  if (parsedDescription) {
+    let description = document.querySelector('meta[name="description"]');
+    if (!description) { description = document.createElement('meta'); description.name = 'description'; document.head.appendChild(description); }
+    description.content = parsedDescription;
+  }
+  document.body.className = sourceBody.className;
+  Object.keys(document.body.dataset).forEach((key) => delete document.body.dataset[key]);
+  Object.entries(sourceBody.dataset).forEach(([key, value]) => { document.body.dataset[key] = value; });
+  document.body.classList.add('hr-spa-ready');
+  const canonical = document.querySelector('link[rel="canonical"]');
+  if (canonical) canonical.href = url.href;
+  document.querySelectorAll('meta[property="og:url"]').forEach((meta) => { meta.content = url.href; });
+  return root;
+}
+function hrSpaReadModuleScripts(parsed, url) {
+  return [...parsed.querySelectorAll('script[type="module"][src]')]
+    .map((script) => new URL(script.getAttribute('src'), url.href).href)
+    .filter((src) => new URL(src).origin === window.location.origin && !src.includes('/portal/dashboard.js'));
+}
+async function hrSpaMount(parsed, url) {
+  hrSpaActiveCleanups.splice(0).forEach((cleanup) => { try { cleanup(); } catch {} });
+  const modules = hrSpaReadModuleScripts(parsed, url);
+  for (const source of modules) {
+    const separator = source.includes('?') ? '&' : '?';
+    const module = await import(`${source}${separator}hr_spa=${++hrSpaNavigationId}`);
+    const mount = module.mount || module.default?.mount;
+    if (typeof mount === 'function') {
+      const cleanup = await mount({ root: document.getElementById('hr-spa-content'), url });
+      if (typeof cleanup === 'function') hrSpaActiveCleanups.push(cleanup);
+    }
+  }
+}
+function hrSpaCachedView(url) {
+  const key = hrSpaCacheKey(url);
+  const entry = hrSpaViewCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.createdAt > HR_SPA_CACHE_TTL) { hrSpaViewCache.delete(key); return null; }
+  return entry;
+}
+async function hrSpaGetView(url, { prefetch = false } = {}) {
+  const cached = hrSpaCachedView(url);
+  if (cached) { hrSpaDebug('cache hit', { url: url.href, prefetch }); return { html: cached.html, fromCache: true }; }
+  const key = hrSpaCacheKey(url);
+  if (hrSpaPending.has(key)) return { html: await hrSpaPending.get(key), fromCache: false };
+  const startedAt = performance.now();
+  const request = fetch(url.href, { headers: { 'X-HiddenRoom-SPA': '1' } }).then(async (response) => {
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const html = await response.text();
+    const parsed = new DOMParser().parseFromString(html, 'text/html');
+    if (!parsed.body || !parsed.querySelector('body[data-hr-chrome]')) throw new Error('Página incompatible');
+    hrSpaViewCache.set(key, { html, createdAt: Date.now() });
+    hrSpaDebug(prefetch ? 'prefetch complete' : 'navigation fetch', { url: url.href, ms: Math.round(performance.now() - startedAt) });
+    return html;
+  }).finally(() => hrSpaPending.delete(key));
+  hrSpaPending.set(key, request);
+  if (prefetch) hrSpaDebug('prefetch start', { url: url.href });
+  return { html: await request, fromCache: false };
+}
+function hrSpaPrefetch(input) {
+  const url = new URL(input, window.location.href);
+  if (!hrSpaCanPrefetch(url) || hrSpaCachedView(url) || hrSpaPending.has(hrSpaCacheKey(url))) return;
+  hrSpaGetView(url, { prefetch: true }).catch(() => {});
+}
+async function hrSpaNavigate(input, { replace = false, fromPopState = false } = {}) {
+  const url = new URL(input, window.location.href);
+  if (url.pathname.endsWith('/index.html')) url.pathname = url.pathname.slice(0, -'index.html'.length);
+  if (!hrSpaIsCompatible(url)) return false;
+  const root = hrSpaEnsureRoot();
+  const startedAt = performance.now();
+  let view;
+  try {
+    view = await hrSpaGetView(url);
+    if (!view.fromCache) { document.body.classList.add('hr-spa-loading'); root.classList.add('hr-spa-content--leaving'); }
+    const parsed = new DOMParser().parseFromString(view.html, 'text/html');
+    hrSpaApplyDocument(parsed, url);
+    if (!fromPopState) window.history[replace ? 'replaceState' : 'pushState']({ hrSpa: true }, '', url.href);
+    if (typeof window.renderGlobalNav === 'function') window.renderGlobalNav();
+    if (typeof window.initGlobalFooter === 'function') window.initGlobalFooter();
+    if (typeof window.hydrateGlobalSession === 'function') window.hydrateGlobalSession();
+    document.querySelectorAll('.site-status').forEach((el) => { el.textContent = window.HiddenRoomSite?.status || el.textContent; });
+    await hrSpaMount(parsed, url);
+    if (url.hash) document.getElementById(url.hash.slice(1))?.scrollIntoView({ behavior: 'smooth' });
+    requestAnimationFrame(() => root.classList.remove('hr-spa-content--leaving'));
+    hrSpaDebug('navigation complete', { url: url.href, cached: view.fromCache, ms: Math.round(performance.now() - startedAt) });
+    return true;
+  } catch (error) {
+    hrSpaDebug('fallback', { url: url.href, error: error?.message || String(error) });
+    window.location.href = url.href;
+    return false;
+  } finally {
+    document.body.classList.remove('hr-spa-loading');
+  }
+}
+function hrSpaHandleClick(event) {
+  if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  const link = event.target.closest('a[href]');
+  if (!link || link.target === '_blank' || link.hasAttribute('download') || link.dataset.hrSpa === 'off') return;
+  if (link.protocol !== 'http:' && link.protocol !== 'https:') return;
+  const url = new URL(link.href, window.location.href);
+  if (!hrSpaIsCompatible(url)) return;
+  if (url.pathname === window.location.pathname && url.search === window.location.search) {
+    event.preventDefault(); window.history.pushState({ hrSpa: true }, '', url.href);
+    if (url.hash) document.getElementById(url.hash.slice(1))?.scrollIntoView({ behavior: 'smooth' });
+    return;
+  }
+  event.preventDefault(); hrSpaNavigate(url);
+}
+function hrSpaHandlePrefetch(event) {
+  const link = event.target.closest?.('a[href]');
+  if (!link || link.target === '_blank' || link.hasAttribute('download') || link.dataset.hrSpa === 'off') return;
+  if (event.type === 'pointerover' && link.contains(event.relatedTarget)) return;
+  const url = new URL(link.href, window.location.href);
+  if (hrSpaCanPrefetch(url)) window.setTimeout(() => hrSpaPrefetch(url), event.type === 'focusin' ? 0 : 80);
+}
+window.HiddenRoomApp = window.HiddenRoomApp || {};
+window.HiddenRoomApp.navigate = hrSpaNavigate;
+window.HiddenRoomApp.mount = hrSpaMount;
+window.HiddenRoomApp.prefetch = hrSpaPrefetch;
+window.HiddenRoomApp.invalidate = (input) => { if (!input) return hrSpaViewCache.clear(); hrSpaViewCache.delete(hrSpaCacheKey(new URL(input, window.location.href))); };
+window.HiddenRoomApp.register = (cleanup) => { if (typeof cleanup === 'function') hrSpaActiveCleanups.push(cleanup); return cleanup; };
+document.addEventListener('click', hrSpaHandleClick);
+document.addEventListener('pointerover', hrSpaHandlePrefetch, { passive: true });
+document.addEventListener('focusin', hrSpaHandlePrefetch);
+window.addEventListener('popstate', () => { const url = new URL(window.location.href); if (hrSpaIsCompatible(url)) hrSpaNavigate(url, { fromPopState: true }); });
+function hrSpaInit() { if (hrSpaReady || !document.body.hasAttribute('data-hr-chrome')) return; hrSpaReady = true; hrSpaEnsureRoot(); }
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', hrSpaInit, { once: true }); else hrSpaInit();
+const hrSpaStyle = document.createElement('style');
+hrSpaStyle.id = 'hr-spa-style';
+hrSpaStyle.textContent = `#hr-spa-content{opacity:1;transition:opacity 160ms ease}#hr-spa-content.hr-spa-content--leaving{opacity:.35}body.hr-spa-loading{cursor:progress}@media(prefers-reduced-motion:reduce){#hr-spa-content{transition:none}}`;
+document.head.appendChild(hrSpaStyle);

@@ -1,4 +1,3 @@
-import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
 import { PaymentForm } from "./payment-form.js";
 
 export const SUPABASE_URL = "https://rpcunbkstadgngqrjafp.supabase.co";
@@ -6,17 +5,24 @@ export const SUPABASE_ANON_KEY = "sb_publishable_7v_FIgTjWjJgtT1YHIAYSw_bRBmQjZO
 export const CART_STORAGE_KEY = "hidden_room_store_cart";
 export const MP_PUBLIC_KEY = window.VITE_MP_PUBLIC_KEY || "";
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const BEAT_STORE_CLOUD_ORIGIN = "https://cloud.hiddenroom.mx";
+
+export const supabase = await window.HiddenRoomSupabase.getClient();
+
+
 
 let products = [];
 let currentSession = null;
+const hrStoreLifecycle = new AbortController();
+window.HiddenRoomApp?.register(() => hrStoreLifecycle.abort());
 
-document.addEventListener("DOMContentLoaded", initStore);
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initStore, { once: true, signal: hrStoreLifecycle.signal });
+else initStore();
 document.addEventListener("click", (event) => {
   const loginLink = event.target.closest("[data-store-login]");
   if (!loginLink) return;
   sessionStorage.setItem("hr_return_after_login", `../store/${location.pathname.split("/").pop() || "index.html"}`);
-});
+}, { signal: hrStoreLifecycle.signal });
 
 async function initStore() {
   updateCartCount();
@@ -483,13 +489,24 @@ function orderSummaryMarkup(items, includeButton) {
     ${includeButton ? '<a class="primary-button" href="checkout.html">Continuar al checkout</a>' : ""}`;
 }
 
+function productImageUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (/^(?:https?:|data:|blob:)/i.test(raw)) return raw;
+  if (raw.startsWith("/")) return new URL(raw, window.location.origin).href;
+  if (/^covers\/[0-9a-f-]{36}\/(?:cover|thumb)\.webp$/i.test(raw)) {
+    return new URL(`/api/beat-store/stream?file=${encodeURIComponent(raw)}`, BEAT_STORE_CLOUD_ORIGIN).href;
+  }
+  return new URL(raw, document.baseURI).href;
+}
+
 function productVisualMarkup(product) {
-  if (product.image_url) {
-    return `<div class="product-art product-art--image"><img src="${escapeHtml(product.image_url)}" alt="${escapeHtml(product.name)}"></div>`;
+  const imageUrl = productImageUrl(product.image_url);
+  if (imageUrl) {
+    return `<div class="product-art product-art--image"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(product.name)}" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><span class="product-art__fallback" hidden>${escapeHtml(product.name.slice(0, 3).toUpperCase())}</span></div>`;
   }
   return `<div class="product-art" aria-hidden="true">${escapeHtml(product.name.slice(0, 3).toUpperCase())}</div>`;
 }
-
 function productCanBePurchased(product) {
   return product.stock === null || Number(product.stock) > 0;
 }

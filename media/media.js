@@ -113,6 +113,8 @@ async function loadPosts(reset = false) {
 }
 
 let searchTimer;
+const hrMediaLifecycle = () => window.clearTimeout(searchTimer);
+window.HiddenRoomApp?.register(hrMediaLifecycle);
 search.addEventListener("input", () => {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(() => loadPosts(true), 280);

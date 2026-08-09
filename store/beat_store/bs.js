@@ -1,4 +1,3 @@
-import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
 
 const SUPABASE_URL = "https://rpcunbkstadgngqrjafp.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_7v_FIgTjWjJgtT1YHIAYSw_bRBmQjZO";
@@ -7,10 +6,10 @@ const CLOUD_ORIGIN = "https://cloud.hiddenroom.mx";
 const BEAT_STORE_ENDPOINT = `${CLOUD_ORIGIN}/api/beat-store`;
 const ANALYZE_BEAT_AUDIO_ENDPOINT = `${SUPABASE_URL}/functions/v1/analyze-beat-audio`;
 const BEAT_STORE_CLOUD_PATH = "/beats_store";
-const supabase = window.HiddenRoomSupabase?.getClient
-  ? await window.HiddenRoomSupabase.getClient()
-  : createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-const state = { products: [], adminProducts: [], beats: [], items: [], licenses: [], assignments: [], producerProfiles: [], durationDetections: new Set(), isAdmin: false, currentUserId: null, currentUsername: "", hasBeatMetadata: true, hasBeatLicenses: true, hasBeatPreviews: true, hasBeatAutodetectFlags: true };
+const supabase = await window.HiddenRoomSupabase.getClient();
+const hrBeatStoreLifecycle = new AbortController();
+window.HiddenRoomApp?.register(() => hrBeatStoreLifecycle.abort());
+const state = { products: [], adminProducts: [], beats: [], items: [], searchIndex: new Map(), genreIndex: new Map(), renderVersion: 0, renderedKey: "", licenses: [], assignments: [], producerProfiles: [], durationDetections: new Set(), isAdmin: false, currentUserId: null, currentUsername: "", hasBeatMetadata: true, hasBeatLicenses: true, hasBeatPreviews: true, hasBeatAutodetectFlags: true };
 
 const grid = document.getElementById("beat-grid");
 const searchInput = document.getElementById("beat-search");
@@ -42,6 +41,7 @@ const beatLicenseModal = document.getElementById("beat-license-modal");
 const beatLicenseModalTitle = document.getElementById("beat-license-modal-title");
 const beatLicenseModalSubtitle = document.getElementById("beat-license-modal-subtitle");
 const beatLicenseModalContent = document.getElementById("beat-license-modal-content");
+let beatSearchTimer = 0;
 let beatCoverObjectUrl = "";
 const beatCoverCropState = { x: 0.5, y: 0.5, zoom: 1 };
 const beatCoverPointers = new Map();
@@ -63,20 +63,24 @@ async function initBeatStore() {
   state.producerProfiles = producerProfiles;
   state.assignments = await fetchBeatLicenseAssignments(products.map((product) => product.id), state.isAdmin);
   state.items = mergeProductsAndBeats(products, beats);
+  buildBeatSearchIndex();
   renderGenreOptions();
   renderBeats();
   initializeAdminPanel();
 
   window.addEventListener("popstate", () => {
     if (state.isAdmin) setAdminMode(wantsAdminMode());
-  });
+  }, { signal: hrBeatStoreLifecycle.signal });
 
-  searchInput?.addEventListener("input", renderBeats);
-  sortSelect?.addEventListener("change", renderBeats);
-  genreSelect?.addEventListener("change", renderBeats);
+  searchInput?.addEventListener("input", () => {
+    window.clearTimeout(beatSearchTimer);
+    beatSearchTimer = window.setTimeout(renderBeats, 90);
+  }, { signal: hrBeatStoreLifecycle.signal });
+  sortSelect?.addEventListener("change", renderBeats, { signal: hrBeatStoreLifecycle.signal });
+  genreSelect?.addEventListener("change", renderBeats, { signal: hrBeatStoreLifecycle.signal });
   grid?.addEventListener("click", handleGridClick);
   grid?.addEventListener("keydown", handleGridKeydown);
-  window.addEventListener("hr:beat-player-state", syncBeatCardPlayState);
+  window.addEventListener("hr:beat-player-state", syncBeatCardPlayState, { signal: hrBeatStoreLifecycle.signal });
   adminForm?.addEventListener("submit", handleAdminSubmit);
   adminForm?.addEventListener("change", handleBeatLicenseAssignmentChange);
   adminList?.addEventListener("click", handleAdminListClick);
@@ -100,9 +104,9 @@ async function initBeatStore() {
   beatCoverStage?.addEventListener("lostpointercapture", handleBeatCoverPointerEnd);
   beatCoverStage?.addEventListener("wheel", handleBeatCoverWheel, { passive: false });
   beatCoverStage?.addEventListener("dblclick", resetBeatCoverCrop);
-  document.addEventListener("click", handleAdminModeClick);
+  document.addEventListener("click", handleAdminModeClick, { signal: hrBeatStoreLifecycle.signal });
   beatLicenseModal?.addEventListener("click", handleBeatLicenseModalClick);
-  document.addEventListener("keydown", handleBeatLicenseModalKeydown);
+  document.addEventListener("keydown", handleBeatLicenseModalKeydown, { signal: hrBeatStoreLifecycle.signal });
 }
 
 function ensureAdminMusicFields() {
@@ -368,28 +372,31 @@ function mergeProductsAndBeats(products, beats) {
     return { id: 'product:' + product.id, beat, product };
   });
 }
+function buildBeatSearchIndex() {
+  state.searchIndex = new Map();
+  state.genreIndex = new Map();
+  for (const item of state.items) {
+    const product = item.product;
+    const beat = item.beat;
+    const genre = beatGenre(item);
+    const haystack = [product?.name, product?.description, product?.producer, product?.slug, beat?.title, beat?.file, beat?.slug, genre, itemMusicMeta(item).map((entry) => entry.value).join(" ")]
+      .filter(Boolean).join(" ").toLowerCase();
+    state.searchIndex.set(item.id, haystack);
+    state.genreIndex.set(item.id, normalizeKey(genre));
+  }
+  state.renderVersion += 1;
+  state.renderedKey = "";
+}
+
 function renderBeats() {
   const query = String(searchInput?.value || "").trim().toLowerCase();
   const genre = String(genreSelect?.value || "").trim();
-  const sorted = sortItems(state.items, sortSelect?.value || "featured");
-  const filtered = sorted.filter((item) => {
-    const product = item.product;
-    const beat = item.beat;
-    const haystack = [
-      product?.name,
-      product?.description,
-      product?.producer,
-      product?.slug,
-      beat?.title,
-      beat?.file,
-      beat?.slug,
-      beatGenre(item),
-      itemMusicMeta(item).map((entry) => entry.value).join(" "),
-    ].filter(Boolean).join(" ").toLowerCase();
-    const matchesQuery = !query || haystack.includes(query);
-    const matchesGenre = !genre || normalizeKey(beatGenre(item)) === genre;
-    return matchesQuery && matchesGenre;
-  });
+  const mode = sortSelect?.value || "featured";
+  const sorted = sortItems(state.items, mode);
+  const filtered = sorted.filter((item) => (!query || state.searchIndex.get(item.id)?.includes(query)) && (!genre || state.genreIndex.get(item.id) === genre));
+  const renderKey = `${state.renderVersion}|${query}|${genre}|${mode}|${filtered.map((item) => item.id).join(",")}`;
+  if (renderKey === state.renderedKey) return;
+  state.renderedKey = renderKey;
 
   if (!filtered.length) {
     grid.innerHTML = `<div class="empty-state beat-empty"><h2>Sin beats</h2><p>${query ? "Prueba otra búsqueda." : "No hay beats activos publicados."}</p></div>`;
@@ -399,7 +406,6 @@ function renderBeats() {
   grid.innerHTML = filtered.map(beatCardMarkup).join("");
   hydrateMissingBeatDurations(filtered);
 }
-
 function hydrateMissingBeatDurations(items) {
   for (const item of items) {
     if (itemDurationSeconds(item)) continue;
@@ -557,8 +563,9 @@ function coverMarkup(item) {
 function coverUrlForItem(item) {
   const raw = String(item?.product?.beat_cover_path || item?.product?.image_url || item?.beat?.cover_url || item?.beat?.image_url || "").trim();
   if (!raw) return "";
-  if (/^https?:\/\//i.test(raw)) return raw;
-  const clean = raw.replaceAll("\\", "/").replace(/^\/+/, "").replace(/^beats_store\//i, "");
+  if (/^(?:https?:|data:|blob:)/i.test(raw)) return raw;
+  if (raw.startsWith("/")) return new URL(raw, window.location.origin).href;
+  const clean = raw.replaceAll("\\", "/").replace(/^beats_store\//i, "");
   return new URL(`/api/beat-store/stream?file=${encodeURIComponent(clean)}`, CLOUD_ORIGIN).href;
 }
 function coverInitials(value) {
@@ -1589,6 +1596,7 @@ async function reloadBeatStore(options = {}) {
   state.producerProfiles = await fetchProducerProfiles(state.isAdmin);
   state.assignments = await fetchBeatLicenseAssignments(products.map((product) => product.id), state.isAdmin);
   state.items = mergeProductsAndBeats(products, state.beats);
+  buildBeatSearchIndex();
   renderGenreOptions();
   renderBeats();
   renderAdminProducts();

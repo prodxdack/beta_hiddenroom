@@ -16,6 +16,9 @@ const state = {
   view: new URLSearchParams(window.location.search).get("view") || "courses",
 };
 
+const hrAcademiaLifecycle = new AbortController();
+window.HiddenRoomApp?.register(() => hrAcademiaLifecycle.abort());
+
 const els = {
   app: document.getElementById("academy-app"),
   detail: document.getElementById("academy-detail"),
@@ -1085,7 +1088,7 @@ function bindEvents() {
     if (action.dataset.action === "refresh") loadAcademia().catch((error) => setStatus(error.message, "error"));
     if (action.dataset.action === "academy-table-save-all") handleAcademiaTableSaveAll().catch((error) => { console.error("Academia table save all failed", error); setStatus(supabaseErrorMessage(error), "error"); });
     if (action.dataset.action === "academy-table-delete") handleAcademiaTableDelete(action.dataset.tableName, action.dataset.rowOriginal).catch((error) => { console.error("Academia table delete failed", error); setStatus(supabaseErrorMessage(error), "error"); });
-  });
+  }, { signal: hrAcademiaLifecycle.signal });
 
   document.addEventListener("change", (event) => {
     const tableSelect = event.target.closest("[data-academy-table-select]");
@@ -1107,7 +1110,7 @@ function bindEvents() {
     }
     const accessControl = event.target.closest("[data-access-type], [data-access-course-select], [data-access-cycle-select], [data-access-module-select]");
     if (accessControl) syncAccessSelectors(accessControl.closest("form"));
-  });
+  }, { signal: hrAcademiaLifecycle.signal });
 
   document.addEventListener("input", (event) => {
     const tableSearch = event.target.closest("[data-academy-table-search]");
@@ -1120,12 +1123,12 @@ function bindEvents() {
     }
     const search = event.target.closest("[data-user-search]");
     if (search) filterUserPicker(search, true);
-  });
+  }, { signal: hrAcademiaLifecycle.signal });
 
   document.addEventListener("focusin", (event) => {
     const search = event.target.closest?.("[data-user-search]");
     if (search) filterUserPicker(search, false);
-  });
+  }, { signal: hrAcademiaLifecycle.signal });
 
   document.addEventListener("focusout", (event) => {
     const picker = event.target.closest?.(".db-user-picker");
@@ -1133,7 +1136,7 @@ function bindEvents() {
     window.setTimeout(() => {
       if (!picker.contains(document.activeElement)) picker.querySelector(".db-user-picker__menu")?.setAttribute("hidden", "");
     }, 80);
-  });
+  }, { signal: hrAcademiaLifecycle.signal });
 
   document.addEventListener("submit", (event) => {
     const tableForm = event.target.closest("form[data-academy-table-form]");
@@ -1146,7 +1149,7 @@ function bindEvents() {
     if (!form) return;
     event.preventDefault();
     handleAdminSubmit(form).catch((error) => { console.error("Academia admin submit failed", error); setStatus(supabaseErrorMessage(error), "error"); });
-  });
+  }, { signal: hrAcademiaLifecycle.signal });
 }
 
 bindEvents();
