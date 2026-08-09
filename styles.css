@@ -3991,10 +3991,15 @@ body.hr-has-beat-player {
 }
 
 .hr-beat-player__art:hover .hr-beat-player__art-icon,
-.hr-beat-player__art:focus-visible .hr-beat-player__art-icon,
-.hr-beat-player[data-state="playing"] .hr-beat-player__art-icon {
+.hr-beat-player__art:focus-visible .hr-beat-player__art-icon {
   color: #fff;
   background: rgba(219, 1, 0, .34);
+  transform: scale(1.03);
+}
+
+.hr-beat-player[data-state="playing"] .hr-beat-player__art-icon {
+  color: #fff;
+  background: transparent;
   transform: scale(1.03);
 }
 
