@@ -191,18 +191,6 @@ function syncAdminSubNavState(active) {
   });
 }
 
-function ensureAdminEntryLink() {
-  if (!state.isAdmin || document.querySelector("[data-beat-admin-entry]")) return;
-  const actions = document.querySelector(".beat-hero__actions");
-  if (!actions) return;
-  const button = document.createElement("button");
-  button.className = "secondary-button hr-btn";
-  button.type = "button";
-  button.dataset.beatAdminEntry = "true";
-  button.textContent = "Admin beats";
-  actions.appendChild(button);
-}
-
 function handleBeatLicenseAssignmentChange(event) {
   const checkbox = event.target.closest("[data-beat-license-check]");
   if (!checkbox) return;
@@ -230,7 +218,7 @@ function handleAdminModeClick(event) {
     url.hash = "";
     history.pushState(null, "", url);
     setAdminMode(false);
-    requestAnimationFrame(() => document.getElementById("beat-store-title")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    requestAnimationFrame(() => document.getElementById("beats-title")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
 }
 
@@ -916,7 +904,6 @@ function addBeatToCart(itemId) {
 
 function initializeAdminPanel() {
   if (!state.isAdmin || !adminPanel) return;
-  ensureAdminEntryLink();
   setAdminMode(wantsAdminMode());
   resetAdminForm();
   resetBeatLicenseForm();
