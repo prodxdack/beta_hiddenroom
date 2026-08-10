@@ -13,6 +13,7 @@ description: "Hidden Room ERP skill for operational dashboard data: event financ
 4. Preserve finance semantics: `INGRESO`/`EGRESO`, status values, event keys, counterparties, participations, and membership records.
 5. Keep dashboard renderers deterministic and table-friendly; avoid hidden business logic in markup strings.
 6. Validate dashboard JS and any SQL migration.
+7. Preserve existing role-driven UI behavior for compatibility, but enforce ERP access through protected grants, RLS, scoped permission rows, or internally authorized server code; `users.roles` alone is not a secure boundary while clients can modify sensitive columns.
 
 ## Business Domains
 
@@ -27,6 +28,7 @@ description: "Hidden Room ERP skill for operational dashboard data: event financ
 - Do not bypass RLS by moving sensitive ERP writes to browser-only logic.
 - Do not change canonical option strings without a data migration and UI compatibility pass.
 - Keep user-facing totals and statuses auditable from database rows.
+- Do not migrate or reinterpret existing authorization data without an approved compatibility migration.
 
 ## References
 

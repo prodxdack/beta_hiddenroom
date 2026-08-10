@@ -28,7 +28,7 @@ description: Hidden Room Portal dashboard skill for the vanilla SPA in portal/da
 
 ## Permissions
 
-Use roles from `users.roles` and fine-grained rows from `user_permissions`. Keep admin as the strongest role, but use existing permission keys for scoped abilities such as media or scrum behavior.
+Keep existing `users.roles` and `user_permissions` reads for UI compatibility, but never treat sidebar visibility or `users.roles` alone as secure authorization. Sensitive queries and mutations require enforcement from protected database grants/RLS or internally authorized Edge Functions. Until an approved migration protects the role source, do not expand trust in client-mutable role columns.
 
 ## References
 

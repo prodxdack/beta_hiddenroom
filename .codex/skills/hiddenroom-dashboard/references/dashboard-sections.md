@@ -20,6 +20,10 @@
 
 Dashboard cloud UI uses authenticated Supabase session headers, uploads large files to the private `cloud-staging` bucket, and asks Edge Functions to enqueue jobs. Never send service role keys or raw filesystem paths to the browser.
 
+For the current production topology, treat `hiddenroom-debian-server/references/server-map.md` as authoritative: Cloudflare Tunnel routes `cloud.hiddenroom.mx` to the MysAuth Cloud Node app on `localhost:8080`; Docker File Browser is a local fallback on `127.0.0.1:8081`. The queue/agent flow remains the recommended target architecture, not a claim that it is the only active public path.
+
+Role-gated navigation is presentation only. Existing `users.roles` reads may remain for compatibility, but server/database authorization must use a client-immutable source.
+
 ## Change Pattern
 
 For a new dashboard feature:

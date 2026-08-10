@@ -1,4 +1,4 @@
 interface:
   display_name: "Hidden Room Skill Maintenance"
   short_description: "Keep Hidden Room Skills current"
-  default_prompt: "Use $hiddenroom-skill-maintenance to audit and update Hidden Room Skills after architecture changes."
+  default_prompt: "Use $hiddenroom-skill-maintenance to structurally validate and semantically align Hidden Room Skills after architecture, payment, permission, or production changes."

@@ -13,13 +13,15 @@
 - Reject unsupported methods.
 - Parse JSON in try/catch.
 - Authenticate bearer tokens when endpoint mutates or reads private data.
-- Use service role only after caller auth/authorization.
+- Use service role only after caller authentication and authorization from a client-immutable source.
+- Re-check ownership or privilege inside the function; a valid JWT or browser role gate alone is insufficient.
 - Return controlled error messages.
 
-## Stripe
+## Payments
 
-- `create-checkout-session` re-reads products with service role and validates stock, active status, quantities, and currency.
-- `stripe-webhook` must verify `STRIPE_WEBHOOK_SECRET` before calling fulfillment RPCs.
+- Beat Store uses Mercado Pago; validate its webhook signature and provider-specific identifiers before fulfillment.
+- Other products may use Stripe. Stripe checkout must re-read authoritative product data and Stripe webhooks must verify their signature before fulfillment.
+- Never mix provider secrets, webhook assumptions, or fulfillment identifiers between product flows.
 
 ## Cloud
 
@@ -35,6 +37,10 @@
 
 ## Database
 
-- Admin helpers: `is_admin()`, `get_my_role()`.
+- `public.users.roles`, `get_my_role()`, and `is_admin()` are legacy compatibility inputs, not a trustworthy boundary while clients can update sensitive columns.
+- Keep existing UI and business flows compatible until an approved migration introduces a protected authorization source.
+- Audit table grants, column-level `UPDATE` privileges, RLS policies, and cross-user access together.
+- Exposed views use `security_invoker`; privileged RPCs revoke `EXECUTE` from `PUBLIC` and grant only intended roles.
+- `SECURITY DEFINER` requires internal authorization, a fixed safe `search_path`, qualified objects, and least privilege.
 - Client records usually map `auth.uid()` to public `users.user_id`.
 - Event finance permissions are scoped by `event_user_permissions`.

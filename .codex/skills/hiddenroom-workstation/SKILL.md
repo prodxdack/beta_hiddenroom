@@ -41,6 +41,7 @@ Use this Skill for the developer machine, not the production Debian server. Keep
 - Playwright is available from the repo through `npx.cmd playwright`.
 - Docker Desktop is installed for local Supabase, with WSL 2 available and the daemon running when needed.
 - Tailscale client may be installed for private access, but production server procedures stay separate.
+- GitHub CLI (`gh`) is installed and authenticated when GitHub beta publishing is in scope.
 
 ## Validation
 
@@ -51,7 +52,7 @@ node --check site.js
 npm.cmd audit
 npx.cmd supabase --version
 npx.cmd playwright --version
-python 'C:\Users\gamer\.codex\skills\.system\skill-creator\scripts\quick_validate.py' .codex\skills\hiddenroom-workstation
+python (Join-Path $env:USERPROFILE '.codex\skills\.system\skill-creator\scripts\quick_validate.py') .codex\skills\hiddenroom-workstation
 ```
 
 For Docker/Supabase local readiness:

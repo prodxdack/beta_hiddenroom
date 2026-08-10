@@ -15,7 +15,7 @@
   - Admin/CMS: `media/admin.html`, `media/admin.js`, `media/admin.css`.
 - `/store/`: product catalog, cart, checkout, orders, admin.
   - Files: `store/store.js`, `store/admin.js`, `store/*.html`.
-  - Stripe checkout uses Edge Function `create-checkout-session`.
+  - Beat Store uses Mercado Pago. Other products may use Stripe; payment provider and Edge Function details are product-specific.
 - `/tickets/`: event ticket generation, validation, viewing, printing.
   - Files: `tickets/tickets.js`, `tickets/validate.js`, `tickets/view.js`.
 - `/kairen/`: Kairen AI UI.
@@ -71,7 +71,7 @@ Known domains:
 - Browser uses Supabase anon/publishable key only.
 - Service role belongs only in Edge Functions or Debian agent.
 - RLS is the real authorization boundary.
-- Admin checks use helpers such as `is_admin()` and role/permission tables.
+- Existing admin checks use helpers such as `is_admin()` and role/permission tables, but these are not a secure boundary by themselves while clients can modify sensitive role columns.
 - Event finance is scoped by `event_user_permissions`.
 - Media admin can use admin role or `media.posts` permission.
 - Cloud manager requires admin role and never exposes direct SSH/filesystem access.
@@ -85,7 +85,7 @@ Known domains:
 - Debian production cloud root discovered as `/home/prodxdack/hiddenroom`.
 - Agent install example path: `/opt/mysauth/mysauth-cloud-agent.js`.
 - Live Debian agent path discovered as `/home/prodxdack/mysauth-agents/cloud-agent/agent.js`.
-- Live cloud routing discovered as Cloudflare Tunnel `hiddenroom-cloud` -> `http://localhost:8080` -> Docker `filebrowser/filebrowser` fallback. Nginx was not found in the active path during diagnostics.
+- Live cloud routing is Cloudflare Tunnel `hiddenroom-cloud` -> `http://localhost:8080` -> MysAuth Cloud Node app. Docker File Browser is the local fallback on `127.0.0.1:8081`; Nginx was not found in the active path. `hiddenroom-debian-server/references/server-map.md` is authoritative.
 - User-provided business context documents Cloudflare as the entry point for DNS, SSL, protection, cache, security rules, and domain management.
 - User-provided business context documents the Debian server as the self-owned compute layer for agents, automation, scheduled processes, custom APIs, Node.js services, integrations, future workloads outside Supabase, and Cloud.
 

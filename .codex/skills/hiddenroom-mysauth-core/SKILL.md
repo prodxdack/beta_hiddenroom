@@ -21,6 +21,7 @@ Use this Skill to understand the whole project before using a specialized Skill 
    - `hiddenroom-dashboard`
    - `hiddenroom-supabase`
    - `hiddenroom-erp`
+   - `hiddenroom-memberships`
    - `hiddenroom-cloud-agent`
    - `hiddenroom-debian-server`
    - `hiddenroom-security`
@@ -36,7 +37,7 @@ Use this Skill to understand the whole project before using a specialized Skill 
 - Public domain in repo: `hiddenroom.mx`.
 - Brand statement visible in the site: "La Casa del Under".
 - Brand affiliation visible in the home page: "Una Marca de Grupo Mysauth".
-- Current product shape: a static website plus authenticated portal, Supabase backend, Edge Functions, Stripe store, media CMS, tickets, games, Kairen AI, ERP/dashboard, and cloud file manager.
+- Current product shape: a static website plus authenticated portal, Supabase backend, Edge Functions, provider-specific payment flows, media CMS, tickets, games, Kairen AI, ERP/dashboard, and cloud file manager.
 - Hidden Room is the cultural and commercial brand; MysAuth is the technological and business holding company that builds the infrastructure to operate, automate, scale, and later commercialize the ecosystem.
 - The strategic pattern is: build for Hidden Room first, validate in real operation, then offer the same technology to other brands, companies, communities, and creators.
 
@@ -46,9 +47,10 @@ Use this Skill to understand the whole project before using a specialized Skill 
 - Frontend stack: HTML, CSS, vanilla JavaScript, ES modules from CDN.
 - Global files: `index.html`, `site.js`, `styles.css`.
 - Backend: Supabase Auth, Postgres, RLS, Storage, Edge Functions.
-- Payments: Stripe through Supabase Edge Functions.
-- Cloud files: browser -> Supabase Storage staging / Edge Functions -> `cloud_jobs` -> Debian Node.js agent -> filesystem.
-- Debian production topology: Cloudflare Tunnel currently routes `cloud.hiddenroom.mx` to Docker File Browser on the Debian host; use `hiddenroom-debian-server` for live paths, services, and tunnel details.
+- Payments: Beat Store uses Mercado Pago. Other products may use Stripe; verify the product-specific function and webhook before describing or changing a payment flow.
+- Cloud files target architecture: browser -> Supabase Storage staging / Edge Functions -> `cloud_jobs` -> Debian Node.js agent -> filesystem.
+- Current production topology: Cloudflare Tunnel routes `cloud.hiddenroom.mx` to the MysAuth Cloud Node app on `localhost:8080`; Docker File Browser is a local fallback on `127.0.0.1:8081`. Use `hiddenroom-debian-server/references/server-map.md` as the source of truth.
+- Authorization: existing `users.roles`, `get_my_role()`, and `is_admin()` usage is compatibility behavior, not a secure boundary by itself while clients can modify sensitive source columns.
 - Debian agent file in repo docs/templates: `mysauth-cloud-agent.js`; live install path discovered as `/home/prodxdack/mysauth-agents/cloud-agent/agent.js`.
 - Service template: `mysauth-cloud-agent.service`.
 

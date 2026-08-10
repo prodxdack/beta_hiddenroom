@@ -23,4 +23,4 @@ Treat option strings as data contracts; changing them requires migration and com
 
 ## RLS Pattern
 
-Admin has broad access through `is_admin()` or role helpers. Event collaborators gain scoped access through `event_user_permissions`. Client records are usually scoped to the public `users.user_id` mapped from `auth.uid()`.
+Existing UI and policies may reference `is_admin()`, `get_my_role()`, or `users.roles`, but those helpers are not a secure boundary while their source columns are client-mutable. Preserve them for compatibility until an approved migration introduces a protected source. Event collaborators use scoped `event_user_permissions`; client records must be restricted to the public `users.user_id` mapped from `auth.uid()`. Review table/column grants and negative cross-user access alongside RLS.

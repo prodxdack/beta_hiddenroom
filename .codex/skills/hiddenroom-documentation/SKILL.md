@@ -1,6 +1,6 @@
 ---
 name: hiddenroom-documentation
-description: Hidden Room documentation skill for repo docs, setup guides, deployment notes, operational runbooks, changelog pages, Supabase/Stripe/cloud instructions, design-system status, and module maintenance notes. Use when writing or updating docs/*.md, README.md, changelog.html, CNAME-related notes, or release/ops documentation.
+description: Hidden Room documentation skill for repo docs, setup guides, deployment notes, operational runbooks, changelog pages, Supabase/payment/cloud instructions, design-system status, and module maintenance notes. Use when writing or updating docs/*.md, README.md, changelog.html, CNAME-related notes, or release/ops documentation.
 ---
 
 # Hidden Room Documentation
@@ -16,7 +16,7 @@ description: Hidden Room documentation skill for repo docs, setup guides, deploy
 
 ## Existing Docs
 
-- `README.md`: store/Supabase/Stripe summary.
+- `README.md`: store, Supabase, and product-specific payment summary.
 - `docs/store-setup.md`: store migration, secrets, functions, webhook, panels.
 - `docs/cloud-agent-installation.md`: Debian agent install and env vars.
 - `docs/mysauth-cloud.md`: custom Cloud UI/API, Debian runtime, security boundary, fallback, and validation.

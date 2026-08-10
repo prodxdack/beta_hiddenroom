@@ -1,7 +1,7 @@
 interface:
   display_name: "Hidden Room Security"
-  short_description: "Auth, RLS, secrets, and data safety"
-  default_prompt: "Use $hiddenroom-security to review or implement a security-sensitive change."
+  short_description: "Auth, grants, RLS, RPCs, and secrets"
+  default_prompt: "Use $hiddenroom-security to audit authorization end to end, including grants, views, RPCs, service-role functions, and negative role tests."
 
 policy:
   allow_implicit_invocation: true

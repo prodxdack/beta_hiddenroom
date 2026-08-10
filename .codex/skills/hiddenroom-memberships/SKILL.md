@@ -25,7 +25,8 @@ This skill complements `hiddenroom-dashboard`, `hiddenroom-erp`, `hiddenroom-sup
 3. Keep `public.memberships` as the primary source of membership weeks. Use sessions only as usage evidence and legacy fallback.
 4. Keep historical compatibility for old sessions, old transactions, and rows with `membership_id = null`.
 5. For schema or RLS changes, add Supabase migrations and verify client/admin access paths.
-6. Validate with `node --check portal/dashboard.js`; run SQL/type validation when migrations change.
+6. Rehearse security changes in Supabase Local with synthetic users; test `anon`, two distinct clients, collaborator, and admin.
+7. Validate with `node --check portal/dashboard.js`; run SQL/type validation when migrations change.
 
 ## Core Rules
 
@@ -72,5 +73,9 @@ Important migrations:
 - Do not make sessions the primary week generator again.
 - Do not let pending current-week balances block delivery as overdue debt.
 - Do not expose another user's membership data in Cliente > Membresias.
+- Never grant `anon` access to `membership_dashboard`.
+- A client may read only their own membership dashboard; administrators retain global access.
+- Security fixes must not modify weeks, balances, deliveries, payments, notes, or historical data.
+- Require parity tests between Cliente > Membresías and ERP > BB.DD. > Membresía for the same membership, allowing only documented admin controls to differ.
 - Do not add admin edit controls to the client dashboard.
 - Do not change canonical strings or release modes without migration and compatibility checks.

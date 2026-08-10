@@ -104,6 +104,15 @@ Rules:
 - If yes, select membership and cycle from menus; set user from the membership.
 - Trigger `link_downloads_to_membership_delivery` links delivery records to downloads.
 
+## Access And Security Invariants
+
+- `membership_dashboard` is never accessible to `anon`.
+- Authenticated clients can select only rows belonging to their own mapped user.
+- Administrators retain global read access and the existing authorized delivery controls.
+- Test a client against another client's membership as an explicit denied case.
+- A permission-only correction must preserve every week, balance, payment, delivery, note, link, and historical record exactly.
+- Compare Cliente > Membresías with ERP > BB.DD. > Membresía using the same synthetic membership and assert data parity.
+
 ## UI Expectations
 
 Client membership table columns:

@@ -20,7 +20,7 @@ description: Hidden Room frontend engineering for the static GitHub Pages app. U
 - Root marketing site: `index.html`, `site.js`, `styles.css`.
 - Global chrome: body uses `data-hr-chrome` and `data-hr-context`; `site.js` renders nav, drawer, session affordances, version/status.
 - Portal auth/dashboard: `portal/login.js`, `portal/recovery.js`, `portal/dashboard.js`.
-- Store: `store/store.js`, `store/admin.js`, Stripe checkout through Edge Functions only.
+- Store: `store/store.js`, `store/admin.js`, and product-specific payment functions. Beat Store uses Mercado Pago; other products may use Stripe.
 - Media: `media/config.js`, `media/media.js`, `media/admin.js`, `media/post.js`.
 - Tickets: `tickets/tickets.js`, `tickets/validate.js`, `tickets/view.js`.
 - Kairen: `kairen/kairen.js`, Edge Function `supabase/functions/kairen-gemini`.

@@ -1,7 +1,7 @@
 interface:
   display_name: "Hidden Room Supabase"
-  short_description: "Migrations, RLS, and Edge Functions"
-  default_prompt: "Use $hiddenroom-supabase to change the Hidden Room database or Edge Functions."
+  short_description: "Local-first migrations, RLS, and functions"
+  default_prompt: "Use $hiddenroom-supabase for local-first Supabase work; keep production secure and read-only unless the user explicitly approves a safeguarded change."
 
 policy:
   allow_implicit_invocation: true

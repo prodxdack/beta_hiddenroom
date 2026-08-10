@@ -1,7 +1,7 @@
 interface:
   display_name: "Hidden Room Testing"
-  short_description: "Syntax, routes, roles, and QA"
-  default_prompt: "Use $hiddenroom-testing to verify a Hidden Room change end to end."
+  short_description: "Local role, RLS, privilege, and UI QA"
+  default_prompt: "Use $hiddenroom-testing to verify Hidden Room locally with synthetic role fixtures, automated RLS/grant negatives, and affected UI flows."
 
 policy:
   allow_implicit_invocation: true

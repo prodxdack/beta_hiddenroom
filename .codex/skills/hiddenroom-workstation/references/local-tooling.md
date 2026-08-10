@@ -12,13 +12,18 @@ Use this file as the living checklist for the MysAuth workstation. Update it whe
 - Docker Desktop: required for `supabase start`; verify both CLI PATH and daemon readiness.
 - WSL 2: required by Docker Desktop on Windows for the Linux backend.
 - Git: mark this repo as `safe.directory` if ownership detection blocks status/diff.
+- GitHub CLI: required for authenticated beta publishing and GitHub repository workflows; install with `winget install --id GitHub.cli --exact` and authenticate with `gh auth login`.
 - Tailscale: useful as a local client for private infrastructure access; server usage belongs in `hiddenroom-debian-server`.
 
 ## Known Commands
 
 ```powershell
 git status --short
-git config --global --add safe.directory 'D:/Archivos/MysAuth/Mysauth OS/WEB/hiddenroom_beta'
+git config --global --add safe.directory (Get-Location).Path
+
+gh --version
+gh auth status
+gh auth login
 
 node --version
 npm.cmd --version
@@ -51,9 +56,7 @@ tailscale version
 - If `docker --version` works but `docker ps` fails, open Docker Desktop and wait for the engine to run.
 - If Docker says virtualization is not detected, check Windows features and WSL 2 from an elevated PowerShell; do not assume BIOS is disabled until `systeminfo` confirms it.
 - If commands hang, check Docker Desktop UI for login, license, WSL update, reboot, or backend prompts.
-- If 
-px.cmd supabase status reports a missing supabase_db_hiddenroom_beta container, the local stack has not been created successfully yet; rerun 
-px.cmd supabase start after Docker is stable.
+- If `npx.cmd supabase status` reports a missing local `supabase_db_*` container, the local stack has not been created successfully yet; rerun `npx.cmd supabase start` after Docker is stable.
 
 ## Windows Feature Commands
 

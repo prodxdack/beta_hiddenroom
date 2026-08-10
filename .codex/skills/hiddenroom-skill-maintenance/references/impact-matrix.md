@@ -48,6 +48,7 @@ Update:
 
 - `hiddenroom-dashboard`
 - `hiddenroom-erp`
+- `hiddenroom-memberships` when membership contracts, weeks, balances, deliveries, or client/admin parity changes.
 - `hiddenroom-supabase` for schema/RLS changes.
 - `hiddenroom-security` for role/permission changes.
 - `hiddenroom-testing` for role QA changes.
@@ -103,20 +104,6 @@ Update:
 - `hiddenroom-testing` when validation commands change.
 - `hiddenroom-documentation` when user-facing setup docs need to mirror the workstation flow.
 - `hiddenroom-debian-server` only when Tailscale/server access facts or production procedures change.
-## Local Workstation
-
-Changed facts or files:
-
-- Windows, PowerShell, PATH, Git safe.directory, Node, npm, Python, Docker Desktop, WSL 2, Supabase CLI, Playwright, or Tailscale client setup.
-- `package.json` or `package-lock.json` dependency changes that affect local development tooling.
-- New local validation commands, install procedures, or repeated setup failures.
-
-Update:
-
-- `hiddenroom-workstation`
-- `hiddenroom-testing` when validation commands change.
-- `hiddenroom-documentation` when user-facing setup docs need to mirror the workstation flow.
-- `hiddenroom-debian-server` only when Tailscale/server access facts or production procedures change.
 ## Cloud Agent
 
 Changed files:
@@ -135,11 +122,11 @@ Update:
 - `hiddenroom-documentation`
 - `hiddenroom-testing`
 
-## Store, Stripe, Media, Tickets, Kairen
+## Store, Payments, Media, Tickets, Kairen
 
 Update module Skills based on the layer touched:
 
-- Store/Stripe: `hiddenroom-frontend`, `hiddenroom-supabase`, `hiddenroom-security`, `hiddenroom-testing`, `hiddenroom-documentation`.
+- Store/payments: `hiddenroom-frontend`, `hiddenroom-supabase`, `hiddenroom-security`, `hiddenroom-testing`, `hiddenroom-documentation`. Preserve the product-specific provider distinction: Beat Store uses Mercado Pago; other products may use Stripe.
 - Media CMS: `hiddenroom-frontend`, `hiddenroom-dashboard` only if portal integration changes, `hiddenroom-security`, `hiddenroom-testing`.
 - Tickets: `hiddenroom-frontend`, `hiddenroom-supabase`, `hiddenroom-security`, `hiddenroom-testing`.
 - Kairen: `hiddenroom-frontend`, `hiddenroom-supabase`, `hiddenroom-security`, `hiddenroom-testing`.
@@ -153,4 +140,14 @@ Always update `agents/openai.yaml` when:
 - The default prompt no longer describes the Skill.
 
 Always run `quick_validate.py` after edits.
+
+## Cross-Cutting Semantic Changes
+
+Architecture, payment-provider, permission/security-boundary, or production-topology changes also update:
+
+- `hiddenroom-mysauth-core` for shared project context and routing.
+- Every affected area Skill and reference identified above.
+- `agents/openai.yaml` only where its prompt or scope became materially inaccurate.
+
+After structural validation, search affected Skills for stale terminology and contradictory claims. Treat `quick_validate.py` as a structure check, not semantic proof.
 
