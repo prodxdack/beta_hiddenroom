@@ -15,12 +15,15 @@ const grid = document.getElementById("beat-grid");
 const searchInput = document.getElementById("beat-search");
 const sortSelect = document.getElementById("beat-sort");
 const genreSelect = document.getElementById("beat-genre");
+const beatAdvancedToggle = document.querySelector("[data-beat-advanced-toggle]");
+const beatFilterPanel = document.getElementById("beat-filter-panel");
+const beatAdvancedClearButton = document.querySelector("[data-beat-advanced-clear]");
 const producerSelect = document.getElementById("beat-producer-filter");
+const advancedProducerSelect = document.getElementById("beat-producer-filter-advanced");
 const priceMinInput = document.getElementById("beat-price-min");
 const priceMaxInput = document.getElementById("beat-price-max");
 const bpmMinInput = document.getElementById("beat-bpm-min");
 const bpmMaxInput = document.getElementById("beat-bpm-max");
-const resultStatus = document.getElementById("beat-results-status");
 const clearFiltersButton = document.getElementById("beat-clear-filters");
 const adminPanel = document.getElementById("beat-admin-panel");
 const adminForm = document.getElementById("beat-admin-form");
@@ -51,6 +54,8 @@ const beatLicenseModalContent = document.getElementById("beat-license-modal-cont
 let beatSearchTimer = 0;
 let beatFilterUrlTimer = 0;
 let beatLastUrlState = "";
+let beatFilterPanelLastFocus = null;
+let beatFilterPanelScrollY = 0;
 let beatLicenseLastTrigger = null;
 let beatCoverObjectUrl = "";
 const beatCoverCropState = { x: 0.5, y: 0.5, zoom: 1 };
@@ -64,6 +69,7 @@ initBeatStore().catch((error) => {
 
 async function initBeatStore() {
   updateCartCount();
+  if (beatFilterPanel && beatFilterPanel.parentElement !== document.body) document.body.appendChild(beatFilterPanel);
   state.isAdmin = await currentUserIsAdmin();
   const [products, beats, licenses, producerProfiles] = await Promise.all([fetchBeatProducts(state.isAdmin), fetchCloudBeats(), fetchBeatLicenses(state.isAdmin), fetchProducerProfiles(state.isAdmin)]);
   state.products = products;
@@ -93,7 +99,16 @@ async function initBeatStore() {
       syncBeatUrlState(true);
     }, 90);
   }, { signal: hrBeatStoreLifecycle.signal });
-  [sortSelect, genreSelect, producerSelect].forEach((control) => control?.addEventListener("change", () => {
+  beatAdvancedToggle?.addEventListener("click", () => {
+    setBeatAdvancedPanelOpen(true);
+  }, { signal: hrBeatStoreLifecycle.signal });
+  document.querySelectorAll("[data-beat-filter-close]").forEach((control) => control.addEventListener("click", () => {
+    setBeatAdvancedPanelOpen(false);
+  }, { signal: hrBeatStoreLifecycle.signal }));
+  document.addEventListener("keydown", handleBeatFilterPanelKeydown, { signal: hrBeatStoreLifecycle.signal });
+  [sortSelect, genreSelect, producerSelect, advancedProducerSelect].forEach((control) => control?.addEventListener("change", () => {
+    if (control === producerSelect && advancedProducerSelect) advancedProducerSelect.value = producerSelect.value;
+    if (control === advancedProducerSelect && producerSelect) producerSelect.value = advancedProducerSelect.value;
     renderBeats();
     syncBeatUrlState(true);
   }, { signal: hrBeatStoreLifecycle.signal }));
@@ -103,6 +118,11 @@ async function initBeatStore() {
   }, { signal: hrBeatStoreLifecycle.signal }));
   clearFiltersButton?.addEventListener("click", () => {
     clearBeatFilters();
+    renderBeats();
+    syncBeatUrlState(true);
+  }, { signal: hrBeatStoreLifecycle.signal });
+  beatAdvancedClearButton?.addEventListener("click", () => {
+    clearBeatAdvancedFilters();
     renderBeats();
     syncBeatUrlState(true);
   }, { signal: hrBeatStoreLifecycle.signal });
@@ -136,6 +156,51 @@ async function initBeatStore() {
   document.addEventListener("click", handleAdminModeClick, { signal: hrBeatStoreLifecycle.signal });
   beatLicenseModal?.addEventListener("click", handleBeatLicenseModalClick);
   document.addEventListener("keydown", handleBeatLicenseModalKeydown, { signal: hrBeatStoreLifecycle.signal });
+}
+
+function setBeatAdvancedPanelOpen(isOpen) {
+  if (!beatFilterPanel) return;
+  const nextOpen = Boolean(isOpen);
+  beatFilterPanel.hidden = !nextOpen;
+  beatAdvancedToggle?.setAttribute("aria-expanded", String(nextOpen));
+  document.body.classList.toggle("beat-filter-panel-open", nextOpen);
+  if (nextOpen) {
+    beatFilterPanelScrollY = window.scrollY;
+    beatFilterPanelLastFocus = document.activeElement;
+    beatFilterPanel.querySelector(".beat-filter-panel__close")?.focus?.({ preventScroll: true });
+    restoreBeatFilterPanelScroll();
+  } else {
+    beatFilterPanelLastFocus?.focus?.({ preventScroll: true });
+    restoreBeatFilterPanelScroll();
+    beatFilterPanelLastFocus = null;
+  }
+}
+
+function restoreBeatFilterPanelScroll() {
+  window.scrollTo(0, beatFilterPanelScrollY);
+  window.requestAnimationFrame(() => window.scrollTo(0, beatFilterPanelScrollY));
+  window.setTimeout(() => window.scrollTo(0, beatFilterPanelScrollY), 0);
+}
+
+function handleBeatFilterPanelKeydown(event) {
+  if (!beatFilterPanel || beatFilterPanel.hidden) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    setBeatAdvancedPanelOpen(false);
+    return;
+  }
+  if (event.key !== "Tab") return;
+  const focusable = [...beatFilterPanel.querySelectorAll("button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])")];
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
 }
 
 function ensureAdminMusicFields() {
@@ -519,6 +584,10 @@ function renderProducerOptions() {
   }).filter(([value, label]) => value && label)).entries()).sort((a, b) => a[1].localeCompare(b[1]));
   producerSelect.innerHTML = `<option value="">Todos</option>${producers.map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join("")}`;
   producerSelect.value = producers.some(([value]) => value === current) ? current : "";
+  if (advancedProducerSelect) {
+    advancedProducerSelect.innerHTML = `<option value="">Todos</option>${producers.map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join("")}`;
+    advancedProducerSelect.value = producerSelect.value;
+  }
 }
 
 function numericFilterValue(input) {
@@ -532,6 +601,7 @@ function applyBeatUrlState() {
   if (searchInput) searchInput.value = params.get("q") || "";
   if (genreSelect) genreSelect.value = params.get("genre") || "";
   if (producerSelect) producerSelect.value = params.get("producer") || "";
+  if (advancedProducerSelect) advancedProducerSelect.value = producerSelect?.value || "";
   if (priceMinInput) priceMinInput.value = params.get("min_price") || "";
   if (priceMaxInput) priceMaxInput.value = params.get("max_price") || "";
   if (bpmMinInput) bpmMinInput.value = params.get("min_bpm") || "";
@@ -560,7 +630,6 @@ function syncBeatUrlState(push = false) {
 }
 
 function updateBeatFilterUi(resultCount, totalCount) {
-  if (resultStatus) resultStatus.textContent = resultCount === totalCount ? `${totalCount} beats` : `${resultCount} de ${totalCount} beats`;
   if (clearFiltersButton) clearFiltersButton.disabled = !hasBeatFilters();
 }
 
@@ -569,9 +638,13 @@ function hasBeatFilters() {
 }
 
 function clearBeatFilters() {
-  [searchInput, producerSelect, priceMinInput, priceMaxInput, bpmMinInput, bpmMaxInput].forEach((input) => { if (input) input.value = ""; });
+  [searchInput, producerSelect, advancedProducerSelect, priceMinInput, priceMaxInput, bpmMinInput, bpmMaxInput].forEach((input) => { if (input) input.value = ""; });
   if (genreSelect) genreSelect.value = "";
   if (sortSelect) sortSelect.value = "featured";
+}
+
+function clearBeatAdvancedFilters() {
+  [producerSelect, advancedProducerSelect, priceMinInput, priceMaxInput, bpmMinInput, bpmMaxInput].forEach((input) => { if (input) input.value = ""; });
 }
 
 function sortItems(items, mode) {
@@ -589,17 +662,32 @@ function beatCardMarkup(item) {
   const canBuy = Boolean(product && productCanBePurchased(product));
   const producer = productProducer(item);
   const meta = itemMusicMeta(item);
+  const licensePrices = availableBeatLicenses(item)
+    .map((license) => Number(license.price))
+    .filter((price) => Number.isFinite(price) && price >= 0);
+  const productPrice = Number(product?.price);
+  const startingPrice = licensePrices.length
+    ? Math.min(...licensePrices)
+    : (Number.isFinite(productPrice) && productPrice > 0 ? productPrice : null);
+  const priceLabel = startingPrice === null
+    ? "Precio por confirmar"
+    : `Desde ${formatPrice(startingPrice, product?.currency)}`;
 
   return `
     <article class="product-card beat-card" data-item-id="${escapeHtml(item.id)}">
       ${coverMarkup(item)}
       <div class="beat-card__body">
-        <h3>${escapeHtml(title)}</h3>
         <p class="beat-card__producer">${producerLinkMarkup(item, producer)}</p>
+        <div class="beat-card__commercial-row">
+          <div class="beat-card__info">
+            <p class="beat-card__price">${escapeHtml(priceLabel)}</p>
+            <h3>${escapeHtml(title)}</h3>
+          </div>
+          <div class="beat-card__actions">
+            <button class="primary-button" type="button" data-add-beat="${escapeHtml(item.id)}" ${canBuy ? "" : "disabled"} aria-expanded="false">Ver licencias</button>
+          </div>
+        </div>
         <div class="beat-card__meta-slot">${musicMetaMarkup(meta)}</div>
-      </div>
-      <div class="beat-card__actions">
-        <button class="primary-button" type="button" data-add-beat="${escapeHtml(item.id)}" ${canBuy ? "" : "disabled"} aria-expanded="false">Ver licencias</button>
       </div>    </article>`;
 }
 
@@ -750,6 +838,7 @@ function addBeatLicenseToCart(itemId, licenseId) {
     quantity: 1,
   });
   localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
+  if (typeof window.gtag === "function") window.gtag("event", "add_to_cart", { funnel: "beat_store", item_type: "beat_license" });
   document.querySelectorAll(".cart-count").forEach((element) => { element.textContent = String(cart.reduce((sum, entry) => sum + Math.max(1, Number(entry?.quantity) || 1), 0)); });
   window.dispatchEvent(new CustomEvent("hr:store-cart-updated"));
   showNotice("Licencia agregada al carrito");
@@ -762,6 +851,15 @@ function openBeatLicensesModal(itemId, trigger = null) {
   beatLicenseModalTitle.textContent = itemTitle(item);
   beatLicenseModalSubtitle.textContent = productProducer(item) || "Productor por confirmar";
   beatLicenseModalContent.innerHTML = beatLicensesContentMarkup(item);
+  beatLicenseModalContent.insertAdjacentHTML("afterbegin", '<p class="beat-license-comparison-note">Compara precio, limite de streams, formato y los terminos registrados antes de elegir.</p>');
+  beatLicenseModalContent.querySelectorAll(".beat-license-terms").forEach((terms) => {
+    const details = document.createElement("details");
+    const summary = document.createElement("summary");
+    summary.textContent = "Ver terminos registrados";
+    details.append(summary, terms.cloneNode(true));
+    terms.replaceWith(details);
+  });
+  if (typeof window.gtag === "function") window.gtag("event", "license_view", { funnel: "beat_store" });
   beatLicenseLastTrigger = trigger;
   trigger?.setAttribute("aria-expanded", "true");
   if (beatLicenseModal.parentElement !== document.body) document.body.appendChild(beatLicenseModal);
@@ -905,6 +1003,9 @@ function addBeatToCart(itemId) {
 function initializeAdminPanel() {
   if (!state.isAdmin || !adminPanel) return;
   setAdminMode(wantsAdminMode());
+  if (adminStatus && !adminStatus.querySelector('[data-review-queue-link]')) {
+    adminStatus.insertAdjacentHTML('beforeend', ' <a data-review-queue-link class="secondary-button hr-btn" href="review.html">Bandeja de revisión</a>');
+  }
   resetAdminForm();
   resetBeatLicenseForm();
   renderAdminProducts();

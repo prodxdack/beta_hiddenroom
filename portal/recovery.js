@@ -162,10 +162,7 @@ form?.addEventListener("submit", async (e) => {
 
   const { data: { user } } = await supabase.auth.getUser();
   if (user?.id) {
-    const { error: clearError } = await supabase
-      .from("users")
-      .update({ temp_password: null })
-      .eq("id", user.id);
+    const { error: clearError } = await supabase.rpc("clear_my_temp_password");
 
     if (clearError) {
       console.info("[HR] recovery clear temp_password skipped:", clearError.message);

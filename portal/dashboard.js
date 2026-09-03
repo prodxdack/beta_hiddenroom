@@ -2080,7 +2080,7 @@ function hydrateTopbar() {
     const avatarUrl = String(state.user.avatar_url ?? '').trim();
     const renderFallback = () => {
       const fallback = document.createElement('img');
-      fallback.src = '/assets/img/np-negative.png';
+      fallback.src = '/assets/img/np-negative.webp';
       fallback.alt = '';
       avatarEl.replaceChildren(fallback);
       avatarEl.setAttribute('aria-label', 'Foto de perfil predeterminada');
@@ -10990,10 +10990,10 @@ async function handleRoleChange(userUuid, role) {
     return;
   }
 
-  const { error } = await supabase
-    .from('users')
-    .update({ roles: role })
-    .eq('id', userUuid);
+  const { error } = await supabase.rpc('admin_update_public_user_sensitive', {
+    p_target_user_id: userUuid,
+    p_changes: { roles: role },
+  });
 
   if (error) {
     console.error('[HR] role update:', error);
@@ -11304,9 +11304,7 @@ async function handleAdminUserUpdate(selectedUser, newEmail, profileFields) {
             display_name:  profileFields.display_name  ?? selectedUser.display_name  ?? null,
             username:      profileFields.username      ?? selectedUser.username      ?? null,
             whatsapp:      profileFields.whatsapp      ?? selectedUser.whatsapp      ?? null,
-            roles:         profileFields.roles         ?? selectedUser.roles         ?? null,
             avatar_url:    profileFields.avatar_url    ?? selectedUser.avatar_url    ?? null,
-            user_id:       selectedUser.user_id        ?? null,
           },
         },
       });
@@ -11412,6 +11410,16 @@ async function saveAdminTableRow(tableName, config, original, payload, options =
     if (!confirmed) return false;
   }
 
+  const sensitiveUserChanges = {};
+  if (tableName === 'users') {
+    ['roles', 'temp_password', 'has_auth', 'passline_tracking', 'user_id'].forEach((field) => {
+      if (field in payload) {
+        sensitiveUserChanges[field] = payload[field];
+        delete payload[field];
+      }
+    });
+  }
+
   // public.users.email must be updated through auth.users via the Edge Function.
   // The DB trigger then syncs auth.users.email → public.users.email automatically.
   if (tableName === 'users' && 'email' in payload) {
@@ -11433,7 +11441,6 @@ async function saveAdminTableRow(tableName, config, original, payload, options =
             username:     payload.username     ?? original.username     ?? null,
             whatsapp:     payload.whatsapp     ?? original.whatsapp     ?? null,
             avatar_url:   payload.avatar_url   ?? original.avatar_url   ?? null,
-            user_id:      payload.user_id      ?? original.user_id     ?? null,
           },
         },
       });
@@ -11450,12 +11457,24 @@ async function saveAdminTableRow(tableName, config, original, payload, options =
     }
 
     // If there are no other fields left to update, we're done.
-    if (Object.keys(payload).length === 0) {
+    if (Object.keys(payload).length === 0 && Object.keys(sensitiveUserChanges).length === 0) {
       return true;
     }
   }
 
-  // Update remaining non-email fields directly in public.users (or any other table).
+  if (Object.keys(sensitiveUserChanges).length > 0) {
+    const { error: sensitiveError } = await supabase.rpc('admin_update_public_user_sensitive', {
+      p_target_user_id: original.id,
+      p_changes: sensitiveUserChanges,
+    });
+    if (sensitiveError) {
+      console.error('[HR] sensitive users update:', sensitiveError);
+      showToast('No se pudo actualizar el campo protegido del usuario.', 'error');
+      return false;
+    }
+  }
+
+  // Update remaining non-email profile fields directly in public.users.
   if (Object.keys(payload).length === 0) {
     return true;
   }
@@ -12719,10 +12738,7 @@ function showOnboardingModal(needsEmail, needsPassword) {
 
         // If password changed, clear temp_password in public.users
         if (needsPassword) {
-          const { error: clearTempError } = await supabase
-            .from('users')
-            .update({ temp_password: null })
-            .eq('id', state.user.id);
+          const { error: clearTempError } = await supabase.rpc('clear_my_temp_password');
 
           if (clearTempError) {
             // Non-fatal: log quietly, don't expose to user

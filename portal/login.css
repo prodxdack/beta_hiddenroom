@@ -363,7 +363,7 @@
 .recovery-popup {
   position: fixed;
   inset: 0;
-  z-index: var(--hr-z-modal, 1000);
+  z-index: var(--hr-z-overlay);
   display: grid;
   place-items: center;
   padding: var(--hr-space-lg, 24px);

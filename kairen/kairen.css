@@ -32,7 +32,7 @@
 
 .kairen-config {
   position: sticky;
-  top: 18px;
+  top: calc(var(--hr-nav-height, 58px) + 18px);
 }
 
 .kairen-config fieldset {

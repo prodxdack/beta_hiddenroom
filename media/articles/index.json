@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "articles": [
+    {
+      "slug": "elegir-una-licencia-para-tu-siguiente-lanzamiento",
+      "title": "Cómo elegir una licencia para tu siguiente lanzamiento",
+      "excerpt": "La licencia correcta parte del uso que le darás a la canción, no sólo del nombre del paquete.",
+      "category": "Producción",
+      "author": "Hidden Room",
+      "publishedAt": "2026-08-30",
+      "coverImage": "/assets/img/social_preview.webp",
+      "cta": {
+        "label": "Explorar licencias en Beat Store",
+        "path": "/store/beat_store/"
+      },
+      "url": "/media/articles/elegir-una-licencia-para-tu-siguiente-lanzamiento/"
+    },
+    {
+      "slug": "llegar-listo-a-grabar",
+      "title": "Llegar listo a grabar también es parte del sonido",
+      "excerpt": "Una guía breve para aprovechar mejor una sesión: referencias claras, archivos ordenados y una idea que pueda convertirse en canción.",
+      "category": "Studio",
+      "author": "Hidden Room",
+      "publishedAt": "2026-08-30",
+      "coverImage": "/assets/img/studio_mic_1.webp",
+      "cta": {
+        "label": "Solicitar una sesión en Studio",
+        "path": "/studio/"
+      },
+      "url": "/media/articles/llegar-listo-a-grabar/"
+    },
+    {
+      "slug": "una-cancion-tambien-se-encuentra-en-la-escena",
+      "title": "Una canción también se encuentra en la escena",
+      "excerpt": "Salir del cuarto, escuchar a otros artistas y volver con una idea nueva: la escena también alimenta tu siguiente track.",
+      "category": "Escena",
+      "author": "Hidden Room",
+      "publishedAt": "2026-08-30",
+      "coverImage": "/assets/img/hr_gente.webp",
+      "cta": {
+        "label": "Ver próximos eventos",
+        "path": "/tickets/"
+      },
+      "url": "/media/articles/una-cancion-tambien-se-encuentra-en-la-escena/"
+    }
+  ]
+}

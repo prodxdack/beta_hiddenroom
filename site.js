@@ -1,5 +1,5 @@
 const SITE_STATUS = "BETA Sitio en construcción";
-const SITE_VERSION = "V. 2.4.0";
+const SITE_VERSION = "V. 2.5.0";
 const GA_MEASUREMENT_ID = "G-VNHC1Z3FXZ";
 const HR_SUPABASE_URL = "https://rpcunbkstadgngqrjafp.supabase.co";
 const HR_SUPABASE_ANON_KEY = "sb_publishable_7v_FIgTjWjJgtT1YHIAYSw_bRBmQjZO";
@@ -9,11 +9,22 @@ const ECOSYSTEM_LINKS = [
   ["games", "/minijuegos/", "Minijuegos"],
   ["media", "/media/", "Media"],
   ["store", "/store/", "Store"],
+  ["studio", "/studio/", "Studio"],
   ["beat-store", "/store/beat_store/", "Beat Store"],
   ["kairen", "/kairen/", "Kairen AI"],
   ["tickets", "/tickets/", "Tickets"],
   ["orbit", "/mysauth_orbit/", "ORBIT", true],
 ];
+
+let globalSessionSnapshot = null;
+
+function setGlobalAuthState(state) {
+  document.querySelectorAll("[data-hr-session], [data-hr-drawer-session]").forEach((target) => {
+    target.dataset.hrAuthState = state;
+    target.setAttribute("aria-busy", state === "loading" ? "true" : "false");
+  });
+  document.body?.classList.toggle("hr-auth-loading", state === "loading");
+}
 
 function getHiddenRoomSupabaseClient() {
   if (window.__hiddenRoomSupabaseClient) {
@@ -193,13 +204,23 @@ function renderNavActions(module) {
   return `
     ${moduleAction}
     <div class="hr-nav__session" data-hr-session>
-      <div class="hr-nav__guest">
-        <a href="/portal/">Ingresar</a>
-        <span aria-hidden="true">|</span>
-        <a href="/portal/?mode=register">Registrarse</a>
-      </div>
+      ${globalSessionSnapshot
+        ? authenticatedHeaderMarkup(globalSessionSnapshot.profile, globalSessionSnapshot.user, globalSessionSnapshot.unread)
+        : globalAuthLoadingMarkup()}
     </div>
     <span id="session-user" class="hr-nav__user" hidden></span>
+  `;
+}
+
+function globalAuthLoadingMarkup(drawer = false) {
+  if (drawer) {
+    return '<div class="hr-global-drawer__auth-loading" aria-hidden="true"><span></span><span></span></div>';
+  }
+  return `
+    <div class="hr-nav__auth-loading" aria-hidden="true">
+      <span class="hr-nav__auth-loading-bell"></span>
+      <span class="hr-nav__auth-loading-account"><i></i><b></b></span>
+    </div>
   `;
 }
 
@@ -241,7 +262,9 @@ function renderGlobalDrawer(activeModule) {
       </nav>
       <div class="hr-global-drawer__footer">
         <div data-hr-drawer-session>
-          ${drawerSessionMarkup}
+          ${globalSessionSnapshot
+            ? authenticatedHeaderMarkup(globalSessionSnapshot.profile, globalSessionSnapshot.user, globalSessionSnapshot.unread, true)
+            : globalAuthLoadingMarkup(true)}
         </div>
         <div class="hr-global-drawer__meta">
           <span class="site-status"></span>
@@ -277,7 +300,7 @@ function globalDisplayName(profile, user) {
 }
 
 function globalAvatarSrc(value) {
-  const fallback = "/assets/img/np-negative.png";
+  const fallback = "/assets/img/np-negative.webp";
   const avatar = String(value || "").trim();
   if (!/^https?:\/\//i.test(avatar)) return fallback;
 
@@ -397,7 +420,7 @@ function authenticatedHeaderMarkup(profile, user, unread = 0, drawer = false) {
   const name = globalDisplayName(profile, user);
   const avatarSrc = globalAvatarSrc(profile?.avatar_url);
   const avatarMarkup = `<img src="${escapeNavText(avatarSrc)}" alt=""
-    referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='/assets/img/np-negative.png'">`;
+    referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='/assets/img/np-negative.webp'">`;
 
   if (drawer) {
     return `
@@ -523,8 +546,7 @@ async function hydrateGlobalSession() {
   const drawerTargets = document.querySelectorAll("[data-hr-drawer-session]");
   if (!sessionTargets.length && !drawerTargets.length) return;
 
-  sessionTargets.forEach((target) => { target.hidden = true; });
-  drawerTargets.forEach((target) => { target.hidden = true; });
+  setGlobalAuthState("loading");
 
   try {
     const supabase = await getHiddenRoomSupabaseClient();
@@ -573,6 +595,7 @@ async function hydrateGlobalSession() {
       canSeeAdminNav = Boolean(ownPermissions?.length);
     }
     setAdminNavigationVisibility(canSeeAdminNav);
+    globalSessionSnapshot = { profile, user, notifications, unread };
 
     sessionTargets.forEach((target) => {
       target.innerHTML = authenticatedHeaderMarkup(profile, user, unread);
@@ -582,6 +605,7 @@ async function hydrateGlobalSession() {
     });
     sessionTargets.forEach((target) => { target.hidden = false; });
     drawerTargets.forEach((target) => { target.hidden = false; });
+    setGlobalAuthState("authenticated");
     renderGlobalNotifications(notifications);
     showGlobalInstagramUsernamePrompt(profile, user, supabase);
   } catch (error) {
@@ -1458,6 +1482,12 @@ if (cursor && ring) {
 
 const revealElements = document.querySelectorAll('.reveal');
 
+document.addEventListener('click', (event) => {
+  const target = event.target.closest('[data-hr-funnel-event]');
+  if (!target || typeof window.gtag !== 'function') return;
+  window.gtag('event', target.dataset.hrFunnelEvent, { funnel: 'store' });
+});
+
 if (revealElements.length > 0) {
 
   const observer = new IntersectionObserver(entries => {
@@ -1520,9 +1550,3 @@ if (track) {
   });
 
 }
-
-
-
-
-
-

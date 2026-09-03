@@ -21,8 +21,14 @@ else initStore();
 document.addEventListener("click", (event) => {
   const loginLink = event.target.closest("[data-store-login]");
   if (!loginLink) return;
+  trackStoreEvent("store_login_required");
   sessionStorage.setItem("hr_return_after_login", `../store/${location.pathname.split("/").pop() || "index.html"}`);
 }, { signal: hrStoreLifecycle.signal });
+
+function trackStoreEvent(name, params = {}) {
+  if (typeof window.gtag !== "function") return;
+  window.gtag("event", name, { ...params, funnel: "store" });
+}
 
 async function initStore() {
   updateCartCount();
@@ -119,6 +125,7 @@ function addToCart(productId, quantity = 1) {
   else cart.push({ id: productId, quantity: Math.min(maximum, Math.max(1, quantity)) });
 
   saveCart(cart);
+  trackStoreEvent("add_to_cart", { item_type: product.category === "beats" ? "beat" : "product" });
   showNotice("Producto agregado al carrito");
 }
 
@@ -287,9 +294,24 @@ async function renderProduct() {
     return;
   }
 
+  if (product.category === "beats") {
+    const { data: beatDetails } = await supabase
+      .from("store_products")
+      .select("beat_cover_path, beat_preview_path, beat_preview_status, beat_genre, beat_bpm, beat_key, producer, publication_status")
+      .eq("id", product.id)
+      .maybeSingle();
+    if (beatDetails) Object.assign(product, beatDetails);
+  }
+
   products = [product];
   const soldOut = !productCanBePurchased(product);
   document.title = `${product.name} | Hidden Room`;
+  const beatAssignments = product.category === "beats" ? await fetchDetailBeatLicenses(product.id) : [];
+  const beatPreview = product.category === "beats" ? previewUrlForStoreBeat(product.beat_preview_path, product.beat_preview_status) : "";
+  const beatMarkup = product.category === "beats" ? `
+      <div class="beat-detail-meta"><p>${escapeHtml(product.producer || "Productor por confirmar")}</p><p>${escapeHtml(product.beat_genre || "Género por confirmar")} · ${escapeHtml(product.beat_bpm || "BPM por confirmar")} BPM · ${escapeHtml(product.beat_key || "Tonalidad por confirmar")}</p></div>
+      ${beatPreview ? `<audio controls preload="none" src="${escapeHtml(beatPreview)}" aria-label="Preview de ${escapeHtml(product.name)}"></audio>` : "<p class=\"stock-note\">Preview pendiente de procesamiento.</p>"}
+      <section class="beat-detail-licenses" aria-labelledby="beat-detail-licenses-title"><h2 id="beat-detail-licenses-title">Elige tu licencia</h2>${beatAssignments.length ? beatAssignments.map((assignment) => `<article class="beat-detail-license"><div><h3>${escapeHtml(assignment.beat_licenses?.name || "Licencia")}</h3><p>${escapeHtml(assignment.beat_licenses?.description || "Licencia para este beat.")}</p><p><small>${escapeHtml(assignment.beat_licenses?.format || "Formato por confirmar")} · ${escapeHtml(streamLimitLabel(assignment.beat_licenses))}</small></p></div><strong>${escapeHtml(formatPrice(assignment.price, product.currency))}</strong><button class="primary-button" type="button" data-beat-license-detail="${escapeHtml(product.id)}" data-license-id="${escapeHtml(assignment.license_id)}">Agregar licencia</button></article>`).join("") : "<p>No hay licencias disponibles para este beat.</p>"}</section>` : "";
   container.innerHTML = `
     ${productVisualMarkup(product)}
     <div>
@@ -298,13 +320,47 @@ async function renderProduct() {
       <p class="product-description">${escapeHtml(product.description || "Producto Hidden Room.")}</p>
       <p class="product-price">${formatPrice(product.price, product.currency)}</p>
       <p class="stock-note">${stockLabel(product)}</p>
-      <button class="primary-button" id="add-detail-product" type="button" ${soldOut ? "disabled" : ""}>
-        ${soldOut ? "Agotado" : "Agregar al carrito"}
-      </button>
+      ${beatMarkup}
+      ${product.category === "beats" ? "" : `<button class="primary-button" id="add-detail-product" type="button" ${soldOut ? "disabled" : ""}>${soldOut ? "Agotado" : "Agregar al carrito"}</button>`}
     </div>`;
 
   document.getElementById("add-detail-product")
     ?.addEventListener("click", () => addToCart(product.id));
+  container.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-beat-license-detail]");
+    if (!button) return;
+    const assignment = beatAssignments.find((candidate) => candidate.license_id === button.dataset.licenseId);
+    if (assignment) addBeatLicenseToCart(product, assignment);
+  });
+}
+
+async function fetchDetailBeatLicenses(beatId) {
+  const { data } = await supabase
+    .from("beat_license_assignments")
+    .select("beat_id, license_id, price, is_enabled, beat_licenses(id, name, description, terms, format, stream_limit, unlimited_streams, is_active)")
+    .eq("beat_id", beatId)
+    .eq("is_enabled", true);
+  return (data || []).filter((assignment) => assignment.beat_licenses?.is_active !== false);
+}
+
+function previewUrlForStoreBeat(value, status) {
+  if (!value || status === "error") return "";
+  const clean = String(value).replace(/^\/+/, "").replace(/^beats_store\//i, "");
+  if (!/^previews\//i.test(clean)) return "";
+  return `${BEAT_STORE_CLOUD_ORIGIN}/api/beat-store/stream?file=${encodeURIComponent(clean)}`;
+}
+
+function streamLimitLabel(license) {
+  if (!license) return "Límite por confirmar";
+  if (license.unlimited_streams) return "Streams ilimitados";
+  return Number.isFinite(Number(license.stream_limit)) ? `${new Intl.NumberFormat("es-MX").format(Number(license.stream_limit))} streams` : "Límite por confirmar";
+}
+
+function addBeatLicenseToCart(product, assignment) {
+  const license = assignment.beat_licenses;
+  const cart = getCart().filter((item) => cartIdentity(item) !== `${product.id}::${assignment.license_id}`);
+  cart.push({ id: product.id, beat_id: product.id, license_id: assignment.license_id, license_price: Number(assignment.price), license_name: license?.name || "Licencia", license_description: license?.description || "", license_format: license?.format || "", license_terms: license?.terms || "", beat_producer: product.producer || "", quantity: 1 });
+  saveCart(cart); showNotice("Licencia agregada al carrito");
 }
 
 async function renderCart() {
@@ -312,7 +368,9 @@ async function renderCart() {
   const summary = document.getElementById("cart-summary");
 
   try {
+    const storedCount = getCart().length;
     const items = await validatedCart();
+    if (storedCount > items.length) showNotice("Quitamos del carrito un producto o licencia que ya no esta disponible.");
     if (!items.length) {
       itemsContainer.innerHTML = emptyCartMarkup();
       summary.innerHTML = "";
@@ -339,6 +397,7 @@ async function renderCart() {
       </article>`).join("");
 
     summary.innerHTML = orderSummaryMarkup(items, true);
+    summary.insertAdjacentHTML("beforeend", '<p class="summary-next-step">Revisa este resumen y continua al checkout para capturar tus datos y pagar con Mercado Pago.</p>');
     itemsContainer.onclick = async (event) => {
       const quantityButton = event.target.closest("[data-quantity]");
       const removeButton = event.target.closest("[data-remove]");
@@ -372,6 +431,7 @@ async function initializeCheckout() {
 
   let items = [];
   let paymentForm = null;
+  trackStoreEvent("begin_checkout");
 
   const showCheckoutForm = () => {
     paymentForm?.unmount();
@@ -433,6 +493,7 @@ async function initializeCheckout() {
 
       button.disabled = true;
       button.textContent = "Preparando pago...";
+      trackStoreEvent("payment_attempt", { provider: "mercadopago" });
       form.hidden = true;
       paymentPanel.hidden = false;
       paymentStatus.textContent = "Carga el formulario seguro para ingresar tu tarjeta.";
@@ -455,6 +516,7 @@ async function initializeCheckout() {
           try {
             const result = await createMercadoPagoOrder(customerData, items, cardData);
             if (["approved", "paid", "authorized"].includes(result.status)) {
+              trackStoreEvent("payment_result", { provider: "mercadopago", result: "approved" });
               clearCart();
               window.location.assign(`success.html?provider=mercadopago&order_id=${encodeURIComponent(result.order_id)}`);
               return;
@@ -463,6 +525,7 @@ async function initializeCheckout() {
             throw new Error("El pago no fue aprobado.");
           } catch (error) {
             const message = error instanceof Error ? error.message : "Mercado Pago rechazo la solicitud.";
+            trackStoreEvent("payment_result", { provider: "mercadopago", result: "error" });
             paymentStatus.textContent = message;
             throw error;
           }
@@ -595,7 +658,7 @@ function orderSummaryMarkup(items, includeButton) {
   const currency = items[0]?.currency || "MXN";
   const total = items.reduce((sum, item) => sum + Number(item.price) * item.quantity, 0);
   return `
-    <h2>Resumen</h2>
+    <h2>Resumen de compra</h2>
     ${items.map((item) => `
       <div class="summary-line">
         ${item.license_id ? `<details class="summary-license-details"><summary>Detalles de la licencia</summary><p>${item.license_snapshot?.format ? `Formato: ${escapeHtml(item.license_snapshot.format)}. ` : ""}${item.license_snapshot?.terms ? escapeHtml(item.license_snapshot.terms) : ""}</p></details>` : ""}
@@ -621,7 +684,7 @@ function productImageUrl(value) {
 }
 
 function productVisualMarkup(product) {
-  const imageUrl = productImageUrl(product.image_url);
+  const imageUrl = productImageUrl(product.beat_cover_path || product.image_url);
   if (imageUrl) {
     return `<div class="product-art product-art--image"><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(product.name)}" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><span class="product-art__fallback" hidden>${escapeHtml(product.name.slice(0, 3).toUpperCase())}</span></div>`;
   }

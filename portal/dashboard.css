@@ -785,7 +785,7 @@
 .db-modal {
   position: fixed;
   inset: 0;
-  z-index: 9000;
+  z-index: var(--hr-z-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3606,14 +3606,14 @@ input[data-user-search] {
 /* Explicit Portal More layering over the global player. */
 @media (max-width: 800px) {
   body.db-body #hr-beat-player {
-    z-index: 119 !important;
+    z-index: calc(var(--hr-bottom-nav-z, 120) - 1) !important;
   }
 
   body.db-body .hr-portal-backdrop {
-    z-index: 10000 !important;
+    z-index: var(--hr-z-overlay) !important;
   }
 
   body.db-body #hr-portal-more {
-    z-index: 10001 !important;
+    z-index: var(--hr-z-drawer) !important;
   }
 }

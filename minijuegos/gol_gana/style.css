@@ -47,6 +47,7 @@ button { font: inherit; cursor: pointer; border: 0; }
 .hidden { display: none !important; }
 .panel { width: min(560px, 94vw); max-height: calc(var(--app-height, 100vh) - 24px); overflow: auto; overscroll-behavior: contain; background: rgba(244,101,43,.92); border: 2px solid var(--black); border-radius: 16px; padding: 24px; text-align: center; box-shadow: 0 14px 0 rgba(82,44,33,.82), 0 22px 60px rgba(0,0,0,.42); color: var(--black); scrollbar-color: var(--yellow) rgba(28,28,27,.18); }
 .eyebrow { color: var(--primary); margin: 0 0 8px; text-transform: uppercase; letter-spacing: .14em; font-size: .78rem; font-weight: 900; }
+.eyebrow { display: none; }
 .menu-art { display: block; width: min(78%, 260px); max-height: 28vh; height: auto; object-fit: contain; margin: 4px auto 12px; border: 0; border-radius: 0; box-shadow: none; background: transparent; }
 h1 { margin: 0; font-size: clamp(2.35rem, 8vw, 4.6rem); line-height: .88; color: var(--black); text-shadow: 3px 3px 0 var(--yellow), 5px 5px 0 var(--beige); }
 h2 { margin: 0 0 10px; font-size: 3rem; color: var(--yellow); }

@@ -290,7 +290,7 @@ html { color-scheme: dark; }
   align-items: start;
 }
 
-.admin-form { position: sticky; top: 20px; }
+.admin-form { position: sticky; top: calc(var(--hr-nav-height, 58px) + 20px); }
 .admin-form h2 { margin: 0; font: 700 20px var(--hr-font-display); text-transform: uppercase; }
 
 .check-grid {
@@ -331,6 +331,7 @@ html { color-scheme: dark; }
 .notice.visible { transform: translateY(0); }
 
 .success-page {
+  position: relative;
   min-height: 100vh;
   padding: 40px 20px;
   display: flex;

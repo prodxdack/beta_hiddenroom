@@ -8,73 +8,106 @@
   <link rel="icon" type="image/webp" href="../../assets/img/orange_logo.webp">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Unbounded:wght@400;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="../../styles.css?v=20260809-player-cover-overlay">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Space+Grotesk:wght@400;500;600;700&family=Unbounded:wght@400;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../../styles.css?v=20260902-mobile-search-centered-v7">
 
 </head>
 <body class="store-page beat-store-page hr-page" data-page="beat-store" data-hr-chrome data-hr-context="store">
   <div id="hr-global-nav"></div>
 
   <main>
-    <section class="catalog-section hr-section" aria-labelledby="beats-title">
+    <section class="catalog-section hr-section" aria-label="Catálogo de beats">
       <div class="hr-container hr-stack hr-stack-xl">
-        <div class="section-heading hr-grid hr-grid-2">
-          <div>
-            <p class="eyebrow hr-eyebrow">Catálogo</p>
-            <h2 id="beats-title" class="hr-section-title">Beats disponibles</h2>
-          </div>
+        <div class="beat-store-banner">
+          <img class="beat-store-banner__image" src="../../assets/img/WhatsApp%20Image%202023-04-10%20at%2015.00.12.webp" alt="Beat Store de Hidden Room">
+          <span class="beat-store-banner__title">BEATS STORE</span>
         </div>
 
         <div class="catalog-tools hr-filterbar beat-tools">
-          <label class="hr-search">
-            <span>Buscar</span>
-            <input id="beat-search" class="hr-search-input" type="search" placeholder="Nombre, género, slug...">
-          </label>
-          <label class="hr-field">
-            <span>Género</span>
-            <select id="beat-genre" class="hr-select">
-              <option value="">Todos</option>
-            </select>
-          </label>
-          <label class="hr-field">
-            <span>Orden</span>
-            <select id="beat-sort" class="hr-select">
-              <option value="featured">Destacados primero</option>
-              <option value="newest">Más recientes</option>
-              <option value="name">Nombre</option>
-            </select>
-          </label>
-          <details class="beat-filter-details">
-            <summary>Más filtros</summary>
-            <div class="beat-filter-details__grid">
-              <label class="hr-field">
-                <span>Productor</span>
-                <select id="beat-producer-filter" class="hr-select">
-                  <option value="">Todos</option>
-                </select>
-              </label>
-              <label class="hr-field">
-                <span>Precio mínimo</span>
-                <input id="beat-price-min" class="hr-input" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0">
-              </label>
-              <label class="hr-field">
-                <span>Precio máximo</span>
-                <input id="beat-price-max" class="hr-input" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Sin límite">
-              </label>
-              <label class="hr-field">
-                <span>BPM mínimo</span>
-                <input id="beat-bpm-min" class="hr-input" type="number" min="1" max="300" step="1" inputmode="numeric" placeholder="40">
-              </label>
-              <label class="hr-field">
-                <span>BPM máximo</span>
-                <input id="beat-bpm-max" class="hr-input" type="number" min="1" max="300" step="1" inputmode="numeric" placeholder="220">
-              </label>
+          <div class="hr-search beat-search">
+            <span class="sr-only">Buscar beat, productor o género</span>
+            <input id="beat-search" class="hr-search-input" type="search" aria-label="Buscar beat, productor o género" placeholder="Buscar beat, productor, género...">
+            <span class="beat-search__icon" aria-hidden="true"></span>
+          </div>
+        </div>
+
+        <div id="beat-filter-panel" class="beat-filter-panel" hidden>
+          <div class="beat-filter-panel__backdrop" data-beat-filter-close></div>
+          <aside class="beat-filter-panel__dialog" role="dialog" aria-modal="true" aria-labelledby="beat-filter-panel-title" tabindex="-1">
+            <header class="beat-filter-panel__header">
+              <div>
+                <p class="eyebrow hr-eyebrow">Catálogo</p>
+                <h2 id="beat-filter-panel-title">Filtros avanzados</h2>
+              </div>
+              <button class="beat-filter-panel__close" type="button" data-beat-filter-close aria-label="Cerrar filtros avanzados">×</button>
+            </header>
+            <div class="beat-filter-panel__body">
+              <div class="beat-filter-panel__producer-mobile">
+                <label class="hr-field" for="beat-producer-filter-advanced">
+                  <span>Productor</span>
+                  <select id="beat-producer-filter-advanced" class="hr-select">
+                    <option value="">Todos</option>
+                  </select>
+                </label>
+              </div>
+              <fieldset class="beat-filter-group">
+                <legend>Precio</legend>
+                <div class="beat-filter-group__fields">
+                  <label class="hr-field">
+                    <span>Mínimo</span>
+                    <input id="beat-price-min" class="hr-input" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0">
+                  </label>
+                  <label class="hr-field">
+                    <span>Máximo</span>
+                    <input id="beat-price-max" class="hr-input" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Sin límite">
+                  </label>
+                </div>
+              </fieldset>
+              <fieldset class="beat-filter-group">
+                <legend>BPM</legend>
+                <div class="beat-filter-group__fields">
+                  <label class="hr-field">
+                    <span>Mínimo</span>
+                    <input id="beat-bpm-min" class="hr-input" type="number" min="1" max="300" step="1" inputmode="numeric" placeholder="40">
+                  </label>
+                  <label class="hr-field">
+                    <span>Máximo</span>
+                    <input id="beat-bpm-max" class="hr-input" type="number" min="1" max="300" step="1" inputmode="numeric" placeholder="220">
+                  </label>
+                </div>
+              </fieldset>
             </div>
-          </details>
+            <footer class="beat-filter-panel__footer">
+              <button class="secondary-button hr-btn hr-btn-outline" type="button" data-beat-advanced-clear>Limpiar</button>
+              <button class="secondary-button hr-btn hr-btn-primary" type="button" data-beat-filter-close>Aplicar</button>
+            </footer>
+          </aside>
         </div>
 
         <div class="beat-results-toolbar hr-cluster">
-          <p id="beat-results-status" class="beat-results-status" role="status" aria-live="polite">Cargando beats...</p>
+          <div id="beat-filter-controls" class="beat-filter-controls" aria-label="Filtros del catálogo">
+            <label class="hr-field">
+              <span>Género</span>
+              <select id="beat-genre" class="hr-select">
+                <option value="">Todos</option>
+              </select>
+            </label>
+            <label class="hr-field">
+              <span>Orden</span>
+              <select id="beat-sort" class="hr-select">
+                <option value="featured">Destacados primero</option>
+                <option value="newest">Más recientes</option>
+                <option value="name">Nombre</option>
+              </select>
+            </label>
+            <label class="hr-field beat-producer-filter-field">
+              <span>Productor</span>
+              <select id="beat-producer-filter" class="hr-select">
+                <option value="">Todos</option>
+              </select>
+            </label>
+            <button class="beat-advanced-toggle" type="button" data-beat-advanced-toggle aria-controls="beat-filter-panel" aria-expanded="false">+ Filtros</button>
+          </div>
           <button id="beat-clear-filters" class="secondary-button hr-btn hr-btn-outline" type="button" disabled>Limpiar filtros</button>
         </div>
         <div id="beat-grid" class="beat-grid product-grid hr-card-grid" aria-live="polite" aria-busy="true">
@@ -204,11 +237,16 @@
 
   <footer class="store-footer beat-store-footer">
     <span>Hidden Room Beat Store</span>
+    <span class="store-footer__policies">Licencias, disponibilidad y soporte de Hidden Room.</span>
+    <a href="my-beats.html">Mis Beats</a>
+    <a href="https://wa.me/525542881737" target="_blank" rel="noopener noreferrer">Soporte por WhatsApp</a>
+    <a href="../cart.html">Carrito</a>
     <a href="../">Volver a la tienda</a>
   </footer>
 
   <script src="../../site.js?v=20260809-beat-player-waveform"></script>
-  <script type="module" src="bs.js?v=20260809-no-beat-hero"></script>
+  <script src="../../analytics/analytics.js?v=20260830-analytics-minimum"></script>
+  <script type="module" src="bs.js?v=20260902-mobile-filter-compact-v1"></script>
 <script src="/spa.js?v=20260808-phase3-polish"></script>
 </body>
 </html>

@@ -369,7 +369,7 @@ body.beat-admin-mode .beat-admin {
 
   .beat-card__cover {
     position: sticky;
-    top: 0;
+    top: var(--hr-nav-height-mobile, 54px);
   }
 
   .beat-card__actions {
@@ -964,3 +964,309 @@ body.beat-admin-mode .beat-admin {
 @media (max-width:880px) { .beat-tools { grid-template-columns:repeat(2,minmax(0,1fr)); } .beat-tools .form-field:first-child { grid-column:1/-1; } }
 @media (max-width:620px) { .beat-store-page main,body.beat-store-page main { padding-bottom:0; } .beat-card { grid-template-columns:76px minmax(0,1fr); padding:14px; gap:12px; } .beat-card__cover { position:relative; top:auto; } .beat-card__actions { grid-column:1/-1; } }
 @media (max-width:430px) { .beat-tools { grid-template-columns:1fr; } .beat-tools .form-field:first-child { grid-column:auto; } }
+/* Beat Store storefront cards */
+.beat-grid {
+  align-items: start;
+}
+
+.beat-card {
+  grid-template-columns: 1fr;
+  gap: 0;
+  padding: clamp(12px, 1.8vw, 18px);
+  overflow: hidden;
+  transition: border-color .18s ease, background .18s ease, transform .18s ease;
+}
+
+.beat-card:hover {
+  border-color: var(--hr-border-strong);
+  background: linear-gradient(145deg, rgba(255,255,255,.05), rgba(255,255,255,.016));
+  transform: translateY(-2px);
+}
+
+.beat-card__cover {
+  grid-column: 1;
+  width: 100%;
+  aspect-ratio: 1;
+  margin: 0 0 15px;
+  align-self: auto;
+}
+
+.beat-card__body,
+.beat-card__actions {
+  grid-column: 1;
+}
+
+.beat-card__body {
+  display: grid;
+  gap: 8px;
+}
+
+.beat-card__producer {
+  margin: 0;
+  min-height: 1.25em;
+  color: var(--hr-cyan, var(--teal));
+  font: 600 10px/1.25 var(--hr-font-mono);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.beat-card__commercial-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+}
+
+.beat-card__info {
+  min-width: 0;
+}
+
+.beat-card__price {
+  margin: 0 0 6px;
+  color: var(--hr-red-hover, var(--hr-red));
+  font: 600 12px/1.2 var(--hr-font-mono);
+}
+
+.beat-card h3 {
+  min-height: 0;
+  margin: 0;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--hr-text);
+  font: 700 clamp(15px, 1.55vw, 19px)/1.12 var(--hr-font-display);
+  text-transform: uppercase;
+}
+
+.beat-card__meta-slot {
+  min-width: 0;
+}
+
+.beat-card__music {
+  display: block;
+  margin: 1px 0 0;
+  overflow: hidden;
+  color: var(--hr-muted);
+  font: 400 11px/1.4 var(--hr-font-body);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.beat-card__music div {
+  display: inline;
+  padding: 0;
+  border: 0;
+}
+
+.beat-card__music dt {
+  display: none;
+}
+
+.beat-card__music dd {
+  display: inline;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  text-transform: none;
+}
+
+.beat-card__music div:not(:last-child) dd::after {
+  content: " · ";
+  color: var(--hr-border-strong);
+}
+
+.beat-card__music--empty {
+  white-space: normal;
+}
+
+.beat-card__actions {
+  display: block;
+  align-self: auto;
+}
+
+.beat-card__actions .primary-button {
+  min-height: 36px;
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+@media (max-width: 620px) {
+  .beat-card {
+    padding: 12px;
+  }
+
+  .beat-card__cover {
+    margin-bottom: 13px;
+  }
+
+  .beat-card__commercial-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .beat-card__actions .primary-button {
+    width: 100%;
+  }
+}
+/* Compact mobile Beat Store cards and player */
+@media (max-width: 620px) {
+  .beat-card {
+    grid-template-columns: clamp(88px, 28vw, 112px) minmax(0, 1fr);
+    align-items: start;
+    gap: 0 12px;
+    padding: 10px;
+  }
+
+  .beat-card__cover {
+    grid-column: 1;
+    grid-row: 1;
+    width: 100%;
+    margin: 0;
+  }
+
+  .beat-card__body {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+    gap: 5px;
+  }
+
+  .beat-card__producer {
+    overflow: hidden;
+    font-size: 9px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .beat-card__commercial-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .beat-card__price {
+    margin-bottom: 3px;
+    font-size: 11px;
+  }
+
+  .beat-card h3 {
+    font-size: 14px;
+    line-height: 1.08;
+  }
+
+  .beat-card__music {
+    font-size: 10px;
+  }
+
+  .beat-card__actions .primary-button {
+    width: fit-content;
+    min-height: 32px;
+    padding: 7px 10px;
+    font-size: 9px;
+  }
+
+  :root {
+    --hr-player-height: 80px;
+  }
+
+  body.hr-has-beat-player {
+    padding-bottom: calc(var(--hr-player-height) + max(8px, env(safe-area-inset-bottom)) + 18px);
+  }
+
+  .hr-beat-player {
+    min-height: var(--hr-player-height);
+    padding: 7px;
+    gap: 5px 8px;
+  }
+
+  .hr-beat-player__art {
+    width: 38px;
+    height: 38px;
+  }
+
+  .hr-beat-player__controls {
+    grid-template-columns: 38px minmax(90px, 1fr) auto 36px 60px;
+    gap: 6px;
+  }
+
+  .hr-beat-player__wave-wrap,
+  .hr-beat-player__wave {
+    height: 28px !important;
+    min-height: 28px;
+  }
+
+  .hr-beat-player__time {
+    font-size: 9px;
+  }
+}
+
+@media (max-width: 390px) {
+  .beat-card {
+    grid-template-columns: 88px minmax(0, 1fr);
+  }
+}
+/* Beat Store desktop density */
+.beat-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
+  border: 0;
+}
+
+.beat-grid .beat-card {
+  padding: 14px;
+  border: 1px solid var(--hr-border);
+}
+
+.beat-card__cover {
+  max-width: 260px;
+  justify-self: center;
+}
+
+@media (max-width: 1200px) and (min-width: 761px) {
+  .beat-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .beat-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .beat-grid .beat-card {
+    grid-template-columns: 112px minmax(0, 1fr);
+    align-items: start;
+    gap: 0 12px;
+    padding: 10px;
+  }
+
+  .beat-grid .beat-card__cover {
+    grid-column: 1;
+    grid-row: 1;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+  }
+
+  .beat-grid .beat-card__body {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+  }
+
+  .beat-grid .beat-card__actions .primary-button {
+    width: fit-content;
+    min-height: 32px;
+    padding: 7px 10px;
+    font-size: 9px;
+  }
+}
+
+@media (max-width: 390px) {
+  .beat-grid .beat-card {
+    grid-template-columns: 88px minmax(0, 1fr);
+  }
+}

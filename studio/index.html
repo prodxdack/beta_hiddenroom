@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Servicios de estudio Hidden Room: grabación, producción y proyectos musicales.">
+  <meta property="og:title" content="Studio | Hidden Room">
+  <meta property="og:description" content="Elige tu sesión de estudio y prepara una solicitud con Hidden Room.">
+  <meta property="og:image" content="https://hiddenroom.mx/assets/img/studio_mic_1.webp">
+  <meta property="og:url" content="https://hiddenroom.mx/studio/">
+  <meta property="og:type" content="website">
+  <title>Studio | Hidden Room</title>
+  <link rel="icon" type="image/webp" href="../assets/img/orange_logo.webp">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Space+Grotesk:wght@400;500;600;700&family=Unbounded:wght@400;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../styles.css?v=20260901-typography">
+  <link rel="stylesheet" href="studio.css?v=20260830-studio-revenue-mvp">
+</head>
+<body class="studio-page hr-page" data-hr-chrome data-hr-context="studio">
+  <div id="hr-global-nav"></div>
+
+  <main>
+    <section class="studio-hero hr-section" aria-labelledby="studio-title">
+      <div class="hr-container studio-hero__grid">
+        <div class="studio-hero__copy hr-stack">
+          <p class="hr-eyebrow">Studio / Hidden Room</p>
+          <h1 id="studio-title" class="hr-title-xl">Haz que<br><em>suene</em><br>tuyo.</h1>
+          <p class="hr-subtitle">Sesiones de grabación y producción para artistas que quieren avanzar con una ruta clara, un espacio real y atención de principio a fin.</p>
+          <div class="hr-cluster">
+            <a class="hr-btn hr-btn-primary" href="#solicitud">Armar mi solicitud</a>
+            <a class="hr-btn hr-btn-outline" href="/#studio">Ver precios en Home</a>
+          </div>
+        </div>
+        <figure class="studio-hero__visual hr-card">
+          <img src="../assets/img/studio_mic_1.webp" alt="Micrófono en el estudio Hidden Room">
+          <figcaption><span>01</span> Tu sesión empieza con una buena decisión.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="studio-services hr-section" aria-labelledby="services-title">
+      <div class="hr-container hr-stack hr-stack-xl">
+        <div class="studio-section-heading">
+          <p class="hr-eyebrow">Servicios</p>
+          <h2 id="services-title" class="hr-title">Elige el punto de partida.</h2>
+          <p class="hr-subtitle">Los precios mostrados son los publicados actualmente en Hidden Room. La disponibilidad final se confirma por WhatsApp.</p>
+        </div>
+        <div id="studio-services-grid" class="studio-services__grid" aria-live="polite"></div>
+        <noscript><p class="hr-error">Activa JavaScript para consultar los servicios y preparar tu solicitud.</p></noscript>
+      </div>
+    </section>
+
+    <section id="solicitud" class="studio-request hr-section" aria-labelledby="request-title">
+      <div class="hr-container studio-request__grid">
+        <div class="studio-request__intro hr-stack">
+          <p class="hr-eyebrow">Solicitud</p>
+          <h2 id="request-title" class="hr-title">Cuéntanos qué necesitas.</h2>
+          <p class="hr-subtitle">Selecciona una opción, sede y fecha preferida. Al final podrás abrir un mensaje ya preparado en WhatsApp y revisar todo antes de enviarlo.</p>
+          <ol class="studio-request__steps">
+            <li><span>01</span><strong>Selecciona</strong><small>Servicio y sede.</small></li>
+            <li><span>02</span><strong>Describe</strong><small>Fecha y contexto.</small></li>
+            <li><span>03</span><strong>Confirma</strong><small>Revisa el mensaje.</small></li>
+          </ol>
+        </div>
+
+        <form id="studio-request-form" class="studio-request__form hr-card hr-panel hr-stack" novalidate>
+          <div class="studio-form__top">
+            <p class="hr-eyebrow">Solicitud de Studio</p>
+            <p id="studio-price" class="studio-form__price" aria-live="polite">Selecciona un servicio</p>
+          </div>
+          <label class="hr-field"><span>Servicio</span><select id="studio-service" name="service" class="hr-select" required></select></label>
+          <label class="hr-field"><span>Sede preferida</span><select id="studio-location" name="location" class="hr-select" required></select></label>
+          <label class="hr-field"><span>Fecha preferida</span><input id="studio-date" name="date" class="hr-input" type="date" required></label>
+          <label class="hr-field"><span>Tu nombre o proyecto <small>(opcional)</small></span><input id="studio-name" name="name" class="hr-input" type="text" maxlength="80" autocomplete="name" placeholder="Nombre artístico o proyecto"></label>
+          <label class="hr-field"><span>Nota para el equipo <small>(opcional)</small></span><textarea id="studio-notes" name="notes" class="hr-textarea" rows="4" maxlength="500" placeholder="Cuéntanos brevemente qué quieres grabar o producir."></textarea></label>
+          <button class="hr-btn hr-btn-primary hr-btn-block" type="submit">Preparar solicitud en WhatsApp</button>
+          <p class="studio-form__hint">No se envía nada automáticamente. Podrás revisar el mensaje antes de compartirlo.</p>
+          <div id="studio-request-result" class="studio-request__result" role="status" aria-live="polite" hidden></div>
+        </form>
+      </div>
+    </section>
+
+    <section class="studio-note hr-section" aria-label="Siguiente paso">
+      <div class="hr-container studio-note__inner hr-card">
+        <div><p class="hr-eyebrow">Siguiente paso</p><h2 class="hr-title">Tu idea. El siguiente track.</h2></div>
+        <p>La solicitud no bloquea una fecha ni cobra un anticipo. El equipo confirma disponibilidad, alcance y condiciones antes de cerrar la sesión.</p>
+      </div>
+    </section>
+  </main>
+
+  <script src="../site.js?v=20260830-studio-revenue-mvp"></script>
+  <script src="../analytics/analytics.js?v=20260830-analytics-minimum"></script>
+  <script type="module" src="studio.js?v=20260830-studio-revenue-mvp"></script>
+</body>
+</html>

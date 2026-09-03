@@ -13,7 +13,7 @@
   --cyan: #38bdf8;
   --green: #42e879;
   --gold: #f5c451;
-  --mono: "DM Mono", monospace;
+  --mono: "Space Grotesk", sans-serif;
   --display: "Unbounded", sans-serif;
 }
 
@@ -34,6 +34,7 @@ button { color: inherit; }
   border-bottom: 1px solid var(--line); background: rgba(7,8,12,.88); backdrop-filter: blur(16px);
 }
 .eyebrow, .section-title span { margin: 0 0 8px; color: var(--red-hot); font-size: 9px; letter-spacing: .2em; text-transform: uppercase; }
+.eyebrow, .section-title span { display: none; }
 h1 { margin: 0; font: 700 clamp(28px, 3vw, 46px)/1 var(--display); letter-spacing: -.06em; }
 h1 span { color: var(--red); }
 .subtitle { margin: 10px 0 0; color: var(--muted); font-size: 10px; letter-spacing: .08em; }

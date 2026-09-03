@@ -127,7 +127,7 @@ async function init() {
   setupShare(post);
   status.hidden = true;
   article.hidden = false;
-  supabase.rpc("increment_media_post_views", { post_slug: post.slug });
+  supabase.functions.invoke("register-media-post-view", { body: { slug: post.slug } }).catch(() => {});
   loadRelated(post);
 }
 

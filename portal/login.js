@@ -135,48 +135,6 @@ document.addEventListener("click", (event) => {
   button.setAttribute("aria-label", visible ? "Ver contraseña" : "Ocultar contraseña");
 });
 
-const registeredEmailMessage = "ERROR. E-mail ya REGISTRADO. Si has USADO nuestros productos PREVIAMENTE tu registro fue generado por Kairen en automático. SOLICITA un email con tu contraseña.";
-
-function isAlreadyRegisteredError(error) {
-  const message = String(error?.message ?? "").toLowerCase();
-  return message.includes("already registered")
-    || message.includes("user already")
-    || message.includes("already exists")
-    || message.includes("registered");
-}
-
-async function isRegisteredEmail(email) {
-  const rpc = await supabase.rpc("email_is_registered", { p_email: email });
-  if (!rpc.error) return Boolean(rpc.data);
-
-  console.info("[HR] recovery rpc email check skipped:", rpc.error.message);
-
-  const primary = await supabase
-    .from("users")
-    .select("id")
-    .ilike("email", email)
-    .limit(1);
-
-  if (primary.error) {
-    console.info("[HR] recovery user check users skipped:", primary.error.message);
-  }
-
-  if (Array.isArray(primary.data) && primary.data.length > 0) return true;
-
-  const safe = await supabase
-    .from("users_safe")
-    .select("id")
-    .ilike("email", email)
-    .limit(1);
-
-  if (safe.error) {
-    console.info("[HR] recovery user check users_safe skipped:", safe.error.message);
-    return primary.error ? null : false;
-  }
-
-  return Array.isArray(safe.data) ? safe.data.length > 0 : Boolean(safe.data);
-}
-
 function setPasswordResetCooldown(seconds = 60) {
   if (!passwordResetLink) return;
 
@@ -229,23 +187,14 @@ passwordResetLink?.addEventListener("click", async (event) => {
   setPasswordResetBusy(true);
 
   try {
-    const registered = await isRegisteredEmail(email);
-    if (registered === false) {
-      alert("Usuario no registrado");
-      return;
-    }
-
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: new URL("./recovery.html", window.location.href).href,
     });
 
-    if (error) {
-      alert(error.message || "No se pudo enviar el email de recuperación.");
-      return;
-    }
+    if (error) console.info("[HR] recovery request completed with a generic response:", error.message);
 
     setPasswordResetCooldown(60);
-    alert("Email de recuperación enviado.");
+    alert("Si el correo está asociado a una cuenta, recibirás instrucciones de recuperación.");
   } finally {
     setPasswordResetBusy(false);
   }
@@ -287,7 +236,7 @@ form.addEventListener("submit", async (event) => {
     });
 
     if (error) {
-      alert(isAlreadyRegisteredError(error) ? registeredEmailMessage : (error.message || "No se pudo registrar la cuenta"));
+      alert("No se pudo completar el registro. Verifica los datos e intenta nuevamente.");
       return;
     }
 
