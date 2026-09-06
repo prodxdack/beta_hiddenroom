@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Space+Grotesk:wght@400;500;600;700&family=Unbounded:wght@400;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="../../styles.css?v=20260902-mobile-search-centered-v7">
+  <link rel="stylesheet" href="../../styles.css?v=20260905-beat-store-search-v1">
 
 </head>
 <body class="store-page beat-store-page hr-page" data-page="beat-store" data-hr-chrome data-hr-context="store">
@@ -85,30 +85,41 @@
         </div>
 
         <div class="beat-results-toolbar hr-cluster">
-          <div id="beat-filter-controls" class="beat-filter-controls" aria-label="Filtros del catálogo">
-            <label class="hr-field">
+          <div class="controls-row">
+            <div id="beat-filter-controls" class="beat-filter-controls" aria-label="Filtros del catálogo">
+            <button class="beat-advanced-toggle" type="button" data-beat-advanced-toggle aria-controls="beat-filter-panel" aria-expanded="false"><span>+ Filtros</span><span id="beat-filter-count" class="beat-filter-count" hidden>0</span></button>
+            <label class="hr-field beat-genre-filter-field">
               <span>Género</span>
               <select id="beat-genre" class="hr-select">
+                <option value="__placeholder__" selected disabled>Género</option>
                 <option value="">Todos</option>
               </select>
             </label>
-            <label class="hr-field">
+            <label class="hr-field beat-sort-parameter-field">
               <span>Orden</span>
               <select id="beat-sort" class="hr-select">
-                <option value="featured">Destacados primero</option>
-                <option value="newest">Más recientes</option>
-                <option value="name">Nombre</option>
+                <option value="__placeholder__" selected disabled>Orden</option>
+                <option value="featured_desc">Destacados</option>
+                <option value="date_desc">Más nuevos</option>
+                <option value="name_asc">Nombre A–Z</option>
+                <option value="name_desc">Nombre Z–A</option>
+                <option value="price_asc">Precio menor a mayor</option>
+                <option value="price_desc">Precio mayor a menor</option>
+                <option value="bpm_asc">BPM menor a mayor</option>
+                <option value="bpm_desc">BPM mayor a menor</option>
               </select>
             </label>
             <label class="hr-field beat-producer-filter-field">
               <span>Productor</span>
               <select id="beat-producer-filter" class="hr-select">
-                <option value="">Todos</option>
+                <option value="" disabled>Productor</option>
               </select>
             </label>
-            <button class="beat-advanced-toggle" type="button" data-beat-advanced-toggle aria-controls="beat-filter-panel" aria-expanded="false">+ Filtros</button>
+            </div>
           </div>
-          <button id="beat-clear-filters" class="secondary-button hr-btn hr-btn-outline" type="button" disabled>Limpiar filtros</button>
+          <div class="clear-row">
+            <button id="beat-clear-filters" class="secondary-button hr-btn hr-btn-outline" type="button" disabled>Limpiar filtros</button>
+          </div>
         </div>
         <div id="beat-grid" class="beat-grid product-grid hr-card-grid" aria-live="polite" aria-busy="true">
           <p class="hr-table-loading">Cargando Beat Store...</p>
@@ -246,7 +257,7 @@
 
   <script src="../../site.js?v=20260809-beat-player-waveform"></script>
   <script src="../../analytics/analytics.js?v=20260830-analytics-minimum"></script>
-  <script type="module" src="bs.js?v=20260902-mobile-filter-compact-v1"></script>
+  <script type="module" src="bs.js?v=20260904-beat-store-sort-v6"></script>
 <script src="/spa.js?v=20260808-phase3-polish"></script>
 </body>
 </html>
