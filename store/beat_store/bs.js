@@ -25,6 +25,9 @@ const priceMaxInput = document.getElementById("beat-price-max");
 const bpmMinInput = document.getElementById("beat-bpm-min");
 const bpmMaxInput = document.getElementById("beat-bpm-max");
 const clearFiltersButton = document.getElementById("beat-clear-filters");
+const beatFilterCount = document.getElementById("beat-filter-count");
+const activeProducerSelect = () => producerSelect || advancedProducerSelect;
+const SELECT_PLACEHOLDER = "__placeholder__";
 const adminPanel = document.getElementById("beat-admin-panel");
 const adminForm = document.getElementById("beat-admin-form");
 const adminList = document.getElementById("beat-admin-products");
@@ -106,9 +109,8 @@ async function initBeatStore() {
     setBeatAdvancedPanelOpen(false);
   }, { signal: hrBeatStoreLifecycle.signal }));
   document.addEventListener("keydown", handleBeatFilterPanelKeydown, { signal: hrBeatStoreLifecycle.signal });
-  [sortSelect, genreSelect, producerSelect, advancedProducerSelect].forEach((control) => control?.addEventListener("change", () => {
+  [sortSelect, genreSelect, advancedProducerSelect].forEach((control) => control?.addEventListener("change", () => {
     if (control === producerSelect && advancedProducerSelect) advancedProducerSelect.value = producerSelect.value;
-    if (control === advancedProducerSelect && producerSelect) producerSelect.value = advancedProducerSelect.value;
     renderBeats();
     syncBeatUrlState(true);
   }, { signal: hrBeatStoreLifecycle.signal }));
@@ -473,14 +475,14 @@ function buildBeatSearchIndex() {
 
 function renderBeats() {
   const query = String(searchInput?.value || "").trim().toLowerCase();
-  const genre = String(genreSelect?.value || "").trim();
-  const producer = String(producerSelect?.value || "").trim();
+  const genre = genreSelect?.value === SELECT_PLACEHOLDER ? "" : String(genreSelect?.value || "").trim();
+  const producer = String(activeProducerSelect()?.value || "").trim();
   const priceMin = numericFilterValue(priceMinInput);
   const priceMax = numericFilterValue(priceMaxInput);
   const bpmMin = numericFilterValue(bpmMinInput);
   const bpmMax = numericFilterValue(bpmMaxInput);
-  const mode = sortSelect?.value || "featured";
-  const sorted = sortItems(state.items, mode);
+  const sortMode = sortSelect?.value && sortSelect.value !== SELECT_PLACEHOLDER ? sortSelect.value : "featured_desc";
+  const sorted = sortItems(state.items, sortMode);
   const filtered = sorted.filter((item) => {
     const price = Number(item.product?.price || 0);
     const bpm = Number(item.product?.beat_bpm || item.beat?.bpm || 0);
@@ -494,7 +496,7 @@ function renderBeats() {
       && (bpmMin === null || bpm >= bpmMin)
       && (bpmMax === null || bpm <= bpmMax);
   });
-  const renderKey = `${state.renderVersion}|${query}|${genre}|${producer}|${priceMin ?? ""}|${priceMax ?? ""}|${bpmMin ?? ""}|${bpmMax ?? ""}|${mode}|${filtered.map((item) => item.id).join(",")}`;
+  const renderKey = `${state.renderVersion}|${query}|${genre}|${producer}|${priceMin ?? ""}|${priceMax ?? ""}|${bpmMin ?? ""}|${bpmMax ?? ""}|${sortMode}|${filtered.map((item) => item.id).join(",")}`;
   if (renderKey === state.renderedKey) return;
   state.renderedKey = renderKey;
   updateBeatFilterUi(filtered.length, state.items.length, renderKey);
@@ -570,23 +572,36 @@ function renderGenreOptions() {
     .filter(Boolean)
     .map((genre) => [normalizeKey(genre), genre])).entries())
     .sort((a, b) => a[1].localeCompare(b[1]));
-  genreSelect.innerHTML = `<option value="">Todos</option>${genres.map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join("")}`;
-  genreSelect.value = genres.some(([value]) => value === current) ? current : "";
+  genreSelect.innerHTML = `<option value="${SELECT_PLACEHOLDER}" disabled>Género</option><option value="">Todos</option>${genres.map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(formatGenreLabel(label))}</option>`).join("")}`;
+  genreSelect.value = genres.some(([value]) => value === current) || current === "" ? current : SELECT_PLACEHOLDER;
+}
+
+function formatGenreLabel(value) {
+  return String(value || "")
+    .trim()
+    .toLocaleLowerCase("es-MX")
+    .replace(/(^|[\s/-])([a-záéíóúüñ])/giu, (_, separator, letter) => `${separator}${letter.toLocaleUpperCase("es-MX")}`);
 }
 
 function renderProducerOptions() {
-  if (!producerSelect) return;
-  const current = producerSelect.value;
+  const targetSelect = activeProducerSelect();
+  if (!targetSelect) return;
+  const current = targetSelect.value;
   const producers = Array.from(new Map(state.items.map((item) => {
     const profile = producerProfileForProduct(item.product);
     const value = normalizeKey(profile?.slug || item.product?.producer || "");
     return [value, producerDisplayName(profile?.display_name || item.product?.producer || "")];
   }).filter(([value, label]) => value && label)).entries()).sort((a, b) => a[1].localeCompare(b[1]));
-  producerSelect.innerHTML = `<option value="">Todos</option>${producers.map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join("")}`;
-  producerSelect.value = producers.some(([value]) => value === current) ? current : "";
-  if (advancedProducerSelect) {
-    advancedProducerSelect.innerHTML = `<option value="">Todos</option>${producers.map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join("")}`;
-    advancedProducerSelect.value = producerSelect.value;
+  const options = `<option value="" disabled>Productor</option>${producers.map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join("")}`;
+  targetSelect.innerHTML = options;
+  targetSelect.value = producers.some(([value]) => value === current) ? current : "";
+  if (producerSelect && producerSelect !== targetSelect) {
+    producerSelect.innerHTML = options;
+    producerSelect.value = targetSelect.value;
+  }
+  if (advancedProducerSelect && advancedProducerSelect !== targetSelect) {
+    advancedProducerSelect.innerHTML = options;
+    advancedProducerSelect.value = targetSelect.value;
   }
 }
 
@@ -597,61 +612,66 @@ function numericFilterValue(input) {
 }
 
 function applyBeatUrlState() {
-  const params = new URLSearchParams(window.location.search);
-  if (searchInput) searchInput.value = params.get("q") || "";
-  if (genreSelect) genreSelect.value = params.get("genre") || "";
-  if (producerSelect) producerSelect.value = params.get("producer") || "";
-  if (advancedProducerSelect) advancedProducerSelect.value = producerSelect?.value || "";
-  if (priceMinInput) priceMinInput.value = params.get("min_price") || "";
-  if (priceMaxInput) priceMaxInput.value = params.get("max_price") || "";
-  if (bpmMinInput) bpmMinInput.value = params.get("min_bpm") || "";
-  if (bpmMaxInput) bpmMaxInput.value = params.get("max_bpm") || "";
-  if (sortSelect) sortSelect.value = params.get("sort") || "featured";
+  if (searchInput) searchInput.value = "";
+  if (genreSelect) genreSelect.value = SELECT_PLACEHOLDER;
+  if (activeProducerSelect()) activeProducerSelect().value = "";
+  if (priceMinInput) priceMinInput.value = "";
+  if (priceMaxInput) priceMaxInput.value = "";
+  if (bpmMinInput) bpmMinInput.value = "";
+  if (bpmMaxInput) bpmMaxInput.value = "";
+  if (sortSelect) sortSelect.value = SELECT_PLACEHOLDER;
   beatLastUrlState = beatUrlStateKey();
 }
 
 function beatUrlStateKey() {
-  return [searchInput?.value || "", genreSelect?.value || "", producerSelect?.value || "", priceMinInput?.value || "", priceMaxInput?.value || "", bpmMinInput?.value || "", bpmMaxInput?.value || "", sortSelect?.value || "featured"].join("|");
+  return [searchInput?.value || "", genreSelect?.value || "", activeProducerSelect()?.value || "", priceMinInput?.value || "", priceMaxInput?.value || "", bpmMinInput?.value || "", bpmMaxInput?.value || "", sortSelect?.value || "featured_desc"].join("|");
 }
 
 function syncBeatUrlState(push = false) {
   window.clearTimeout(beatFilterUrlTimer);
   beatFilterUrlTimer = window.setTimeout(() => {
-    const key = beatUrlStateKey();
-    if (!push && key === beatLastUrlState) return;
-    const url = new URL(window.location.href);
-    const values = { q: searchInput?.value.trim(), genre: genreSelect?.value, producer: producerSelect?.value, min_price: priceMinInput?.value, max_price: priceMaxInput?.value, min_bpm: bpmMinInput?.value, max_bpm: bpmMaxInput?.value };
-    for (const [name, value] of Object.entries(values)) value ? url.searchParams.set(name, value) : url.searchParams.delete(name);
-    if (sortSelect?.value && sortSelect.value !== "featured") url.searchParams.set("sort", sortSelect.value);
-    else url.searchParams.delete("sort");
-    window.history.pushState({}, "", url);
-    beatLastUrlState = key;
+    beatLastUrlState = beatUrlStateKey();
   }, push ? 0 : 120);
 }
 
 function updateBeatFilterUi(resultCount, totalCount) {
+  const activeFilterCount = [genreSelect?.value === SELECT_PLACEHOLDER ? null : genreSelect, activeProducerSelect(), priceMinInput, priceMaxInput, bpmMinInput, bpmMaxInput]
+    .filter((input) => input?.value.trim()).length;
+  if (beatFilterCount) {
+    beatFilterCount.textContent = String(activeFilterCount);
+    beatFilterCount.hidden = activeFilterCount === 0;
+  }
+  if (beatAdvancedToggle) {
+    beatAdvancedToggle.setAttribute("aria-label", activeFilterCount ? `Filtros, ${activeFilterCount} activos` : "Filtros");
+  }
   if (clearFiltersButton) clearFiltersButton.disabled = !hasBeatFilters();
 }
 
 function hasBeatFilters() {
-  return Boolean(searchInput?.value.trim() || genreSelect?.value || producerSelect?.value || priceMinInput?.value || priceMaxInput?.value || bpmMinInput?.value || bpmMaxInput?.value || (sortSelect?.value && sortSelect.value !== "featured"));
+  return Boolean(searchInput?.value.trim() || (genreSelect?.value && genreSelect.value !== SELECT_PLACEHOLDER) || activeProducerSelect()?.value || priceMinInput?.value || priceMaxInput?.value || bpmMinInput?.value || bpmMaxInput?.value);
 }
 
 function clearBeatFilters() {
   [searchInput, producerSelect, advancedProducerSelect, priceMinInput, priceMaxInput, bpmMinInput, bpmMaxInput].forEach((input) => { if (input) input.value = ""; });
-  if (genreSelect) genreSelect.value = "";
-  if (sortSelect) sortSelect.value = "featured";
+  if (genreSelect) genreSelect.value = SELECT_PLACEHOLDER;
+  if (sortSelect) sortSelect.value = SELECT_PLACEHOLDER;
 }
 
 function clearBeatAdvancedFilters() {
-  [producerSelect, advancedProducerSelect, priceMinInput, priceMaxInput, bpmMinInput, bpmMaxInput].forEach((input) => { if (input) input.value = ""; });
+  [genreSelect, producerSelect, advancedProducerSelect, priceMinInput, priceMaxInput, bpmMinInput, bpmMaxInput].forEach((input) => { if (input) input.value = ""; });
 }
 
-function sortItems(items, mode) {
+function sortItems(items, mode = "featured_desc") {
+  const [parameter, order] = mode.split("_");
+  const direction = order === "asc" ? 1 : -1;
   return [...items].sort((a, b) => {
-    if (mode === "name") return itemTitle(a).localeCompare(itemTitle(b));
-    if (mode === "newest") return String(b.beat?.modified || "").localeCompare(String(a.beat?.modified || ""));
-    return Number(Boolean(b.product?.featured)) - Number(Boolean(a.product?.featured)) || itemTitle(a).localeCompare(itemTitle(b));
+    let result = 0;
+    if (parameter === "name") result = itemTitle(a).localeCompare(itemTitle(b));
+    else if (parameter === "date") result = String(a.beat?.modified || "").localeCompare(String(b.beat?.modified || ""));
+    else if (parameter === "price") result = Number(a.product?.price || 0) - Number(b.product?.price || 0);
+    else if (parameter === "bpm") result = Number(a.product?.beat_bpm || a.beat?.bpm || 0) - Number(b.product?.beat_bpm || b.beat?.bpm || 0);
+    else result = Number(Boolean(a.product?.featured)) - Number(Boolean(b.product?.featured));
+    return result * direction || itemTitle(a).localeCompare(itemTitle(b));
   });
 }
 
