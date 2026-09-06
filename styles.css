@@ -13987,3 +13987,13 @@ body[data-hr-context="media"] .hr-nav[data-accent="media"] {
     padding-left: 24px;
   }
 }
+
+@media (max-width: 760px) {
+  .beat-store-page .beat-results-toolbar #beat-sort {
+    color: var(--hr-text);
+  }
+
+  .beat-store-page .beat-results-toolbar #beat-sort option[value="__placeholder__"] {
+    color: var(--hr-text);
+  }
+}
