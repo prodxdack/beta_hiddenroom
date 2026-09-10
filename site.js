@@ -114,9 +114,16 @@ function renderSubNav(module) {
     const isBeatStore = path.startsWith("/store/beat_store/");
     if (isBeatStore) {
       const isBeatAdmin = searchParams.get("view") === "admin" || searchParams.get("admin") === "1";
+      const isBeatUpload = path.endsWith("/new-beat.html");
       return [
-        item("/store/beat_store/#beat-grid", "Explorar beats", !isBeatAdmin),
+        item("/store/beat_store/", "Explorar beats", !isBeatAdmin && !isBeatUpload),
         item("/store/cart.html", 'Carrito <span class="cart-count">0</span>', page === "cart"),
+        item(
+          "/store/beat_store/new-beat.html",
+          "Subir",
+          isBeatUpload,
+          ' data-permission-nav-link="beats.upload" hidden',
+        ),
         item("/store/beat_store/?view=admin", "Admin beats", isBeatAdmin, " data-admin-nav-link hidden data-beat-admin-entry"),
       ].join("");
     }
@@ -536,8 +543,15 @@ function setAdminNavigationVisibility(visible) {
   });
 }
 
+function setPermissionNavigationVisibility(permissionKey, visible) {
+  document.querySelectorAll("[data-permission-nav-link]").forEach((link) => {
+    if (link.dataset.permissionNavLink === permissionKey) link.hidden = !visible;
+  });
+}
+
 window.HiddenRoomNavigation = window.HiddenRoomNavigation || {
   setAdminLinksVisible: setAdminNavigationVisibility,
+  setPermissionLinksVisible: setPermissionNavigationVisibility,
 };
 
 async function hydrateGlobalSession() {
@@ -562,6 +576,7 @@ async function hydrateGlobalSession() {
       sessionTargets.forEach((target) => { target.hidden = false; });
       drawerTargets.forEach((target) => { target.hidden = false; });
       setAdminNavigationVisibility(false);
+      setPermissionNavigationVisibility("beats.upload", false);
       renderGlobalNotifications([]);
       toggleGlobalNotifications(false);
       return;
@@ -572,6 +587,22 @@ async function hydrateGlobalSession() {
       .select("user_id,display_name,username,email,avatar_url,roles,ig_username")
       .eq("id", user.id)
       .maybeSingle();
+
+    const permissionResult = await supabase.rpc("has_beats_upload_permission");
+    let hasBeatUploadPermission = permissionResult.data;
+    if (permissionResult.error) {
+      const { data: permissionRows } = await supabase
+        .from("user_permissions")
+        .select("permission_key")
+        .eq("user_id", user.id);
+      hasBeatUploadPermission = (permissionRows || [])
+        .map((row) => String(row.permission_key || "").trim().toLowerCase())
+        .includes("beats.upload");
+    }
+    setPermissionNavigationVisibility(
+      "beats.upload",
+      roleListIncludesAdmin(profile?.roles) || Boolean(hasBeatUploadPermission),
+    );
 
     const notificationTargets = [user.id, profile?.user_id].filter(Boolean).map(String);
     let notifications = [];
@@ -609,6 +640,8 @@ async function hydrateGlobalSession() {
     renderGlobalNotifications(notifications);
     showGlobalInstagramUsernamePrompt(profile, user, supabase);
   } catch (error) {
+    setAdminNavigationVisibility(false);
+    setPermissionNavigationVisibility("beats.upload", false);
     sessionTargets.forEach((target) => {
       target.innerHTML = guestHeaderMarkup();
       target.hidden = false;
@@ -1550,3 +1583,4 @@ if (track) {
   });
 
 }
+

@@ -4,16 +4,31 @@ const form = document.getElementById('beat-form');
 const errorElement = document.getElementById('form-error');
 const statusElement = document.getElementById('form-status');
 const reviewButton = document.getElementById('submit-review');
-const state = { session: null, profile: null, product: null, licenses: [], assignments: [] };
+const state = { session: null, user: null, profile: null, product: null, licenses: [], assignments: [] };
 
 init().catch((error) => showError(error.message || 'No se pudo cargar el formulario.'));
 
 async function init() {
   const { data } = await supabase.auth.getSession(); state.session = data.session;
   if (!state.session) { sessionStorage.setItem('hr_return_after_login', location.href); window.location.replace('../../portal/'); return; }
-  const { data: profile, error } = await supabase.from('producer_profiles').select('id, display_name, approval_status, is_active').eq('user_id', state.session.user.id).maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!profile || profile.approval_status !== 'approved' || !profile.is_active) throw new Error('Sólo un productor aprobado puede crear beats.');
+  const [{ data: account, error: accountError }, { data: profile, error: profileError }] = await Promise.all([
+    supabase.from('users').select('display_name, username, roles').eq('id', state.session.user.id).maybeSingle(),
+    supabase.from('producer_profiles').select('id, display_name').eq('user_id', state.session.user.id).maybeSingle(),
+  ]);
+  if (accountError || profileError) throw new Error((accountError || profileError).message);
+  const permissionResult = await supabase.rpc('has_beats_upload_permission');
+  let hasBeatUploadPermission = permissionResult.data;
+  if (permissionResult.error) {
+    const { data: permissionRows, error: permissionLookupError } = await supabase
+      .from('user_permissions').select('permission_key').eq('user_id', state.session.user.id);
+    if (permissionLookupError) throw new Error(permissionResult.error.message);
+    hasBeatUploadPermission = (permissionRows || [])
+      .map((row) => String(row.permission_key || '').trim().toLowerCase())
+      .includes('beats.upload');
+  }
+  const roles = String(account?.roles || '').split(',').map((role) => role.trim().toLowerCase());
+  if (!roles.includes('admin') && !hasBeatUploadPermission) throw new Error('Tu cuenta no tiene permiso para subir beats.');
+  state.user = account;
   state.profile = profile;
   const [{ data: licenses, error: licenseError }] = await Promise.all([supabase.from('beat_licenses').select('id, name, min_price, max_price, description, format, is_active').eq('is_active', true).order('created_at')]);
   if (licenseError) throw new Error(licenseError.message); state.licenses = licenses || [];
@@ -43,7 +58,9 @@ async function saveDraft(event, sendReview) {
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(values.slug.trim().toLowerCase())) return showError('El slug sólo puede usar minúsculas, números y guiones.');
   const button = event ? form.querySelector('button[type=submit]') : reviewButton; button.disabled = true; statusElement.textContent = 'Guardando borrador...';
   try {
-    const payload = { category:'beats', name:values.name.trim(), slug:values.slug.trim().toLowerCase(), description:values.description?.trim() || null, price, currency:'MXN', is_digital:true, is_active:false, publication_status:'draft', producer_user_id:state.session.user.id, producer_profile_id:state.profile.id, producer:`@${state.profile.display_name}`, beat_genre:values.genre?.trim() || null, beat_bpm:values.bpm ? Number(values.bpm) : null, beat_key:values.key?.trim() || null, beat_preview_status: state.product?.beat_preview_status || 'pending' };
+    const producerName = state.profile?.display_name || state.user?.display_name || state.user?.username || null;
+    const producer = producerName ? `@${String(producerName).replace(/^@+/, '')}` : null;
+    const payload = { category:'beats', name:values.name.trim(), slug:values.slug.trim().toLowerCase(), description:values.description?.trim() || null, price, currency:'MXN', is_digital:true, is_active:false, publication_status:'draft', producer_user_id:state.session.user.id, producer_profile_id:state.profile?.id || null, producer, beat_genre:values.genre?.trim() || null, beat_bpm:values.bpm ? Number(values.bpm) : null, beat_key:values.key?.trim() || null, beat_preview_status: state.product?.beat_preview_status || 'pending' };
     const query = state.product ? supabase.from('store_products').update(payload).eq('id', state.product.id).eq('producer_user_id', state.session.user.id).select('id').single() : supabase.from('store_products').insert(payload).select('id').single();
     const { data, error } = await query; if (error) throw new Error(error.message); const id = state.product?.id || data.id; state.product = { ...(state.product || {}), id };
     await uploadFiles(id, values.slug.trim().toLowerCase()); await saveAssignments(id);
@@ -63,3 +80,4 @@ function slugify(value) { return String(value || '').normalize('NFKD').replace(/
 function showError(message) { errorElement.textContent = message; statusElement.textContent = ''; }
 function clearError() { errorElement.textContent = ''; }
 function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char])); }
+
