@@ -16597,3 +16597,14 @@ html:has(body.beat-store-page) {
   .beat-store-page #hr-beat-player .hr-beat-player__controls .hr-beat-player__wave-wrap,
   .beat-store-page #hr-beat-player .hr-beat-player__controls .hr-beat-player__wave { height: 24px !important; min-height: 24px !important; }
 }
+
+/* Fullscreen must sit above every navigation/header stacking layer. */
+.beat-store-page .hr-beat-player-fullscreen {
+  z-index: 2147483000 !important;
+  isolation: isolate;
+}
+
+body.beat-store-page.hr-beat-player-fullscreen-open #hr-global-nav,
+body.beat-store-page.hr-beat-player-fullscreen-open .hr-global-drawer {
+  z-index: 0 !important;
+}
