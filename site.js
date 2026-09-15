@@ -114,10 +114,22 @@ function renderSubNav(module) {
     const isBeatStore = path.startsWith("/store/beat_store/");
     if (isBeatStore) {
       const isBeatAdmin = searchParams.get("view") === "admin" || searchParams.get("admin") === "1";
+      const isBeatUpload = path.endsWith("/new-beat.html");
       return [
-        item("/store/beat_store/#beat-grid", "Explorar beats", !isBeatAdmin),
-        item("/store/cart.html", 'Carrito <span class="cart-count">0</span>', page === "cart"),
-        item("/store/beat_store/?view=admin", "Admin beats", isBeatAdmin, " data-admin-nav-link hidden data-beat-admin-entry"),
+        item("/store/beat_store/", "Explorar beats", !isBeatAdmin && !isBeatUpload),
+        item("/store/cart.html", 'Carrito <span class="cart-count">0</span>', path.endsWith("/cart.html")),
+        item(
+          "/store/beat_store/new-beat.html",
+          "Subir",
+          isBeatUpload,
+          ' data-permission-nav-link="beats.upload" hidden',
+        ),
+        item(
+          "/store/beat_store/?view=admin",
+          "Admin beats",
+          isBeatAdmin,
+          " data-admin-nav-link hidden data-beat-admin-entry",
+        ),
       ].join("");
     }
 
@@ -173,7 +185,10 @@ function renderNavActions(module) {
     return `
       <button class="hr-nav__notifications" id="js-notifications-toggle" aria-label="Notificaciones"
         aria-expanded="false" aria-controls="js-notifications-panel">
-        <span class="db-icon db-icon--bell" aria-hidden="true"></span>
+        <svg class="hr-nav__notification-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M10.27 21a2 2 0 0 0 3.46 0" />
+          <path d="M3.26 15.33A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.67C19.41 13.96 18 12.5 18 10a6 6 0 0 0-12 0c0 2.5-1.41 3.96-2.74 5.33Z" />
+        </svg>
         <span class="hr-nav__notifications-label">Notificaciones</span>
         <span class="hr-nav__notification-count" id="js-notif-count"
           aria-label="notificaciones sin leer" hidden></span>
@@ -436,9 +451,12 @@ function authenticatedHeaderMarkup(profile, user, unread = 0, drawer = false) {
     <button class="hr-nav__notifications" type="button" data-hr-notifications-toggle
       aria-label="Notificaciones${unread ? `, ${unread} sin leer` : ""}"
       aria-controls="hr-global-notifications" aria-expanded="false">
-      <span class="db-icon db-icon--bell" aria-hidden="true"></span>
+      <svg class="hr-nav__notification-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M10.27 21a2 2 0 0 0 3.46 0" />
+        <path d="M3.26 15.33A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.67C19.41 13.96 18 12.5 18 10a6 6 0 0 0-12 0c0 2.5-1.41 3.96-2.74 5.33Z" />
+      </svg>
       <span class="hr-nav__notifications-label">Notificaciones</span>
-      ${unread ? `<span class="hr-nav__notification-count">${unread > 99 ? "99+" : unread}</span>` : ""}
+      ${unread ? '<span class="hr-nav__notification-count" aria-hidden="true"></span>' : ""}
     </button>
     <a class="hr-nav__account" href="/portal/dashboard.html">
       <span class="hr-nav__avatar">${avatarMarkup}</span>
@@ -536,8 +554,15 @@ function setAdminNavigationVisibility(visible) {
   });
 }
 
+function setPermissionNavigationVisibility(permissionKey, visible) {
+  document.querySelectorAll("[data-permission-nav-link]").forEach((link) => {
+    if (link.dataset.permissionNavLink === permissionKey) link.hidden = !visible;
+  });
+}
+
 window.HiddenRoomNavigation = window.HiddenRoomNavigation || {
   setAdminLinksVisible: setAdminNavigationVisibility,
+  setPermissionLinksVisible: setPermissionNavigationVisibility,
 };
 
 async function hydrateGlobalSession() {
@@ -562,6 +587,7 @@ async function hydrateGlobalSession() {
       sessionTargets.forEach((target) => { target.hidden = false; });
       drawerTargets.forEach((target) => { target.hidden = false; });
       setAdminNavigationVisibility(false);
+      setPermissionNavigationVisibility("beats.upload", false);
       renderGlobalNotifications([]);
       toggleGlobalNotifications(false);
       return;
@@ -572,6 +598,22 @@ async function hydrateGlobalSession() {
       .select("user_id,display_name,username,email,avatar_url,roles,ig_username")
       .eq("id", user.id)
       .maybeSingle();
+
+    const permissionResult = await supabase.rpc("has_beats_upload_permission");
+    let hasBeatUploadPermission = permissionResult.data;
+    if (permissionResult.error) {
+      const { data: permissionRows } = await supabase
+        .from("user_permissions")
+        .select("permission_key")
+        .eq("user_id", user.id);
+      hasBeatUploadPermission = (permissionRows || [])
+        .map((row) => String(row.permission_key || "").trim().toLowerCase())
+        .includes("beats.upload");
+    }
+    setPermissionNavigationVisibility(
+      "beats.upload",
+      roleListIncludesAdmin(profile?.roles) || Boolean(hasBeatUploadPermission),
+    );
 
     const notificationTargets = [user.id, profile?.user_id].filter(Boolean).map(String);
     let notifications = [];
@@ -587,12 +629,13 @@ async function hydrateGlobalSession() {
     const unread = notifications.filter((item) => !item.read).length;
     let canSeeAdminNav = roleListIncludesAdmin(profile?.roles);
     if (!canSeeAdminNav) {
-      const { data: ownPermissions } = await supabase
+      const { data: academiaPermissionRows } = await supabase
         .from("user_permissions")
         .select("permission_key")
-        .eq("permission_key", "academia.admin")
-        .limit(1);
-      canSeeAdminNav = Boolean(ownPermissions?.length);
+        .eq("user_id", user.id);
+      canSeeAdminNav = (academiaPermissionRows || [])
+        .map((row) => String(row.permission_key || "").trim().toLowerCase())
+        .includes("academia.admin");
     }
     setAdminNavigationVisibility(canSeeAdminNav);
     globalSessionSnapshot = { profile, user, notifications, unread };
@@ -609,6 +652,8 @@ async function hydrateGlobalSession() {
     renderGlobalNotifications(notifications);
     showGlobalInstagramUsernamePrompt(profile, user, supabase);
   } catch (error) {
+    setAdminNavigationVisibility(false);
+    setPermissionNavigationVisibility("beats.upload", false);
     sessionTargets.forEach((target) => {
       target.innerHTML = guestHeaderMarkup();
       target.hidden = false;
@@ -767,6 +812,8 @@ let hrWaveSurferReady = false;
 let hrWaveSurferFailed = false;
 let hrCurrentBeatDetail = null;
 let hrGlobalBeatPlayerHydrated = false;
+let hrBeatPlayerFullscreenPlaceholder = null;
+let hrBeatPlayerFullscreenLastFocus = null;
 
 function shouldRenderGlobalBeatPlayer() {
   const path = window.location.pathname;
@@ -794,6 +841,13 @@ function setGlobalWaveformMode(mode = "fallback") {
   if (fallback) fallback.hidden = mode === "wave";
 }
 
+function globalBeatPlayerArtMarkup(cover = "") {
+  const safeCover = String(cover || "").trim();
+  return safeCover
+    ? `<img src="${escapeNavText(safeCover)}" alt="" onerror="this.hidden=true;this.parentElement.classList.remove('has-image')"><span class="hr-beat-player__art-icon" aria-hidden="true">&#9658;</span>`
+    : '<span>HR</span><span class="hr-beat-player__art-icon" aria-hidden="true">&#9658;</span>';
+}
+
 function renderGlobalBeatPlayer() {
   if (!shouldRenderGlobalBeatPlayer()) return "";
   document.body.classList.add("hr-has-beat-player");
@@ -805,6 +859,7 @@ function renderGlobalBeatPlayer() {
         <span id="player-detail"></span>
       </div>
       <button class="hr-beat-player__more" type="button" data-beat-player-more aria-label="Opciones del reproductor" aria-expanded="false" aria-controls="beat-player-menu">...</button>
+      <button class="hr-beat-player__fullscreen" type="button" data-beat-player-fullscreen aria-label="Abrir reproductor en pantalla completa" aria-controls="hr-beat-player-fullscreen" disabled>&#x26F6;</button>
       <div class="hr-beat-player__menu" id="beat-player-menu" hidden>
         <a href="/store/beat_store/">Ir a Beat Store</a>
       </div>
@@ -819,6 +874,50 @@ function renderGlobalBeatPlayer() {
       </div>
       <audio id="beat-audio" preload="metadata"></audio>
     </aside>
+    <section class="hr-beat-player-fullscreen" id="hr-beat-player-fullscreen" hidden aria-hidden="true">
+      <button class="hr-beat-player-fullscreen__backdrop" type="button" data-beat-player-fullscreen-close aria-label="Cerrar reproductor en pantalla completa"></button>
+      <div class="hr-beat-player-fullscreen__dialog" role="dialog" aria-modal="true" aria-labelledby="beat-player-fullscreen-title" tabindex="-1">
+        <header class="hr-beat-player-fullscreen__header">
+          <div class="hr-beat-player-fullscreen__brand">
+            <span>Hidden Room</span>
+            <strong>Beat Store</strong>
+          </div>
+          <span class="hr-beat-player-fullscreen__serial" aria-hidden="true">HR-0001 / MP3 320</span>
+          <button class="hr-beat-player-fullscreen__close" type="button" data-beat-player-fullscreen-close aria-label="Cerrar reproductor en pantalla completa">&times;</button>
+        </header>
+        <div class="hr-beat-player-fullscreen__content">
+          <div class="hr-beat-player-fullscreen__screen">
+            <div class="hr-beat-player-fullscreen__screen-top"><span>LCD / STEREO</span><span>PREVIEW</span></div>
+            <div class="hr-beat-player-fullscreen__screen-main">
+              <button class="hr-beat-player-fullscreen__art hr-beat-player__art" id="beat-player-fullscreen-art" type="button" data-beat-player-fullscreen-toggle aria-label="Reproducir preview" aria-pressed="false" disabled><span>HR</span><span class="hr-beat-player__art-icon" aria-hidden="true">&#9658;</span></button>
+              <div class="hr-beat-player-fullscreen__meta">
+                <span class="hr-beat-player-fullscreen__label">REPRODUCTOR</span>
+                <h2 id="beat-player-fullscreen-title">Selecciona un beat</h2>
+                <p id="beat-player-fullscreen-producer"></p>
+                <div class="hr-beat-player-fullscreen__stats"><span id="beat-player-fullscreen-bpm">-- BPM</span><span id="beat-player-fullscreen-key">KEY --</span></div>
+              </div>
+            </div>
+            <div class="hr-beat-player-fullscreen__wave-slot" id="beat-player-fullscreen-wave-slot"></div>
+            <div class="hr-beat-player-fullscreen__footer">
+              <span id="beat-player-fullscreen-time">0:00 / 0:00</span>
+              <span>Preview</span>
+            </div>
+          </div>
+          <div class="hr-beat-player-fullscreen__transport" aria-label="Control central de reproducción">
+            <span aria-hidden="true">&#9650;</span>
+            <button class="hr-beat-player-fullscreen__play" type="button" data-beat-player-fullscreen-toggle aria-label="Reproducir preview" aria-pressed="false" disabled><span class="hr-beat-player__art-icon" aria-hidden="true">&#9658;</span></button>
+            <span aria-hidden="true">&#9660;</span>
+          </div>
+          <div class="hr-beat-player-fullscreen__hardware-row">
+            <button type="button" disabled aria-label="Shuffle no disponible">&#8646;</button>
+            <button type="button" disabled aria-label="Repeat no disponible">&#8635;</button>
+            <button class="hr-beat-player__mute" type="button" data-beat-player-mute aria-label="Silenciar preview" aria-pressed="false">VOL</button>
+            <input class="hr-beat-player__volume" id="beat-player-fullscreen-volume" type="range" min="0" max="1" value="1" step="0.01" aria-label="Volumen del preview">
+          </div>
+          <button class="hr-beat-player-fullscreen__buy hr-beat-player__buy" type="button" data-beat-player-buy disabled>BUY BEAT <span aria-hidden="true">&#128722;</span></button>
+        </div>
+      </div>
+    </section>
   `;
 }
 
@@ -827,20 +926,27 @@ function hydrateGlobalBeatPlayer() {
   const fallbackAudio = document.getElementById("beat-audio");
   if (!player || !fallbackAudio) return;
 
-  const toggle = player.querySelector("[data-beat-player-toggle]");
+  const toggles = player.querySelectorAll("[data-beat-player-toggle]");
   const seek = document.getElementById("beat-player-seek");
   const time = document.getElementById("beat-player-time");
-  const mute = player.querySelector("[data-beat-player-mute]");
-  const volume = document.getElementById("beat-player-volume");
+  const mutes = document.querySelectorAll("[data-beat-player-mute]");
+  const volumes = document.querySelectorAll("#beat-player-volume, #beat-player-fullscreen-volume");
   const waveform = document.getElementById("beat-player-waveform");
   const more = player.querySelector("[data-beat-player-more]");
   const menu = document.getElementById("beat-player-menu");
+  const fullscreen = document.getElementById("hr-beat-player-fullscreen");
+  const fullscreenDialog = fullscreen?.querySelector(".hr-beat-player-fullscreen__dialog");
+  const fullscreenWaveSlot = document.getElementById("beat-player-fullscreen-wave-slot");
+  const fullscreenWaveWrap = player.querySelector(".hr-beat-player__wave-wrap");
+  const fullscreenToggles = fullscreen?.querySelectorAll("[data-beat-player-fullscreen-toggle]") || [];
+  const fullscreenClose = fullscreen?.querySelectorAll("[data-beat-player-fullscreen-close]") || [];
+  const buyButtons = document.querySelectorAll("[data-beat-player-buy]");
 
   fallbackAudio.removeAttribute("controls");
   fallbackAudio.setAttribute("controlsList", "nodownload noplaybackrate");
   fallbackAudio.addEventListener("contextmenu", (event) => event.preventDefault());
 
-  const sync = () => syncGlobalBeatPlayerControls(toggle, seek, time, mute, volume, waveform);
+  const sync = () => syncGlobalBeatPlayerControls(toggles, seek, time, mutes, volumes, waveform);
   more?.addEventListener("click", (event) => {
     event.preventDefault();
     const open = Boolean(menu?.hidden);
@@ -853,10 +959,81 @@ function hydrateGlobalBeatPlayer() {
     menu.hidden = true;
     more?.setAttribute("aria-expanded", "false");
   });
-  toggle?.addEventListener("click", () => {
+  toggles.forEach((toggle) => toggle.addEventListener("click", () => {
+    if (!getBeatPlayerSrc()) {
+      window.location.assign("/store/beat_store/");
+      return;
+    }
+    if (fallbackAudio.paused) fallbackAudio.play().catch(() => {});
+    else fallbackAudio.pause();
+  }));
+  buyButtons.forEach((button) => button.addEventListener("click", () => {
+    const event = new CustomEvent("hr:beat-player-buy", {
+      cancelable: true,
+      detail: { beatId: button.dataset.beatId || "", trigger: button },
+    });
+    if (window.dispatchEvent(event)) window.location.assign("/store/beat_store/");
+  }));
+  player.addEventListener("click", (event) => {
+    if (getBeatPlayerSrc()) return;
+    event.preventDefault();
+    event.stopPropagation();
+    window.location.assign("/store/beat_store/");
+  }, true);
+  const openFullscreen = () => {
+    if (!fullscreen || !getBeatPlayerSrc()) return;
+    hrBeatPlayerFullscreenLastFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (fullscreenWaveWrap && fullscreenWaveSlot) {
+      if (!hrBeatPlayerFullscreenPlaceholder && fullscreenWaveWrap.parentElement) {
+        hrBeatPlayerFullscreenPlaceholder = document.createComment("hr-beat-player-wave-placeholder");
+        fullscreenWaveWrap.parentElement.insertBefore(hrBeatPlayerFullscreenPlaceholder, fullscreenWaveWrap);
+      }
+      if (fullscreenWaveWrap.parentElement !== fullscreenWaveSlot) fullscreenWaveSlot.appendChild(fullscreenWaveWrap);
+    }
+    fullscreen.hidden = false;
+    fullscreen.setAttribute("aria-hidden", "false");
+    document.body.classList.add("hr-beat-player-fullscreen-open");
+    fullscreenDialog?.focus();
+    window.requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+  };
+  const closeFullscreen = () => {
+    if (!fullscreen) return;
+    if (fullscreenWaveWrap && hrBeatPlayerFullscreenPlaceholder?.parentNode) {
+      hrBeatPlayerFullscreenPlaceholder.parentNode.insertBefore(fullscreenWaveWrap, hrBeatPlayerFullscreenPlaceholder);
+    }
+    fullscreen.hidden = true;
+    fullscreen.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("hr-beat-player-fullscreen-open");
+    window.requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+    hrBeatPlayerFullscreenLastFocus?.focus?.();
+    hrBeatPlayerFullscreenLastFocus = null;
+  };
+  player.querySelector("[data-beat-player-fullscreen]")?.addEventListener("click", openFullscreen);
+  fullscreenToggles.forEach((fullscreenToggle) => fullscreenToggle.addEventListener("click", () => {
     if (!fallbackAudio.src) return;
     if (fallbackAudio.paused) fallbackAudio.play().catch(() => {});
     else fallbackAudio.pause();
+  }));
+  fullscreenClose.forEach((control) => control.addEventListener("click", closeFullscreen));
+  document.addEventListener("keydown", (event) => {
+    if (!fullscreen || fullscreen.hidden) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeFullscreen();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusable = [...fullscreen.querySelectorAll("button:not([disabled])")];
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   });
   seek?.addEventListener("input", () => {
     if (!Number.isFinite(fallbackAudio.duration) || fallbackAudio.duration <= 0) return;
@@ -873,18 +1050,18 @@ function hydrateGlobalBeatPlayer() {
     const next = Math.max(0, Math.min(duration, hrWaveSurfer.getCurrentTime() + step));
     hrWaveSurfer.seekTo(next / duration);
   });
-  mute?.addEventListener("click", () => {
+  mutes.forEach((mute) => mute.addEventListener("click", () => {
     const muted = !getBeatPlayerMuted();
     setBeatPlayerMuted(muted);
     sync();
     emitGlobalBeatPlayerState();
-  });
-  volume?.addEventListener("input", () => {
+  }));
+  volumes.forEach((volume) => volume.addEventListener("input", () => {
     const next = Math.max(0, Math.min(1, Number(volume.value) || 0));
     setBeatPlayerVolume(next);
     setBeatPlayerMuted(next === 0);
     sync();
-  });
+  }));
 
   try {
     sessionStorage.removeItem("hr_global_beat_player");
@@ -926,12 +1103,23 @@ function syncGlobalBeatPlayerControls(toggle, seek, time, mute, volume, waveform
   if (player && player.dataset.state !== "loading" && player.dataset.state !== "ended") {
     player.dataset.state = getBeatPlayerSrc() ? (isPlaying ? "playing" : "paused") : "idle";
   }
-  if (toggle) {
-    const icon = toggle.querySelector(".hr-beat-player__art-icon");
+  const toggleControls = toggle ? (typeof toggle.length === "number" ? [...toggle] : [toggle]) : [];
+  toggleControls.forEach((control) => {
+    const icon = control.querySelector(".hr-beat-player__art-icon");
     if (icon) icon.innerHTML = isPlaying ? "&#10074;&#10074;" : "&#9658;";
-    toggle.setAttribute("aria-label", isPlaying ? "Pausar preview" : "Reproducir preview");
-    toggle.setAttribute("aria-pressed", String(isPlaying));
-  }
+    control.setAttribute("aria-label", isPlaying ? "Pausar preview" : "Reproducir preview");
+    control.setAttribute("aria-pressed", String(isPlaying));
+  });
+  const fullscreenToggles = document.querySelectorAll("[data-beat-player-fullscreen-toggle]");
+  const fullscreenOpen = document.querySelector("[data-beat-player-fullscreen]");
+  if (fullscreenOpen) fullscreenOpen.disabled = !getBeatPlayerSrc();
+  fullscreenToggles.forEach((fullscreenToggle) => {
+    const icon = fullscreenToggle.querySelector(".hr-beat-player__art-icon");
+    if (icon) icon.innerHTML = isPlaying ? "&#10074;&#10074;" : "&#9658;";
+    fullscreenToggle.disabled = !getBeatPlayerSrc();
+    fullscreenToggle.setAttribute("aria-label", isPlaying ? "Pausar preview" : "Reproducir preview");
+    fullscreenToggle.setAttribute("aria-pressed", String(isPlaying));
+  });
   if (seek) {
     seek.value = duration > 0 ? String(Math.round((current / duration) * 1000)) : "0";
     seek.disabled = duration <= 0;
@@ -944,11 +1132,17 @@ function syncGlobalBeatPlayerControls(toggle, seek, time, mute, volume, waveform
     waveform.style.setProperty("--hr-wave-progress", `${duration > 0 ? (current / duration) * 100 : 0}%`);
   }
   if (time) time.textContent = `${formatGlobalBeatTime(current)} / ${formatGlobalBeatTime(duration)}`;
-  if (mute) {
-    mute.textContent = getBeatPlayerMuted() ? "MUTE" : "VOL";
-    mute.setAttribute("aria-pressed", String(getBeatPlayerMuted()));
-  }
-  if (volume && document.activeElement !== volume) volume.value = String(getBeatPlayerMuted() ? 0 : getBeatPlayerVolume());
+  const fullscreenTime = document.getElementById("beat-player-fullscreen-time");
+  if (fullscreenTime) fullscreenTime.textContent = `${formatGlobalBeatTime(current)} / ${formatGlobalBeatTime(duration)}`;
+  const muteControls = mute ? (typeof mute.length === "number" ? [...mute] : [mute]) : [];
+  muteControls.forEach((control) => {
+    control.textContent = getBeatPlayerMuted() ? "MUTE" : "VOL";
+    control.setAttribute("aria-pressed", String(getBeatPlayerMuted()));
+  });
+  const volumeControls = volume ? (typeof volume.length === "number" ? [...volume] : [volume]) : [];
+  volumeControls.forEach((control) => {
+    if (document.activeElement !== control) control.value = String(getBeatPlayerMuted() ? 0 : getBeatPlayerVolume());
+  });
 }
 function formatGlobalBeatTime(value) {
   const seconds = Math.max(0, Math.floor(Number(value) || 0));
@@ -976,6 +1170,12 @@ function setGlobalBeatPlayer(detail, options = {}) {
   const title = document.getElementById("player-title");
   const meta = document.getElementById("player-detail");
   const art = document.getElementById("beat-player-art");
+  const fullscreenTitle = document.getElementById("beat-player-fullscreen-title");
+  const fullscreenProducer = document.getElementById("beat-player-fullscreen-producer");
+  const fullscreenArt = document.getElementById("beat-player-fullscreen-art");
+  const bpm = document.querySelectorAll("#beat-player-bpm, #beat-player-fullscreen-bpm");
+  const key = document.querySelectorAll("#beat-player-key, #beat-player-fullscreen-key");
+  const buyButtons = document.querySelectorAll("[data-beat-player-buy]");
   if (!detail?.src) return;
   hrCurrentBeatDetail = detail;
 
@@ -992,12 +1192,23 @@ function setGlobalBeatPlayer(detail, options = {}) {
   if (player) player.dataset.state = "loading";
   if (title) title.textContent = detail.title || "Beat Store";
   if (meta) meta.textContent = detail.detail || "";
+  if (fullscreenTitle) fullscreenTitle.textContent = detail.title || "Beat Store";
+  if (fullscreenProducer) fullscreenProducer.textContent = detail.detail || "";
+  bpm.forEach((element) => { element.textContent = detail.bpm ? `${detail.bpm} BPM` : "-- BPM"; });
+  key.forEach((element) => { element.textContent = detail.key ? `KEY ${detail.key}` : "KEY --"; });
+  buyButtons.forEach((button) => {
+    button.dataset.beatId = detail.beatId || "";
+    button.disabled = !detail.beatId;
+  });
+  if (player) player.dataset.beatId = detail.beatId || "";
   if (art) {
     const cover = String(detail.cover || "").trim();
-    art.innerHTML = cover
-      ? `<img src="${escapeNavText(cover)}" alt="" onerror="this.hidden=true;this.parentElement.classList.remove(\'has-image\')"><span class="hr-beat-player__art-icon" aria-hidden="true">&#9658;</span>`
-      : '<span>HR</span><span class="hr-beat-player__art-icon" aria-hidden="true">&#9658;</span>';
+    art.innerHTML = globalBeatPlayerArtMarkup(cover);
     art.classList.toggle("has-image", Boolean(cover));
+    if (fullscreenArt) {
+      fullscreenArt.innerHTML = globalBeatPlayerArtMarkup(cover);
+      fullscreenArt.classList.toggle("has-image", Boolean(cover));
+    }
   }
 
   loadBeatFallbackAudio(detail, { ...options, keepWaveform: true });
@@ -1053,11 +1264,11 @@ async function loadBeatWaveform(src, options = {}) {
     }
     if (player) player.dataset.state = isBeatPlayerPlaying() ? "playing" : "paused";
     syncGlobalBeatPlayerControls(
-      player?.querySelector("[data-beat-player-toggle]"),
+      player?.querySelectorAll("[data-beat-player-toggle]"),
       seek,
       document.getElementById("beat-player-time"),
-      player?.querySelector("[data-beat-player-mute]"),
-      document.getElementById("beat-player-volume"),
+      document.querySelectorAll("[data-beat-player-mute]"),
+      document.querySelectorAll("#beat-player-volume, #beat-player-fullscreen-volume"),
       waveform,
     );
     emitGlobalBeatPlayerState();
@@ -1067,11 +1278,11 @@ async function loadBeatWaveform(src, options = {}) {
     hrWaveSurfer.on(eventName, () => {
       if (player && player.dataset.state !== "loading") player.dataset.state = hrWaveSurfer.isPlaying() ? "playing" : "paused";
       syncGlobalBeatPlayerControls(
-        player?.querySelector("[data-beat-player-toggle]"),
+        player?.querySelectorAll("[data-beat-player-toggle]"),
         seek,
         document.getElementById("beat-player-time"),
-        player?.querySelector("[data-beat-player-mute]"),
-        document.getElementById("beat-player-volume"),
+        document.querySelectorAll("[data-beat-player-mute]"),
+        document.querySelectorAll("#beat-player-volume, #beat-player-fullscreen-volume"),
         waveform,
       );
       persistGlobalBeatPlayerState();
@@ -1082,11 +1293,11 @@ async function loadBeatWaveform(src, options = {}) {
     hrWaveSurfer.seekTo(0);
     if (player) player.dataset.state = "ended";
     syncGlobalBeatPlayerControls(
-      player?.querySelector("[data-beat-player-toggle]"),
+      player?.querySelectorAll("[data-beat-player-toggle]"),
       seek,
       document.getElementById("beat-player-time"),
-      player?.querySelector("[data-beat-player-mute]"),
-      document.getElementById("beat-player-volume"),
+      document.querySelectorAll("[data-beat-player-mute]"),
+      document.querySelectorAll("#beat-player-volume, #beat-player-fullscreen-volume"),
       waveform,
     );
     persistGlobalBeatPlayerState();
@@ -1186,6 +1397,9 @@ function persistGlobalBeatPlayerState() {
       title: title?.textContent || "Beat Store",
       detail: meta?.textContent || "",
       cover,
+      beatId: document.getElementById("hr-beat-player")?.dataset.beatId || hrCurrentBeatDetail?.beatId || "",
+      bpm: hrCurrentBeatDetail?.bpm || "",
+      key: hrCurrentBeatDetail?.key || "",
       currentTime: getBeatPlayerCurrentTime(),
       wasPlaying: isBeatPlayerPlaying(),
     }));
@@ -1282,6 +1496,8 @@ function renderGlobalNav() {
   const persistentBeatPlayer = globalBeatPlayer || document.getElementById("hr-beat-player");
   if (persistentBeatPlayer && persistentBeatPlayer.parentElement !== document.body) document.body.appendChild(persistentBeatPlayer);
   if (persistentBeatPlayer) document.body.classList.add("hr-has-beat-player");
+  const fullscreenBeatPlayer = target.querySelector("#hr-beat-player-fullscreen") || document.getElementById("hr-beat-player-fullscreen");
+  if (fullscreenBeatPlayer && fullscreenBeatPlayer.parentElement !== document.body) document.body.appendChild(fullscreenBeatPlayer);
   const globalDrawer = target.querySelector(".hr-global-drawer");
   const globalDrawerBackdrop = target.querySelector(".hr-global-drawer__backdrop");
   if (globalDrawerBackdrop) document.body.appendChild(globalDrawerBackdrop);
