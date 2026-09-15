@@ -132,6 +132,12 @@ async function initBeatStore() {
   grid?.addEventListener("keydown", handleGridKeydown);
   window.addEventListener("hr:beat-player-state", syncBeatCardPlayState, { signal: hrBeatStoreLifecycle.signal });
   syncBeatCardPlayState({ detail: window.HiddenRoomBeatPlayer || {} });
+  window.addEventListener("hr:beat-player-buy", (event) => {
+    const itemId = String(event.detail?.beatId || "");
+    if (!itemId) return;
+    event.preventDefault();
+    openBeatLicensesModal(itemId, event.detail?.trigger || null);
+  }, { signal: hrBeatStoreLifecycle.signal });
   adminForm?.addEventListener("submit", handleAdminSubmit);
   adminForm?.addEventListener("change", handleBeatLicenseAssignmentChange);
   adminList?.addEventListener("click", handleAdminListClick);
@@ -223,7 +229,7 @@ function ensureAdminMusicFields() {
 
 function adminProductMetaText(product) {
   return [
-    product.beat_genre || null,
+    product.beat_genre ? formatGenreLabel(product.beat_genre) : null,
     product.beat_bpm ? `${product.beat_bpm} BPM${product.beat_bpm_autodetected ? " (AD)" : ""}` : null,
     product.beat_key ? `${product.beat_key}${product.beat_key_autodetected ? " (AD)" : ""}` : null,
     product.beat_duration_seconds ? formatDuration(product.beat_duration_seconds) : null,
@@ -489,7 +495,9 @@ function renderBeats() {
     const profile = producerProfileForProduct(item.product);
     const itemProducer = normalizeKey(profile?.slug || item.product?.producer || "");
     return (!query || state.searchIndex.get(item.id)?.includes(query))
-      && (!genre || state.genreIndex.get(item.id) === genre)
+      && (!genre || (["perreo", "reggaeton"].includes(genre)
+        ? ["perreo", "reggaeton"].includes(state.genreIndex.get(item.id))
+        : state.genreIndex.get(item.id) === genre))
       && (!producer || itemProducer === producer)
       && (priceMin === null || price >= priceMin)
       && (priceMax === null || price <= priceMax)
@@ -511,6 +519,48 @@ function renderBeats() {
   grid.innerHTML = filtered.map(beatCardMarkup).join("");
   hydrateMissingBeatDurations(filtered);
 }
+
+function renderGenreRows(items) {
+  const groups = new Map();
+  for (const item of items) {
+    const rawGenre = item?.product?.beat_genre || item?.beat?.genre || "";
+    const normalizedGenre = normalizeKey(rawGenre);
+    const key = ["perreo", "reggaeton"].includes(normalizedGenre)
+      ? "perreo-reggaeton"
+      : normalizedGenre || "__no_genre__";
+    if (!groups.has(key)) {
+      groups.set(key, {
+        label: key === "perreo-reggaeton" ? "Perreo / Reggaeton" : formatGenreLabel(rawGenre) || "Sin género",
+        filterValue: key === "perreo-reggaeton" ? "perreo" : key === "__no_genre__" ? "" : key,
+        items: [],
+      });
+    }
+    groups.get(key).items.push(item);
+  }
+
+  return Array.from(groups.entries())
+    .sort((a, b) => {
+      const genreRank = (key) => {
+        if (key === "perreo-reggaeton") return 0;
+        if (key === normalizeKey("Boom Bap")) return 1;
+        if (key === "__no_genre__") return 999;
+        return 10;
+      };
+      const rankDifference = genreRank(a[0]) - genreRank(b[0]);
+      if (rankDifference) return rankDifference;
+      return a[1].label.localeCompare(b[1].label, "es-MX");
+    })
+    .map(([, group]) => (
+      '<section class="beat-genre-row" aria-label="' + escapeHtml(group.label) + '">' +
+        '<header class="beat-genre-row__heading"><h2>' + escapeHtml(group.label) + '</h2>' +
+          (group.filterValue ? '<button class="beat-genre-row__view-all" type="button" data-genre-filter="' + escapeHtml(group.filterValue) + '">Ver todos →</button>' : '') +
+        '</header>' +
+        '<div class="beat-genre-row__track">' + group.items.map(beatCardMarkup).join("") + '</div>' +
+      '</section>'
+    ))
+    .join("");
+}
+
 function hydrateMissingBeatDurations(items) {
   for (const item of items) {
     if (itemDurationSeconds(item)) continue;
@@ -577,10 +627,7 @@ function renderGenreOptions() {
 }
 
 function formatGenreLabel(value) {
-  return String(value || "")
-    .trim()
-    .toLocaleLowerCase("es-MX")
-    .replace(/(^|[\s/-])([a-záéíóúüñ])/giu, (_, separator, letter) => `${separator}${letter.toLocaleUpperCase("es-MX")}`);
+  return String(value || "").trim().toLocaleLowerCase("es-MX").replace(/(^|[\s\/&'’-])(\p{L})/gu, (_, separator, letter) => separator + letter.toLocaleUpperCase("es-MX"));
 }
 
 function renderProducerOptions() {
@@ -677,7 +724,7 @@ function sortItems(items, mode = "featured_desc") {
 
 function beatCardMarkup(item) {
   const product = item.product;
-  const title = itemTitle(item);
+  const title = beatDisplayTitle(item);
   const canPreview = Boolean(previewUrlForItem(item));
   const canBuy = Boolean(product && productCanBePurchased(product));
   const producer = productProducer(item);
@@ -760,7 +807,7 @@ function musicMetaMarkup(meta) {
   `).join("")}</dl>`;
 }
 function coverMarkup(item) {
-  const title = itemTitle(item);
+  const title = beatDisplayTitle(item);
   const imageUrl = coverUrlForItem(item);
   const canPreview = Boolean(previewUrlForItem(item));
   const playAttrs = canPreview ? ` role="button" tabindex="0" data-play-beat="${escapeHtml(item.id)}" aria-label="Preview ${escapeHtml(title)}"` : "";
@@ -805,11 +852,18 @@ function handleGridKeydown(event) {
   toggleBeatPreview(playTarget.dataset.playBeat);
 }
 function handleGridClick(event) {
+  const genreButton = event.target.closest("[data-genre-filter]");
   const playButton = event.target.closest("[data-play-beat]");
   const addButton = event.target.closest("[data-add-beat]");
   const buyLicenseButton = event.target.closest("[data-buy-license]");
   const licenseButton = event.target.closest("[data-add-license]");
 
+  if (genreButton) {
+    if (genreSelect) genreSelect.value = genreButton.dataset.genreFilter || SELECT_PLACEHOLDER;
+    renderBeats();
+    syncBeatUrlState(true);
+    return;
+  }
   if (playButton) {
     toggleBeatPreview(playButton.dataset.playBeat);
     return;
@@ -963,9 +1017,12 @@ function playBeat(itemId) {
   window.dispatchEvent(new CustomEvent("hr:beat-preview", {
     detail: {
       src: previewUrl,
-      title: itemTitle(item),
+      title: beatDisplayTitle(item),
       detail: producer || "Productor por confirmar",
       cover: coverUrlForItem(item),
+      beatId: item.id,
+      bpm: item.product?.beat_bpm || item.beat?.bpm || "",
+      key: item.product?.beat_key || item.beat?.key || "",
     },
   }));
 }
@@ -1341,7 +1398,7 @@ function beatProductPayload({ uploadedCoverUrl = null, uploadedBeatAudio = null,
   if (uploadedCoverUrl?.beat_cover_path || uploadedCoverUrl?.image_url) payload.beat_cover_path = uploadedCoverUrl.beat_cover_path || uploadedCoverUrl.image_url;
   if (uploadedCoverUrl?.beat_thumb_path) payload.beat_thumb_path = uploadedCoverUrl.beat_thumb_path;
   if (state.hasBeatMetadata) {
-    payload.beat_genre = document.getElementById("beat-genre-input").value.trim() || null;
+    payload.beat_genre = formatGenreLabel(document.getElementById("beat-genre-input").value) || null;
     payload.beat_bpm = nullableNumberFromInput("beat-bpm");
     payload.beat_key = document.getElementById("beat-key").value.trim() || null;
     payload.beat_duration_seconds = nullableNumberFromInput("beat-duration");
@@ -1937,6 +1994,16 @@ function itemTitle(item) {
   return item.product?.name || item.beat?.title || "Beat";
 }
 
+function beatDisplayTitle(item) {
+  let title = itemTitle(item)
+    .replace(/\s*@[^\s]+(?=\s|$)/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!title) return "Beat";
+  if (!/[a-záéíóúüñ]/.test(title)) title = title.toLocaleLowerCase("es-MX");
+  return title.replace(/(^|[\s-])([a-záéíóúüñ])/gi, (_, prefix, letter) => `${prefix}${letter.toLocaleUpperCase("es-MX")}`);
+}
+
 function syncProducerUsernameButton() {
   if (!beatProducerUsernameButton) return;
   beatProducerUsernameButton.hidden = !state.currentUsername;
@@ -2069,7 +2136,7 @@ function itemMusicMeta(item) {
   const beat = item?.beat || {};
   const bpm = product.beat_bpm || beat.bpm;
   const key = product.beat_key || beat.key;
-  const genre = product.beat_genre || beat.genre;
+  const genre = formatGenreLabel(product.beat_genre || beat.genre);
   const duration = product.beat_duration_seconds || beat.duration_seconds || beat.duration;
   const bpmText = bpm ? `${bpm}${product.beat_bpm_autodetected ? " (AD)" : ""}` : "";
   const keyText = key ? `${key}${product.beat_key_autodetected ? " (AD)" : ""}` : "";
