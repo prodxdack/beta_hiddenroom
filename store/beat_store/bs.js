@@ -132,6 +132,24 @@ async function initBeatStore() {
   grid?.addEventListener("keydown", handleGridKeydown);
   window.addEventListener("hr:beat-player-state", syncBeatCardPlayState, { signal: hrBeatStoreLifecycle.signal });
   syncBeatCardPlayState({ detail: window.HiddenRoomBeatPlayer || {} });
+  window.addEventListener("hr:beat-player-next", (event) => {
+    const activeId = String(event.detail?.beatId || "");
+    const activeSrc = String(event.detail?.src || "");
+    const visibleIds = [...document.querySelectorAll("[data-play-beat]")]
+      .map((cover) => cover.dataset.playBeat)
+      .filter(Boolean)
+      .filter((id, index, ids) => ids.indexOf(id) === index);
+    const visibleItems = visibleIds
+      .map((id) => state.items.find((item) => item.id === id))
+      .filter((item) => item && previewUrlForItem(item));
+    const sequence = visibleItems.length
+      ? visibleItems
+      : state.items.filter((item) => previewUrlForItem(item));
+    if (!sequence.length) return;
+    const currentIndex = sequence.findIndex((item) => item.id === activeId || previewUrlForItem(item) === activeSrc);
+    const nextItem = sequence[(currentIndex + 1 + sequence.length) % sequence.length];
+    if (nextItem) playBeat(nextItem.id);
+  }, { signal: hrBeatStoreLifecycle.signal });
   window.addEventListener("hr:beat-player-buy", (event) => {
     const itemId = String(event.detail?.beatId || "");
     if (!itemId) return;
@@ -1021,6 +1039,7 @@ function playBeat(itemId) {
       detail: producer || "Productor por confirmar",
       cover: coverUrlForItem(item),
       beatId: item.id,
+      genre: item.product?.beat_genre || item.beat?.genre || "",
       bpm: item.product?.beat_bpm || item.beat?.bpm || "",
       key: item.product?.beat_key || item.beat?.key || "",
     },
