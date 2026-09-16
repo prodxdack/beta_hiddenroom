@@ -28,6 +28,15 @@ async function initProducerPage() {
   grid.addEventListener("click", handleGridClick);
   grid.addEventListener("keydown", handleGridKeydown);
   window.addEventListener("hr:beat-player-state", syncBeatCardPlayState);
+  window.addEventListener("hr:beat-player-next", (event) => {
+    const activeId = String(event.detail?.beatId || "");
+    const activeSrc = String(event.detail?.src || "");
+    const sequence = state.products.filter((product) => previewUrlForProduct(product));
+    if (!sequence.length) return;
+    const currentIndex = sequence.findIndex((product) => product.id === activeId || previewUrlForProduct(product) === activeSrc);
+    const nextProduct = sequence[(currentIndex + 1 + sequence.length) % sequence.length];
+    if (nextProduct) playBeat(nextProduct.id);
+  });
   modal?.addEventListener("click", handleModalClick);
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && modal && !modal.hidden) closeLicensesModal();
@@ -212,6 +221,7 @@ function playBeat(productId) {
       title: product.name || "Beat",
       detail: producerDisplayName(state.profile.display_name),
       cover: coverUrlForProduct(product),
+      genre: product.beat_genre || product.genre || "",
     },
   }));
 }

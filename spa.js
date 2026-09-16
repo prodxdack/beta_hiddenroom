@@ -41,7 +41,7 @@ function hrSpaEnsureRoot() {
   if (root) return root;
   root = document.createElement('div');
   root.id = 'hr-spa-content';
-  const keep = new Set(['hr-global-nav', 'cursor', 'cursorRing', 'hr-beat-player']);
+  const keep = new Set(['hr-global-nav', 'cursor', 'cursorRing', 'hr-beat-player', 'hr-beat-player-fullscreen']);
   [...document.body.children].forEach((child) => {
     if (keep.has(child.id) || child.matches('.hr-global-drawer, .hr-global-drawer__backdrop') || child.tagName === 'SCRIPT') return;
     root.appendChild(child);
@@ -74,8 +74,9 @@ function hrSpaUpdateActiveNavigation(url) {
     link.toggleAttribute("aria-current", samePath && sameQuery && sameHash ? "page" : false);
   });
 }
-function hrSpaApplyDocument(parsed, url) {
+async function hrSpaApplyDocument(parsed, url) {
   const root = hrSpaEnsureRoot();
+  await hrSpaSyncPageHeadAssets(parsed, url);
   const sourceBody = parsed.body;
   const nodes = [...sourceBody.children].filter((node) => node.id !== 'hr-global-nav' && node.id !== 'hr-beat-player' && node.id !== 'cursor' && node.id !== 'cursorRing' && node.tagName !== 'SCRIPT');
   root.replaceChildren(...nodes.map((node) => node.cloneNode(true)));
@@ -94,6 +95,63 @@ function hrSpaApplyDocument(parsed, url) {
   if (canonical) canonical.href = url.href;
   document.querySelectorAll('meta[property="og:url"]').forEach((meta) => { meta.content = url.href; });
   return root;
+}
+
+function hrSpaIsGlobalStylesheet(node, baseUrl = window.location.href) {
+  const href = node.getAttribute('href');
+  if (!href) return false;
+  const resolved = new URL(href, baseUrl);
+  return resolved.origin === window.location.origin && /^\/styles(?:-\d+)?\.css$/i.test(resolved.pathname);
+}
+
+function hrSpaWaitForStylesheet(link) {
+  if (link.sheet) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (loaded) => {
+      if (settled) return;
+      settled = true;
+      resolve(loaded);
+    };
+    link.addEventListener('load', () => finish(true), { once: true });
+    link.addEventListener('error', () => finish(false), { once: true });
+  });
+}
+
+async function hrSpaSyncPageHeadAssets(parsed, url) {
+  const oldPageAssets = [...document.head.querySelectorAll('[data-hr-spa-page-asset]')];
+  const oldGlobalStyles = [...document.head.querySelectorAll('link[rel="stylesheet"]')].filter((node) => hrSpaIsGlobalStylesheet(node));
+  const oldAssets = new Set([...oldPageAssets, ...oldGlobalStyles]);
+  const newStylesheets = [];
+
+  for (const source of parsed.head.querySelectorAll('link[rel="stylesheet"], style#beat-store-banner-critical')) {
+    if (source.tagName === 'STYLE') {
+      const style = source.cloneNode(true);
+      style.setAttribute('data-hr-spa-page-asset', '');
+      document.head.appendChild(style);
+      continue;
+    }
+
+    const href = source.getAttribute('href');
+    if (!href) continue;
+    const resolved = new URL(href, url.href);
+    const isPageStylesheet = hrSpaIsGlobalStylesheet(source, url.href);
+    const isGoogleFont = resolved.origin === 'https://fonts.googleapis.com';
+    if (!isPageStylesheet && !isGoogleFont) continue;
+
+    const link = source.cloneNode(true);
+    link.href = resolved.href;
+    link.setAttribute('data-hr-spa-page-asset', '');
+    document.head.appendChild(link);
+    if (isPageStylesheet) newStylesheets.push(link);
+  }
+
+  const stylesLoaded = await Promise.all(newStylesheets.map((link) => hrSpaWaitForStylesheet(link)));
+  const keepOldGlobalStyles = newStylesheets.length > 0 && stylesLoaded.some((loaded) => !loaded);
+  oldAssets.forEach((node) => {
+    if (keepOldGlobalStyles && oldGlobalStyles.includes(node)) return;
+    node.remove();
+  });
 }
 function hrSpaReadModuleScripts(parsed, url) {
   return [...parsed.querySelectorAll('script[type="module"][src]')]
@@ -160,7 +218,7 @@ async function hrSpaNavigate(input, { replace = false, fromPopState = false } = 
     if (navigationId !== hrSpaActiveNavigation) return false;
     if (!view.fromCache) { document.body.classList.add('hr-spa-loading'); root.classList.add('hr-spa-content--leaving'); hrSpaShowSkeleton(root, url); }
     const parsed = new DOMParser().parseFromString(view.html, 'text/html');
-    hrSpaApplyDocument(parsed, url);
+    await hrSpaApplyDocument(parsed, url);
     root.removeAttribute("aria-busy");
     if (typeof window.renderGlobalNav === 'function') window.renderGlobalNav();
     if (typeof window.initGlobalFooter === 'function') window.initGlobalFooter();
