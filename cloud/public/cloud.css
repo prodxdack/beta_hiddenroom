@@ -24,6 +24,7 @@ button.danger { color: var(--danger); }
 .brand-block h1, .topbar h1 { margin: 0; font-size: clamp(2rem, 5vw, 4rem); line-height: 1; letter-spacing: 0; }
 .brand-block p { max-width: 560px; color: var(--muted); font-size: 1.08rem; }
 .eyebrow { margin: 0 0 8px; color: var(--accent); text-transform: uppercase; font-size: .78rem; letter-spacing: .08em; }
+.eyebrow { display: none; }
 .login-form, .table-wrap { background: var(--panel); border: 1px solid var(--line); }
 .login-form { display: grid; gap: 16px; padding: 20px; }
 .login-form label { display: grid; gap: 7px; color: var(--muted); }

@@ -66,6 +66,7 @@ const SERVICE_OPTIONS = [
   'GRABACIÓN',
   'PRODUCCIÓN BÁSICA',
   'PRODUCCIÓN PREMIUM',
+  'EP 3 CANCIONES',
   'DISTRIBUCIÓN',
   'PERSONALIZADO',
 ];
@@ -344,6 +345,12 @@ function buildCloudFileFallbackUrl(path, fileName) {
   return `${CLOUD_HIDDENROOM_URL.replace(/\/$/, '')}${fullPath.split('/').map(encodeURIComponent).join('/')}`;
 }
 
+function buildCloudDownloadUrl(path, fileName) {
+  const safePath = normalizeCloudPath(path);
+  const safeName = String(fileName || '').trim();
+  return `${CLOUD_HIDDENROOM_URL.replace(/\/$/, '')}/api/download?path=${encodeURIComponent(safePath)}&name=${encodeURIComponent(safeName)}`;
+}
+
 async function deleteCloudFile(itemType, itemName) {
   const currentPath = normalizeCloudPath(state.erpCloud.currentPath);
   const response = await cloudApiFetch(`${CLOUD_FUNCTION_BASE}/cloud-delete?path=${encodeURIComponent(currentPath)}&type=${encodeURIComponent(itemType)}&name=${encodeURIComponent(itemName)}`, {
@@ -372,6 +379,7 @@ const SESSION_TYPE_OPTIONS = [
   { value: 'GRABACIÓN', label: 'GRABACIÓN', minutes: 60, cost: 650 },
   { value: 'SESIÓN BÁSICA', label: 'SESIÓN BÁSICA', minutes: 90, cost: 1700 },
   { value: 'SESIÓN PREMIUM', label: 'SESIÓN PREMIUM', minutes: 150, cost: 3700 },
+  { value: 'EP 3 CANCIONES', label: 'EP 3 CANCIONES', minutes: 0, cost: 9850 },
 ];
 
 
@@ -921,6 +929,7 @@ const SECTION_LOADING_MIN_MS = 300;
 const SUGGESTED_PERMISSIONS = [
   'Kairen AI',
   'cloud.upload',
+  'beats.upload',
   'media.posts',
   'scrum.view',
   'scrum.edit',
@@ -1227,24 +1236,34 @@ async function fetchAllTableEditorRows(tableName, select, defaultSort = null, op
   return rows;
 }
 
-async function fetchComputedMembershipDashboardRows(selectedUserId = '') {
+async function ensureMembershipDashboardUsersLoaded() {
+  if (Array.isArray(state.data.membershipDashboardUsers)) {
+    return state.data.membershipDashboardUsers;
+  }
+
   const usersResult = await fetchAllTableEditorRows(
     'users',
     'id, user_id, display_name, email, username',
-    { field: 'display_name', direction: 'asc' },
-    {
-      maxRows: ADMIN_TABLE_INITIAL_ROW_LIMIT,
-      searchQuery: selectedUserId,
-      config: TABLE_EDITOR_CONFIG.users,
-    }
+    { field: 'display_name', direction: 'asc' }
   );
-  const users = uniqueUsers(usersResult ?? []);
-  state.data.membershipDashboardUsers = users;
+  state.data.membershipDashboardUsers = uniqueUsers(usersResult ?? [])
+    .filter((user) => String(user.user_id ?? '').trim());
+  return state.data.membershipDashboardUsers;
+}
 
+function resolveMembershipDashboardUserId(value, users = []) {
+  const requestedValue = String(value || '').trim();
+  if (!requestedValue) return '';
 
-  const requestedUserId = String(selectedUserId || '').trim();
-  const selectedUser = users.find((user) => String(user.user_id ?? '') === requestedUserId);
-  const userId = selectedUser ? requestedUserId : '';
+  const exactUser = users.find((user) => String(user.user_id ?? '') === requestedValue);
+  // Reject stale free-text or cross-table filters; this state may only hold a selected user_id.
+  return exactUser ? requestedValue : '';
+}
+
+async function fetchComputedMembershipDashboardRows(selectedUserId = '') {
+  const users = await ensureMembershipDashboardUsersLoaded();
+  const userId = resolveMembershipDashboardUserId(selectedUserId, users);
+  state.data.membershipDashboardSelectedUserId = userId;
   if (!userId) return [];
 
   const [membershipsResult, sessionsResult, transactionsResult, materialDeliveriesResult] = await Promise.all([
@@ -2841,8 +2860,14 @@ function isCloudDownloadUrl(value) {
     const url = new URL(String(value), window.location.origin);
     return url.hostname === 'cloud.hiddenroom.mx';
   } catch {
-    return String(value).startsWith(CLOUD_HIDDENROOM_URL);
+    return false;
   }
+}
+
+function isCloudStoragePath(value) {
+  const raw = String(value || '').trim().replace(/\\/g, '/');
+  return /^\/(?:files\/)?users\/[^/]+\/.+/i.test(raw)
+    || /^\/(?:files\/)?downloads\/.+/i.test(raw);
 }
 
 function downloadReleaseLabel(item = {}) {
@@ -2854,10 +2879,10 @@ function downloadReleaseLabel(item = {}) {
 function renderDownloadAction(item) {
   const href = String(item?.storage_path || '').trim();
   if (!href) return '-';
-  const isCloudFile = isCloudDownloadUrl(href);
+  const isCloudFile = isCloudDownloadUrl(href) || isCloudStoragePath(href);
   const label = isCloudFile ? 'Descarga directa' : 'Descargar';
   return `
-    <a class="btn-primary db-download-action${isCloudFile ? ' db-download-action--cloud' : ''}" href="${escapeAttr(href)}" ${isCloudFile ? 'data-direct-cloud-download="true"' : 'target="_blank" rel="noopener noreferrer"'} aria-label="${escapeAttr(label)}">
+    <a class="btn-primary db-download-action${isCloudFile ? ' db-download-action--cloud' : ''}" href="${escapeAttr(href)}" ${isCloudFile ? `data-direct-cloud-download="true" data-cloud-reference="${escapeAttr(href)}"` : 'target="_blank" rel="noopener noreferrer"'} aria-label="${escapeAttr(label)}">
       <svg class="db-download-action__icon" aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M5 21h14"></path></svg>
       <span>${escapeHTML(label)}</span>
     </a>
@@ -2865,24 +2890,46 @@ function renderDownloadAction(item) {
 }
 
 function cloudDownloadRequestFromHref(href) {
-  if (!isCloudDownloadUrl(href)) return null;
-  const url = new URL(String(href), window.location.origin);
-  const segments = url.pathname.split('/').filter(Boolean).map((segment) => decodeURIComponent(segment));
-  const name = segments.pop();
+  const raw = String(href || '').trim();
+  if (!raw) return null;
+
+  let url;
+  try {
+    url = new URL(raw, CLOUD_HIDDENROOM_URL);
+  } catch {
+    return null;
+  }
+
+  const isCloudUrl = url.hostname === 'cloud.hiddenroom.mx';
+  const queryPath = url.searchParams.get('path');
+  const queryName = url.searchParams.get('name');
+  let pathValue = queryPath;
+  let name = queryName;
+
+  if (!pathValue || !name) {
+    if (!isCloudUrl && !isCloudStoragePath(raw)) return null;
+    const segments = url.pathname.split('/').filter(Boolean).map((segment) => decodeURIComponent(segment));
+    if (segments[0]?.toLowerCase() === 'files') segments.shift();
+    name = name || segments.pop();
+    pathValue = pathValue || `/${segments.join('/')}`;
+  }
+
   if (!name) return null;
-  let pathSegments = segments;
-  if (pathSegments[0] === 'files') pathSegments = pathSegments.slice(1);
-  if (!hasRole('admin') && pathSegments[0] === 'users') pathSegments = pathSegments.slice(2);
+  let pathSegments = normalizeCloudPath(pathValue).slice(1).split('/').filter(Boolean);
+  if (pathSegments[0]?.toLowerCase() === 'files') pathSegments = pathSegments.slice(1);
+  if (!hasRole('admin') && pathSegments[0]?.toLowerCase() === 'users' && pathSegments.length >= 2) {
+    pathSegments = pathSegments.slice(2);
+  }
   return {
     path: normalizeCloudPath('/' + pathSegments.join('/')),
-    name,
+    name: String(name),
   };
 }
 
 async function downloadCloudFileFromPortal(link) {
-  const request = cloudDownloadRequestFromHref(link?.href);
+  const request = cloudDownloadRequestFromHref(link?.dataset?.cloudReference || link?.href);
   if (!request) return false;
-  const apiUrl = `${CLOUD_HIDDENROOM_URL.replace(/\/$/, '')}/api/download?path=${encodeURIComponent(request.path)}&name=${encodeURIComponent(request.name)}`;
+  const apiUrl = buildCloudDownloadUrl(request.path, request.name);
   link.setAttribute('aria-busy', 'true');
   link.classList.add('is-loading');
   try {
@@ -7520,7 +7567,7 @@ async function renderAdminTableEditor() {
   const tableName = state.data.adminTableName || setAdminTableName(readStoredAdminTableName());
   const config = TABLE_EDITOR_CONFIG[tableName] || TABLE_EDITOR_CONFIG.users;
   let data = [];
-  const searchQuery = adminTableSearchFor(tableName);
+  let searchQuery = adminTableSearchFor(tableName);
 
   try {
     data = tableName === 'membership_dashboard'
@@ -7530,6 +7577,13 @@ async function renderAdminTableEditor() {
         searchQuery,
         config,
       });
+    if (tableName === 'membership_dashboard') {
+      const selectedUserId = state.data.membershipDashboardSelectedUserId ?? '';
+      if (selectedUserId !== searchQuery) {
+        searchQuery = selectedUserId;
+        setAdminTableSearch(tableName, selectedUserId);
+      }
+    }
   } catch (error) {
     console.error('[HR] renderAdminTableEditor:', error);
     if (isSessionStaleError(error)) markSessionStale(error.message || 'admin table fetch');
@@ -9769,9 +9823,11 @@ async function prepareDownloadValues(form, values) {
     setDownloadUploadProgress(form, 24, 'Preparando carpeta');
     await ensureCloudFolderPath(targetRoot);
     setDownloadUploadProgress(form, 48, 'Subiendo archivo');
-    const upload = await uploadCloudFileToPath(file, targetRoot);
+    await uploadCloudFileToPath(file, targetRoot);
     setDownloadUploadProgress(form, 78, 'Registrando descarga');
-    values.storage_path = upload?.url || buildCloudFileFallbackUrl(targetRoot, file.name);
+    // Persist the authenticated API route instead of the agent's legacy public
+    // path (/files/...); both legacy forms are still accepted when downloading.
+    values.storage_path = buildCloudDownloadUrl(targetRoot, file.name);
   }
 
   return true;
@@ -12076,7 +12132,10 @@ function filterUserPicker(search, { clearSelection = false } = {}) {
   const valueField = picker?.dataset.userValueField || 'user_id';
   const requiredField = picker?.dataset.userRequiredField || '';
   const limit = Number(picker?.dataset.userPickerLimit || USER_PICKER_RENDER_LIMIT);
-  const users = uniqueUsers(state.data.users)
+  const pickerUsers = picker?.dataset.membershipUserPicker === 'true'
+    ? state.data.membershipDashboardUsers
+    : state.data.users;
+  const users = uniqueUsers(pickerUsers)
     .filter((user) => !requiredField || String(user?.[requiredField] ?? '').trim());
   const matchedUsers = (query
     ? users.filter((user) => userPickerSearchText(user).includes(query))
@@ -12130,7 +12189,10 @@ function attachMainDelegation() {
       const picker = userOption.closest('.db-user-picker');
       const hidden = picker?.querySelector('input[type="hidden"]');
       const search = picker?.querySelector('[data-user-search]');
-      const user = (state.data.users ?? []).find((u) => String(u.user_id) === String(userOption.dataset.userId));
+      const pickerUsers = picker?.dataset.membershipUserPicker === 'true'
+        ? state.data.membershipDashboardUsers
+        : state.data.users;
+      const user = (pickerUsers ?? []).find((u) => String(u.user_id) === String(userOption.dataset.userId));
       if (hidden) hidden.value = userOption.dataset.userValue ?? '';
       if (search) search.value = userOption.dataset.userDisplay || userLabel(userOption.dataset.userId);
       syncUserAutofillFields(picker, user);
@@ -12512,9 +12574,8 @@ function attachMainDelegation() {
     if (!search) return;
     const picker = search.closest('.db-user-picker');
     if (picker?.dataset.membershipUserPicker === 'true') {
-      setAdminTableSearch('membership_dashboard', search.value.trim());
-      window.clearTimeout(filterTableRows.remoteUserTimer);
-      filterTableRows.remoteUserTimer = window.setTimeout(() => navigate('admin-table-editor'), 280);
+      setAdminTableSearch('membership_dashboard', '');
+      filterUserPicker(search, { clearSelection: true });
       return;
     }
     filterUserPicker(search, { clearSelection: true });

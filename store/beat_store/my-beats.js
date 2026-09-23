@@ -3,7 +3,7 @@ const statusElement = document.getElementById('producer-ready-status');
 const introElement = document.getElementById('producer-ready-intro');
 const listElement = document.getElementById('producer-ready-list');
 const newLink = document.getElementById('new-beat-link');
-const state = { session: null, profile: null, products: [] };
+const state = { session: null, user: null, profile: null, products: [] };
 
 init().catch((error) => showError(error.message || 'No se pudo cargar Mis Beats.'));
 
@@ -11,19 +11,35 @@ async function init() {
   const { data } = await supabase.auth.getSession();
   state.session = data.session;
   if (!state.session) { sessionStorage.setItem('hr_return_after_login', '../store/beat_store/my-beats.html'); window.location.replace('../../portal/'); return; }
-  const { data: profile, error: profileError } = await supabase.from('producer_profiles').select('id, slug, display_name, approval_status, is_active').eq('user_id', state.session.user.id).maybeSingle();
-  if (profileError) throw new Error(profileError.message);
+  const [{ data: account, error: accountError }, { data: profile, error: profileError }] = await Promise.all([
+    supabase.from('users').select('display_name, username, roles').eq('id', state.session.user.id).maybeSingle(),
+    supabase.from('producer_profiles').select('id, slug, display_name').eq('user_id', state.session.user.id).maybeSingle(),
+  ]);
+  if (accountError || profileError) throw new Error((accountError || profileError).message);
+  const permissionResult = await supabase.rpc('has_beats_upload_permission');
+  let hasBeatUploadPermission = permissionResult.data;
+  if (permissionResult.error) {
+    const { data: permissionRows, error: permissionLookupError } = await supabase
+      .from('user_permissions').select('permission_key').eq('user_id', state.session.user.id);
+    if (permissionLookupError) throw new Error(permissionResult.error.message);
+    hasBeatUploadPermission = (permissionRows || [])
+      .map((row) => String(row.permission_key || '').trim().toLowerCase())
+      .includes('beats.upload');
+  }
+  const roles = String(account?.roles || '').split(',').map((role) => role.trim().toLowerCase());
+  const canUpload = roles.includes('admin') || Boolean(hasBeatUploadPermission);
+  if (!canUpload) { introElement.textContent = 'Acceso restringido.'; renderEmpty('Tu cuenta no tiene permiso para administrar sus beats.'); return; }
+  state.user = account;
   state.profile = profile;
-  if (!profile) { introElement.textContent = 'Tu cuenta todavía no tiene perfil de productor.'; renderEmpty('Solicita a un administrador la habilitación de tu perfil.'); return; }
-  if (profile.approval_status !== 'approved' || !profile.is_active) { introElement.textContent = `Perfil ${labelStatus(profile.approval_status)}.`; renderEmpty('El flujo de subida está disponible sólo para productores aprobados.'); return; }
   newLink.hidden = false;
-  introElement.textContent = `${profile.display_name} · productor aprobado`;
+  const producerName = profile?.display_name || account?.display_name || account?.username || 'Tu cuenta';
+  introElement.textContent = `${producerName} · beats propios`;
   await loadProducts();
   listElement.addEventListener('click', handleAction);
 }
 
 async function loadProducts() {
-  const { data, error } = await supabase.from('store_products').select('id, slug, name, price, currency, publication_status, review_comment, updated_at, beat_preview_status, beat_cover_path').eq('category', 'beats').eq('producer_user_id', state.session.user.id).order('updated_at', { ascending: false });
+  const { data, error } = await supabase.from('store_products').select('id, slug, name, price, currency, publication_status, updated_at, beat_preview_status, beat_cover_path').eq('category', 'beats').eq('producer_user_id', state.session.user.id).order('updated_at', { ascending: false });
   if (error) throw new Error(error.message);
   state.products = data || [];
   statusElement.textContent = `${state.products.length} beat${state.products.length === 1 ? '' : 's'} en tu espacio.`;

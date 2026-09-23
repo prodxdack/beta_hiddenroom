@@ -15,6 +15,38 @@ const ECOSYSTEM_LINKS = [
   ["tickets", "/tickets/", "Tickets"],
   ["orbit", "/mysauth_orbit/", "ORBIT", true],
 ];
+const MORE_NAV_KEYS = new Set(["media", "kairen", "tickets", "orbit"]);
+
+function isBeatStorePath(path) {
+  return path.startsWith("/store/beat_store/");
+}
+
+function isGlobalNavItemActive(key, activeModule, navPath) {
+  return (key === activeModule && !(activeModule === "store" && isBeatStorePath(navPath)))
+    || (key === "beat-store" && isBeatStorePath(navPath));
+}
+
+function renderGlobalNavLink([key, href, label, adminOnly], activeModule, navPath, drawer = false) {
+  const current = isGlobalNavItemActive(key, activeModule, navPath);
+  const attrs = `${adminOnly ? " data-admin-nav-link hidden" : ""}${current ? ' aria-current="page"' : ""}`;
+  return `<a href="${href}"${attrs}>${drawer ? `<span>${label}</span>` : label}</a>`;
+}
+
+function renderMoreNav(activeModule, navPath, drawer = false) {
+  const moreLinks = ECOSYSTEM_LINKS.filter(([key]) => MORE_NAV_KEYS.has(key));
+  const isMoreActive = moreLinks.some(([key]) => isGlobalNavItemActive(key, activeModule, navPath));
+  const detailsClass = drawer ? "hr-global-drawer__more" : "hr-nav__more";
+  const summaryClass = drawer ? "hr-global-drawer__more-summary" : "hr-nav__more-summary";
+  const linksClass = drawer ? "hr-global-drawer__more-links" : "hr-nav__more-links";
+  return `
+    <details class="${detailsClass}"${isMoreActive ? " open" : ""}>
+      <summary class="${summaryClass}">MÁS <span class="hr-nav__more-chevron" aria-hidden="true"></span></summary>
+      <div class="${linksClass}">
+        ${moreLinks.map((item) => renderGlobalNavLink(item, activeModule, navPath, drawer)).join("")}
+      </div>
+    </details>
+  `;
+}
 
 let globalSessionSnapshot = null;
 
@@ -241,6 +273,7 @@ function globalAuthLoadingMarkup(drawer = false) {
 
 function renderGlobalDrawer(activeModule) {
   const isPortalDashboard = document.body.classList.contains("db-body");
+  const navPath = window.location.pathname;
   const drawerSessionMarkup = isPortalDashboard
     ? `
           <div class="hr-global-drawer__guest hr-global-drawer__guest--portal">
@@ -269,11 +302,11 @@ function renderGlobalDrawer(activeModule) {
       </header>
       <p class="hr-global-drawer__label">Ecosistema</p>
       <nav class="hr-global-drawer__links" aria-label="Navegación móvil">
-        ${ECOSYSTEM_LINKS.map(([key, href, label, adminOnly]) => `
-          <a href="${href}"${adminOnly ? ' data-admin-nav-link hidden' : ""}${(key === activeModule && !(activeModule === "store" && window.location.pathname.startsWith("/store/beat_store/"))) || (key === "beat-store" && window.location.pathname.startsWith("/store/beat_store/")) ? ' aria-current="page"' : ""}>
-            <span>${label}</span>
-          </a>
-        `).join("")}
+        ${ECOSYSTEM_LINKS
+          .filter(([key]) => !MORE_NAV_KEYS.has(key))
+          .map((item) => renderGlobalNavLink(item, activeModule, navPath, true))
+          .join("")}
+        ${renderMoreNav(activeModule, navPath, true)}
       </nav>
       <div class="hr-global-drawer__footer">
         <div data-hr-drawer-session>
@@ -851,11 +884,35 @@ function setGlobalWaveformMode(mode = "fallback") {
   if (fallback) fallback.hidden = mode === "wave";
 }
 
+function beatPlayerIcon(name) {
+  const paths = {
+    play: '<path d="M8 4.75L19.5 12L8 19.25Z"></path>',
+    pause: '<path d="M7 5H11V19H7ZM13 5H17V19H13Z"></path>',
+    prev: '<path d="M9.5 4.5L2 12L9.5 19.5L12 17L7 12L12 7ZM17 4.5L9.5 12L17 19.5L19.5 17L14.5 12L19.5 7Z"></path>',
+    next: '<path d="M7 4.5L14.5 12L7 19.5L4.5 17L9.5 12L4.5 7ZM14.5 4.5L22 12L14.5 19.5L12 17L17 12L12 7Z"></path>',
+    volume: '<path d="M3 9H7L12 5V19L7 15H3Z" fill="currentColor" stroke="none"></path><path d="M15 9.5C16.8 11 16.8 13 15 14.5M17.5 7C20.8 9.7 20.8 14.3 17.5 17" fill="none" stroke="currentColor" stroke-width="2.7"></path>',
+    close: '<path d="M5 5L19 19M19 5L5 19"></path>',
+    fullscreen: '<path d="M8.5 4.5H4.5V8.5M15.5 4.5H19.5V8.5M8.5 19.5H4.5V15.5M15.5 19.5H19.5V15.5"></path>',
+    more: '<circle cx="5" cy="12" r="2.1"></circle><circle cx="12" cy="12" r="2.1"></circle><circle cx="19" cy="12" r="2.1"></circle>',
+    shuffle: '<path d="M4 7H7C10 7 12 17 17 17H20M17 14L20 17L17 20M4 17H7C8.5 17 9.5 16 10.5 14.5M14 9.5C15 8 16 7 17 7H20"></path><path d="M17 4L20 7L17 10"></path>',
+    repeat: '<path d="M5 8H16L14 6M16 8L14 10M19 16H8L10 18M8 16L10 14"></path>',
+  };
+  const solidIcons = ["play", "pause", "prev", "next", "more"];
+  const heavyIcons = ["close", "fullscreen", "shuffle", "repeat"];
+  const variant = solidIcons.includes(name)
+    ? " hr-player-icon--solid"
+    : heavyIcons.includes(name)
+      ? " hr-player-icon--heavy"
+      : "";
+  const className = `hr-player-icon${variant}`;
+  return `<svg class="${className}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${paths[name] || paths.more}</svg>`;
+}
+
 function globalBeatPlayerArtMarkup(cover = "") {
   const safeCover = String(cover || "").trim();
   return safeCover
-    ? `<img src="${escapeNavText(safeCover)}" alt="" onerror="this.hidden=true;this.parentElement.classList.remove('has-image')"><span class="hr-beat-player__art-icon" aria-hidden="true">&#9658;</span>`
-    : '<span>HR</span><span class="hr-beat-player__art-icon" aria-hidden="true">&#9658;</span>';
+    ? `<img src="${escapeNavText(safeCover)}" alt="" onerror="this.hidden=true;this.parentElement.classList.remove('has-image')"><span class="hr-beat-player__art-icon" aria-hidden="true">${beatPlayerIcon("play")}</span>`
+    : `<span>HR</span><span class="hr-beat-player__art-icon" aria-hidden="true">${beatPlayerIcon("play")}</span>`;
 }
 
 function beatPlayerAudioContextConstructor() {
@@ -1120,13 +1177,13 @@ function renderGlobalBeatPlayer() {
   document.body.classList.add("hr-has-beat-player");
   return `
     <aside class="hr-beat-player is-empty" id="hr-beat-player" aria-label="Reproductor Beat Store" data-state="idle">
-      <button class="hr-beat-player__art" id="beat-player-art" type="button" data-beat-player-toggle aria-label="Reproducir preview" aria-pressed="false"><span>HR</span><span class="hr-beat-player__art-icon" aria-hidden="true">&#9658;</span></button>
+      <button class="hr-beat-player__art" id="beat-player-art" type="button" data-beat-player-toggle aria-label="Reproducir preview" aria-pressed="false"><span>HR</span><span class="hr-beat-player__art-icon" aria-hidden="true">${beatPlayerIcon("play")}</span></button>
       <div class="hr-beat-player__meta">
         <strong id="player-title">Selecciona un beat</strong>
         <span id="player-detail"></span>
       </div>
-      <button class="hr-beat-player__more" type="button" data-beat-player-more aria-label="Opciones del reproductor" aria-expanded="false" aria-controls="beat-player-menu">...</button>
-      <button class="hr-beat-player__fullscreen" type="button" data-beat-player-fullscreen aria-label="Abrir reproductor en pantalla completa" aria-controls="hr-beat-player-fullscreen" disabled>&#x26F6;</button>
+      <button class="hr-beat-player__more" type="button" data-beat-player-more aria-label="Opciones del reproductor" aria-expanded="false" aria-controls="beat-player-menu">${beatPlayerIcon("more")}</button>
+      <button class="hr-beat-player__fullscreen" type="button" data-beat-player-fullscreen aria-label="Abrir reproductor en pantalla completa" aria-controls="hr-beat-player-fullscreen" disabled>${beatPlayerIcon("fullscreen")}</button>
       <div class="hr-beat-player__menu" id="beat-player-menu" hidden>
         <a href="/store/beat_store/">Ir a Beat Store</a>
       </div>
@@ -1136,7 +1193,7 @@ function renderGlobalBeatPlayer() {
           <input class="hr-beat-player__seek hr-beat-player__seek--fallback" id="beat-player-seek" type="range" min="0" max="1000" value="0" step="1" aria-label="Progreso del preview" disabled hidden>
         </div>
         <span class="hr-beat-player__time" id="beat-player-time">0:00 / 0:00</span>
-        <button class="hr-beat-player__mute" type="button" data-beat-player-mute aria-label="Silenciar preview" aria-pressed="false">VOL</button>
+        <button class="hr-beat-player__mute" type="button" data-beat-player-mute aria-label="Silenciar preview" aria-pressed="false">${beatPlayerIcon("volume")}</button>
         <input class="hr-beat-player__volume" id="beat-player-volume" type="range" min="0" max="1" value="1" step="0.01" aria-label="Volumen del preview">
       </div>
       <audio id="beat-audio" preload="metadata" crossorigin="anonymous"></audio>
@@ -1150,7 +1207,7 @@ function renderGlobalBeatPlayer() {
             <strong>Beat Store</strong>
           </div>
           <span class="hr-beat-player-fullscreen__serial" id="beat-player-fullscreen-genre" aria-hidden="true">GÉNERO</span>
-          <button class="hr-beat-player-fullscreen__close" type="button" data-beat-player-fullscreen-close aria-label="Cerrar reproductor en pantalla completa">&times;</button>
+          <button class="hr-beat-player-fullscreen__close" type="button" data-beat-player-fullscreen-close aria-label="Cerrar reproductor en pantalla completa">${beatPlayerIcon("close")}</button>
           <div class="hr-beat-player-fullscreen__appearance" aria-label="Apariencia del reproductor">
             <label>
               <span>TEMA</span>
@@ -1171,7 +1228,7 @@ function renderGlobalBeatPlayer() {
           <div class="hr-beat-player-fullscreen__screen">
             <div class="hr-beat-player-fullscreen__screen-top"><span>LCD / STEREO</span><span>PREVIEW</span></div>
             <div class="hr-beat-player-fullscreen__screen-main">
-              <button class="hr-beat-player-fullscreen__art hr-beat-player__art" id="beat-player-fullscreen-art" type="button" data-beat-player-fullscreen-toggle aria-label="Reproducir preview" aria-pressed="false" disabled><span>HR</span><span class="hr-beat-player__art-icon" aria-hidden="true">&#9658;</span></button>
+              <button class="hr-beat-player-fullscreen__art hr-beat-player__art" id="beat-player-fullscreen-art" type="button" data-beat-player-fullscreen-toggle aria-label="Reproducir preview" aria-pressed="false" disabled><span>HR</span><span class="hr-beat-player__art-icon" aria-hidden="true">${beatPlayerIcon("play")}</span></button>
               <div class="hr-beat-player-fullscreen__meta">
                 <span class="hr-beat-player-fullscreen__label">REPRODUCTOR</span>
                 <h2 id="beat-player-fullscreen-title">Selecciona un beat</h2>
@@ -1189,14 +1246,14 @@ function renderGlobalBeatPlayer() {
             </div>
           </div>
           <div class="hr-beat-player-fullscreen__transport" aria-label="Control central de reproducción">
-            <button class="hr-beat-player-fullscreen__nav" type="button" data-beat-player-restart aria-label="Regresar el beat al inicio" disabled>&#9198;</button>
-            <button class="hr-beat-player-fullscreen__play" type="button" data-beat-player-fullscreen-toggle aria-label="Reproducir preview" aria-pressed="false" disabled><span class="hr-beat-player__art-icon" aria-hidden="true">&#9658;</span></button>
-            <button class="hr-beat-player-fullscreen__nav" type="button" data-beat-player-next aria-label="Reproducir el siguiente beat" disabled>&#9197;</button>
+            <button class="hr-beat-player-fullscreen__nav" type="button" data-beat-player-restart aria-label="Regresar el beat al inicio" disabled>${beatPlayerIcon("prev")}</button>
+            <button class="hr-beat-player-fullscreen__play" type="button" data-beat-player-fullscreen-toggle aria-label="Reproducir preview" aria-pressed="false" disabled><span class="hr-beat-player__art-icon" aria-hidden="true">${beatPlayerIcon("play")}</span></button>
+            <button class="hr-beat-player-fullscreen__nav" type="button" data-beat-player-next aria-label="Reproducir el siguiente beat" disabled>${beatPlayerIcon("next")}</button>
           </div>
           <div class="hr-beat-player-fullscreen__hardware-row">
-            <button type="button" disabled aria-label="Shuffle no disponible">&#8646;</button>
-            <button type="button" disabled aria-label="Repeat no disponible">&#8635;</button>
-            <button class="hr-beat-player__mute" type="button" data-beat-player-mute aria-label="Silenciar preview" aria-pressed="false">VOL</button>
+            <button type="button" disabled aria-label="Shuffle no disponible">${beatPlayerIcon("shuffle")}</button>
+            <button type="button" disabled aria-label="Repeat no disponible">${beatPlayerIcon("repeat")}</button>
+            <button class="hr-beat-player__mute" type="button" data-beat-player-mute aria-label="Silenciar preview" aria-pressed="false">${beatPlayerIcon("volume")}</button>
             <input class="hr-beat-player__volume" id="beat-player-fullscreen-volume" type="range" min="0" max="1" value="1" step="0.01" aria-label="Volumen del preview">
           </div>
           <button class="hr-beat-player-fullscreen__buy hr-beat-player__buy" type="button" data-beat-player-buy disabled>BUY BEAT</button>
@@ -1425,7 +1482,7 @@ function syncGlobalBeatPlayerControls(toggle, seek, time, mute, volume, waveform
   const toggleControls = toggle ? (typeof toggle.length === "number" ? [...toggle] : [toggle]) : [];
   toggleControls.forEach((control) => {
     const icon = control.querySelector(".hr-beat-player__art-icon");
-    if (icon) icon.innerHTML = isPlaying ? "&#10074;&#10074;" : "&#9658;";
+    if (icon) icon.innerHTML = beatPlayerIcon(isPlaying ? "pause" : "play");
     control.setAttribute("aria-label", isPlaying ? "Pausar preview" : "Reproducir preview");
     control.setAttribute("aria-pressed", String(isPlaying));
   });
@@ -1436,7 +1493,7 @@ function syncGlobalBeatPlayerControls(toggle, seek, time, mute, volume, waveform
   navigationControls.forEach((control) => { control.disabled = !getBeatPlayerSrc(); });
   fullscreenToggles.forEach((fullscreenToggle) => {
     const icon = fullscreenToggle.querySelector(".hr-beat-player__art-icon");
-    if (icon) icon.innerHTML = isPlaying ? "&#10074;&#10074;" : "&#9658;";
+    if (icon) icon.innerHTML = beatPlayerIcon(isPlaying ? "pause" : "play");
     fullscreenToggle.disabled = !getBeatPlayerSrc();
     fullscreenToggle.setAttribute("aria-label", isPlaying ? "Pausar preview" : "Reproducir preview");
     fullscreenToggle.setAttribute("aria-pressed", String(isPlaying));
@@ -1457,7 +1514,7 @@ function syncGlobalBeatPlayerControls(toggle, seek, time, mute, volume, waveform
   if (fullscreenTime) fullscreenTime.textContent = `${formatGlobalBeatTime(current)} / ${formatGlobalBeatTime(duration)}`;
   const muteControls = mute ? (typeof mute.length === "number" ? [...mute] : [mute]) : [];
   muteControls.forEach((control) => {
-    control.textContent = getBeatPlayerMuted() ? "MUTE" : "VOL";
+    control.innerHTML = beatPlayerIcon("volume");
     control.setAttribute("aria-pressed", String(getBeatPlayerMuted()));
   });
   const volumeControls = volume ? (typeof volume.length === "number" ? [...volume] : [volume]) : [];
@@ -1789,9 +1846,11 @@ function renderGlobalNav() {
           <span>Hidden Room</span>
         </a>
         <nav class="hr-nav__links" aria-label="Navegación principal">
-          ${ECOSYSTEM_LINKS.map(([key, href, label, adminOnly]) => `
-            <a href="${href}"${adminOnly ? ' data-admin-nav-link hidden' : ""}${(key === activeModule && !(activeModule === "store" && navPath.startsWith("/store/beat_store/"))) || (key === "beat-store" && navPath.startsWith("/store/beat_store/")) ? ' aria-current="page"' : ""}>${label}</a>
-          `).join("")}
+          ${ECOSYSTEM_LINKS
+            .filter(([key]) => !MORE_NAV_KEYS.has(key))
+            .map((item) => renderGlobalNavLink(item, activeModule, navPath))
+            .join("")}
+          ${renderMoreNav(activeModule, navPath)}
         </nav>
         <div class="${actionsClass}">${renderNavActions(module)}</div>
         <button class="hr-nav__mobile-toggle" type="button" aria-label="Abrir menú"
@@ -1901,50 +1960,56 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
+function shouldSkipGlobalFooter() {
+  const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+  return document.body?.dataset.hrFooter === "false"
+    || document.body?.dataset.hrContext === "games"
+    || pathname === "/minijuegos"
+    || pathname.startsWith("/minijuegos/");
+}
+
 function initGlobalFooter() {
   const body = document.body;
-  if (!body?.hasAttribute("data-hr-chrome")) return;
+  if (!body?.hasAttribute("data-hr-chrome") || shouldSkipGlobalFooter()) return;
 
   const existingFooter = body.querySelector(":scope > footer") || body.querySelector("#hr-spa-content > footer");
-  if (existingFooter) {
-    existingFooter.classList.add("hr-site-footer");
+  const footer = existingFooter || document.createElement("footer");
 
-    if (!existingFooter.querySelector("img")) {
-      const logoLink = document.createElement("a");
-      logoLink.href = "/";
-      logoLink.setAttribute("aria-label", "Hidden Room");
-      logoLink.innerHTML = '<img class="hr-site-footer__logo" src="/assets/img/white_logo.webp" alt="Hidden Room">';
-      existingFooter.prepend(logoLink);
-    }
-
-    if (!existingFooter.querySelector(".site-status")) {
-      const meta = document.createElement("div");
-      meta.className = "hr-site-footer__meta";
-      meta.innerHTML = `
-        <span>Una marca de Grupo Mysauth</span>
-        <span class="site-status"></span>
-        <a href="/changelog.html" class="site-version"></a>
-      `;
-      existingFooter.insertBefore(meta, existingFooter.lastElementChild);
-    }
-  }
-
-  if (body.dataset.hrFooter !== "false" && !existingFooter) {
-    const footer = document.createElement("footer");
-    footer.className = "hr-site-footer";
-    footer.innerHTML = `
-      <a href="/" aria-label="Hidden Room">
-        <img class="hr-site-footer__logo" src="/assets/img/white_logo.webp" alt="Hidden Room">
+  footer.className = "hr-site-footer hr-universal-footer";
+  footer.setAttribute("aria-label", "Pie de página");
+  footer.innerHTML = `
+    <div class="hr-universal-footer__brand">
+      <a class="hr-universal-footer__logo-link" href="/" aria-label="Hidden Room, inicio">
+        <img class="hr-universal-footer__logo" src="/assets/img/white_logo.webp" alt="Hidden Room">
       </a>
-      <div class="hr-site-footer__meta">
-        <span>Una marca de Grupo Mysauth</span>
-        <span class="site-status"></span>
-        <a href="/changelog.html" class="site-version"></a>
-      </div>
-      <div class="hr-site-footer__tagline">La Casa del Under</div>
-    `;
-    body.append(footer);
-  }
+      <p class="hr-universal-footer__signature">Hidden Room / Grupo Mysauth</p>
+    </div>
+
+    <div class="hr-universal-footer__links">
+      <nav class="hr-universal-footer__group" aria-label="Explorar Hidden Room">
+        <p class="hr-universal-footer__label">Explorar</p>
+        <a href="/store/beat_store/">Beat Store</a>
+        <a href="/media/">Media</a>
+        <a href="/studio/">Studio</a>
+        <a href="/tickets/">Eventos</a>
+      </nav>
+
+      <nav class="hr-universal-footer__group" aria-label="Ayuda y cuenta">
+        <p class="hr-universal-footer__label">Ayuda</p>
+        <a href="/store/beat_store/my-beats.html">Mis Beats</a>
+        <a href="/store/cart.html">Carrito</a>
+        <a href="/store/beat_store/new-beat.html" data-permission-nav-link="beats.upload" hidden>Subir beats</a>
+        <a href="https://wa.me/525542881737" target="_blank" rel="noopener noreferrer">Soporte por WhatsApp</a>
+      </nav>
+    </div>
+
+    <div class="hr-universal-footer__meta">
+      <span class="site-status" hidden aria-hidden="true"></span>
+      <span class="hr-universal-footer__beta">BETA <span aria-hidden="true">·</span> <span class="site-version"></span></span>
+    </div>
+  `;
+
+  if (!existingFooter) body.append(footer);
 }
 
 renderGlobalNav();

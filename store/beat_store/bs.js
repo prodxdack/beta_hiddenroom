@@ -9,7 +9,7 @@ const BEAT_STORE_CLOUD_PATH = "/beats_store";
 const supabase = await window.HiddenRoomSupabase.getClient();
 const hrBeatStoreLifecycle = new AbortController();
 window.HiddenRoomApp?.register(() => hrBeatStoreLifecycle.abort());
-const state = { products: [], adminProducts: [], beats: [], items: [], searchIndex: new Map(), genreIndex: new Map(), renderVersion: 0, renderedKey: "", licenses: [], assignments: [], producerProfiles: [], durationDetections: new Set(), isAdmin: false, currentUserId: null, currentUsername: "", hasBeatMetadata: true, hasBeatLicenses: true, hasBeatPreviews: true, hasBeatAutodetectFlags: true };
+const state = { products: [], adminProducts: [], beats: [], items: [], searchIndex: new Map(), genreIndex: new Map(), renderVersion: 0, renderedKey: "", licenses: [], assignments: [], producerProfiles: [], durationDetections: new Set(), isAdmin: false, canEditOwnBeats: false, currentUserId: null, currentUsername: "", hasBeatMetadata: true, hasBeatLicenses: true, hasBeatPreviews: true, hasBeatAutodetectFlags: true };
 
 const grid = document.getElementById("beat-grid");
 const searchInput = document.getElementById("beat-search");
@@ -28,9 +28,12 @@ const clearFiltersButton = document.getElementById("beat-clear-filters");
 const beatFilterCount = document.getElementById("beat-filter-count");
 const activeProducerSelect = () => producerSelect || advancedProducerSelect;
 const SELECT_PLACEHOLDER = "__placeholder__";
+const MERGED_GENRE_KEY = "perreo-reggaeton";
 const adminPanel = document.getElementById("beat-admin-panel");
 const adminForm = document.getElementById("beat-admin-form");
 const adminList = document.getElementById("beat-admin-products");
+const adminTabButtons = [...document.querySelectorAll("[data-admin-tab]")];
+const adminTabPanels = [...document.querySelectorAll("[data-admin-panel]")];
 const adminStatus = document.getElementById("beat-admin-status");
 const adminError = document.getElementById("beat-admin-error");
 const cancelEditButton = document.getElementById("beat-cancel-edit");
@@ -88,11 +91,16 @@ async function initBeatStore() {
   applyBeatUrlState();
   renderBeats();
   initializeAdminPanel();
+  if (state.isAdmin) openRequestedAdminEdit();
 
   window.addEventListener("popstate", () => {
     applyBeatUrlState();
     renderBeats();
-    if (state.isAdmin) setAdminMode(wantsAdminMode());
+    if (state.isAdmin) {
+      setAdminMode(wantsAdminMode());
+      setAdminTab(requestedAdminTab());
+      if (wantsAdminMode()) openRequestedAdminEdit();
+    }
   }, { signal: hrBeatStoreLifecycle.signal });
 
   searchInput?.addEventListener("input", () => {
@@ -157,6 +165,7 @@ async function initBeatStore() {
     openBeatLicensesModal(itemId, event.detail?.trigger || null);
   }, { signal: hrBeatStoreLifecycle.signal });
   adminForm?.addEventListener("submit", handleAdminSubmit);
+  adminTabButtons.forEach((button) => button.addEventListener("click", () => setAdminTab(button.dataset.adminTab, true), { signal: hrBeatStoreLifecycle.signal }));
   adminForm?.addEventListener("change", handleBeatLicenseAssignmentChange);
   adminList?.addEventListener("click", handleAdminListClick);
   beatLicenseForm?.addEventListener("submit", handleBeatLicenseSubmit);
@@ -258,6 +267,31 @@ function wantsAdminMode() {
   return params.get("view") === "admin" || params.get("admin") === "1";
 }
 
+function requestedAdminTab() {
+  return new URLSearchParams(window.location.search).get("tab") === "licenses" ? "licenses" : "beats";
+}
+
+function setAdminTab(tab = "beats", syncUrl = false) {
+  const activeTab = tab === "licenses" ? "licenses" : "beats";
+  adminTabButtons.forEach((button) => {
+    const isActive = button.dataset.adminTab === activeTab;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-selected", String(isActive));
+    if (isActive) button.removeAttribute("tabindex");
+    else button.setAttribute("tabindex", "-1");
+  });
+  adminTabPanels.forEach((panel) => {
+    panel.hidden = panel.dataset.adminPanel !== activeTab;
+  });
+  if (syncUrl && wantsAdminMode()) {
+    const url = new URL(window.location.href);
+    url.searchParams.set("view", "admin");
+    url.searchParams.set("tab", activeTab);
+    url.searchParams.delete("edit");
+    history.pushState(null, "", url);
+  }
+}
+
 function setAdminMode(active) {
   const isActive = Boolean(active);
   document.body.classList.toggle("beat-admin-mode", isActive);
@@ -295,6 +329,7 @@ function handleAdminModeClick(event) {
     event.preventDefault();
     const url = new URL(window.location.href);
     url.searchParams.set("view", "admin");
+    url.searchParams.set("tab", "beats");
     url.hash = "";
     history.pushState(null, "", url);
     setAdminMode(true);
@@ -306,6 +341,7 @@ function handleAdminModeClick(event) {
     const url = new URL(window.location.href);
     url.searchParams.delete("view");
     url.searchParams.delete("admin");
+    url.searchParams.delete("tab");
     url.hash = "";
     history.pushState(null, "", url);
     setAdminMode(false);
@@ -326,6 +362,8 @@ async function currentUserIsAdmin() {
 
   if (error) return false;
   state.currentUsername = String(profile?.username || "").trim();
+  const approvalResult = await supabase.rpc("is_approved_producer");
+  state.canEditOwnBeats = !approvalResult.error && Boolean(approvalResult.data);
   syncProducerUsernameButton();
   return String(profile?.roles ?? "")
     .split(",")
@@ -491,7 +529,7 @@ function buildBeatSearchIndex() {
     const haystack = [product?.name, product?.description, product?.producer, profile?.display_name, product?.slug, beat?.title, beat?.file, beat?.slug, genre, itemMusicMeta(item).map((entry) => entry.value).join(" ")]
       .filter(Boolean).join(" ").toLowerCase();
     state.searchIndex.set(item.id, haystack);
-    state.genreIndex.set(item.id, normalizeKey(genre));
+    state.genreIndex.set(item.id, beatGenreGroupKey(genre));
   }
   state.renderVersion += 1;
   state.renderedKey = "";
@@ -500,6 +538,7 @@ function buildBeatSearchIndex() {
 function renderBeats() {
   const query = String(searchInput?.value || "").trim().toLowerCase();
   const genre = genreSelect?.value === SELECT_PLACEHOLDER ? "" : String(genreSelect?.value || "").trim();
+  const selectedGenreKey = genre ? beatGenreGroupKey(genre) : "";
   const producer = String(activeProducerSelect()?.value || "").trim();
   const priceMin = numericFilterValue(priceMinInput);
   const priceMax = numericFilterValue(priceMaxInput);
@@ -513,9 +552,7 @@ function renderBeats() {
     const profile = producerProfileForProduct(item.product);
     const itemProducer = normalizeKey(profile?.slug || item.product?.producer || "");
     return (!query || state.searchIndex.get(item.id)?.includes(query))
-      && (!genre || (["perreo", "reggaeton"].includes(genre)
-        ? ["perreo", "reggaeton"].includes(state.genreIndex.get(item.id))
-        : state.genreIndex.get(item.id) === genre))
+      && (!selectedGenreKey || state.genreIndex.get(item.id) === selectedGenreKey)
       && (!producer || itemProducer === producer)
       && (priceMin === null || price >= priceMin)
       && (priceMax === null || price <= priceMax)
@@ -534,7 +571,7 @@ function renderBeats() {
     return;
   }
 
-  grid.innerHTML = filtered.map(beatCardMarkup).join("");
+  grid.innerHTML = renderGenreRows(filtered);
   hydrateMissingBeatDurations(filtered);
 }
 
@@ -549,7 +586,7 @@ function renderGenreRows(items) {
     if (!groups.has(key)) {
       groups.set(key, {
         label: key === "perreo-reggaeton" ? "Perreo / Reggaeton" : formatGenreLabel(rawGenre) || "Sin género",
-        filterValue: key === "perreo-reggaeton" ? "perreo" : key === "__no_genre__" ? "" : key,
+        filterValue: key === "__no_genre__" ? "" : key,
         items: [],
       });
     }
@@ -638,14 +675,26 @@ function renderGenreOptions() {
   const genres = Array.from(new Map(state.items
     .map((item) => beatGenre(item))
     .filter(Boolean)
-    .map((genre) => [normalizeKey(genre), genre])).entries())
-    .sort((a, b) => a[1].localeCompare(b[1]));
+    .map((genre) => {
+      const key = beatGenreGroupKey(genre);
+      return [key, key === MERGED_GENRE_KEY ? "Reggaeton / Perreo" : genre];
+    })).entries())
+    .sort((a, b) => {
+      const rank = (key) => key === MERGED_GENRE_KEY ? 0 : key === normalizeKey("Boom Bap") ? 1 : 10;
+      return rank(a[0]) - rank(b[0]) || a[1].localeCompare(b[1], "es-MX");
+    });
   genreSelect.innerHTML = `<option value="${SELECT_PLACEHOLDER}" disabled>Género</option><option value="">Todos</option>${genres.map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(formatGenreLabel(label))}</option>`).join("")}`;
-  genreSelect.value = genres.some(([value]) => value === current) || current === "" ? current : SELECT_PLACEHOLDER;
+  const currentKey = current ? beatGenreGroupKey(current) : current;
+  genreSelect.value = genres.some(([value]) => value === currentKey) || current === "" ? currentKey : SELECT_PLACEHOLDER;
 }
 
 function formatGenreLabel(value) {
   return String(value || "").trim().toLocaleLowerCase("es-MX").replace(/(^|[\s\/&'’-])(\p{L})/gu, (_, separator, letter) => separator + letter.toLocaleUpperCase("es-MX"));
+}
+
+function beatGenreGroupKey(value) {
+  const normalized = normalizeKey(value);
+  return ["perreo", "reggaeton"].includes(normalized) ? MERGED_GENRE_KEY : normalized || "__no_genre__";
 }
 
 function renderProducerOptions() {
@@ -760,20 +809,43 @@ function beatCardMarkup(item) {
 
   return `
     <article class="product-card beat-card" data-item-id="${escapeHtml(item.id)}">
+      ${beatCardOptionsMarkup(item)}
       ${coverMarkup(item)}
       <div class="beat-card__body">
-        <p class="beat-card__producer">${producerLinkMarkup(item, producer)}</p>
+        <div class="beat-card__info">
+          <h3>${escapeHtml(title)}</h3>
+          <p class="beat-card__producer">${producerLinkMarkup(item, producer)}</p>
+        </div>
         <div class="beat-card__commercial-row">
-          <div class="beat-card__info">
-            <p class="beat-card__price">${escapeHtml(priceLabel)}</p>
-            <h3>${escapeHtml(title)}</h3>
-          </div>
+          <p class="beat-card__price">${escapeHtml(priceLabel)}</p>
           <div class="beat-card__actions">
             <button class="primary-button" type="button" data-add-beat="${escapeHtml(item.id)}" ${canBuy ? "" : "disabled"} aria-expanded="false">Ver licencias</button>
           </div>
         </div>
         <div class="beat-card__meta-slot">${musicMetaMarkup(meta)}</div>
       </div>    </article>`;
+}
+
+function canEditBeatItem(item) {
+  const ownerId = String(item?.product?.producer_user_id || "");
+  if (!item?.product?.id || !state.currentUserId) return false;
+  if (ownerId !== state.currentUserId) return false;
+  return Boolean(state.isAdmin || state.canEditOwnBeats);
+}
+
+function beatCardOptionsMarkup(item) {
+  if (!canEditBeatItem(item) || !item?.product?.id) return "";
+  const productId = encodeURIComponent(item.product.id);
+  const href = `new-beat.html?id=${productId}`;
+  return `
+      <details class="beat-card__options">
+        <summary aria-label="Opciones de ${escapeHtml(beatDisplayTitle(item))}">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 9L12 15L18 9"></path></svg>
+        </summary>
+        <div class="beat-card__options-menu">
+          <a href="${escapeHtml(href)}">Editar beat</a>
+        </div>
+      </details>`;
 }
 
 function beatLicensesContentMarkup(item) {
@@ -1099,6 +1171,7 @@ function addBeatToCart(itemId) {
 function initializeAdminPanel() {
   if (!state.isAdmin || !adminPanel) return;
   setAdminMode(wantsAdminMode());
+  setAdminTab(requestedAdminTab());
   if (adminStatus && !adminStatus.querySelector('[data-review-queue-link]')) {
     adminStatus.insertAdjacentHTML('beforeend', ' <a data-review-queue-link class="secondary-button hr-btn" href="review.html">Bandeja de revisión</a>');
   }
@@ -1107,6 +1180,14 @@ function initializeAdminPanel() {
   renderAdminProducts();
   renderBeatLicenseAdmin();
   renderBeatLicenseAssignmentFields();
+}
+
+function openRequestedAdminEdit() {
+  const editId = new URLSearchParams(window.location.search).get("edit");
+  if (!editId || !state.isAdmin) return;
+  setAdminMode(true);
+  setAdminTab("beats");
+  requestAnimationFrame(() => editAdminProduct(editId));
 }
 
 function renderBeatLicenseAdmin() {
@@ -1347,7 +1428,7 @@ async function handleAdminSubmit(event) {
   let uploadedCoverUrl = "";
   let editingId = "";
   try {
-    const id = document.getElementById("beat-product-id").value;
+    const id = document.getElementById("beat-product-id").value || adminForm.dataset.editingProductId || "";
     editingId = id;
     const slug = document.getElementById("beat-slug").value.trim().toLowerCase();
     await ensureBeatSlugAvailable(slug, id);
@@ -1913,7 +1994,12 @@ function editAdminProduct(id) {
   const product = state.adminProducts.find((candidate) => candidate.id === id);
   if (!product) return;
 
-  document.getElementById("beat-product-id").value = product.id;
+  setAdminTab("beats");
+  const productId = String(product.id);
+  const productIdInput = document.getElementById("beat-product-id");
+  productIdInput.value = productId;
+  productIdInput.setAttribute("value", productId);
+  adminForm.dataset.editingProductId = productId;
   document.getElementById("beat-name").value = product.name;
   document.getElementById("beat-slug").value = product.slug;
   document.getElementById("beat-description").value = product.description ?? "";
@@ -1947,6 +2033,8 @@ function resetAdminForm() {
   if (beatCoverObjectUrl) URL.revokeObjectURL(beatCoverObjectUrl);
   beatCoverObjectUrl = "";
   document.getElementById("beat-product-id").value = "";
+  document.getElementById("beat-product-id").removeAttribute("value");
+  delete adminForm.dataset.editingProductId;
   document.getElementById("beat-active").checked = true;
   document.getElementById("beat-digital").checked = true;
   document.getElementById("beat-form-title").textContent = "Nuevo beat";
