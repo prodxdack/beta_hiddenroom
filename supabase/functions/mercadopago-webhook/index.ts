@@ -11,6 +11,22 @@ function cleanText(value: unknown, maxLength = 160) {
   return String(value ?? "").trim().slice(0, maxLength);
 }
 
+function paymentStatus(value: unknown) {
+  const status = cleanText(value, 40).toLowerCase();
+  const normalizedStatuses: Record<string, string> = {
+    processed: "paid",
+    processing: "pending",
+    created: "pending",
+    action_required: "pending",
+    canceled: "cancelled",
+    cancelled: "cancelled",
+    partially_refunded: "partially_refunded",
+    refunded: "refunded",
+    charged_back: "charged_back",
+  };
+  return normalizedStatuses[status] ?? (status || "pending");
+}
+
 function parseSignatureHeader(header: string) {
   return header.split(",").reduce<Record<string, string>>((parts, item) => {
     const [key, value] = item.split("=", 2);
@@ -108,7 +124,7 @@ function extractPayment(resource: Record<string, any>, topic: string) {
   if (topic.toLowerCase().includes("payment")) {
     return {
       reference: cleanText(resource.external_reference),
-      status: cleanText(resource.status, 40).toLowerCase() || "pending",
+      status: paymentStatus(resource.status),
       paymentId: cleanText(resource.id),
       providerOrderId: cleanText(resource.order?.id ?? resource.order_id),
       amount: moneyValue(resource.transaction_amount ?? resource.total_paid_amount),
@@ -120,7 +136,7 @@ function extractPayment(resource: Record<string, any>, topic: string) {
   const payment = resource.transactions?.payments?.[0] ?? {};
   return {
     reference: cleanText(resource.external_reference),
-    status: cleanText(payment.status ?? resource.status, 40).toLowerCase() || "pending",
+    status: paymentStatus(payment.status ?? resource.status),
     paymentId: cleanText(payment.id ?? payment.payment_id),
     providerOrderId: cleanText(resource.id),
     amount: moneyValue(payment.amount ?? payment.total_paid_amount ?? resource.total_amount),
@@ -133,13 +149,16 @@ function extractPayment(resource: Record<string, any>, topic: string) {
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
-  const accessToken = Deno.env.get("MP_ACCESS_TOKEN");
-  const webhookSecret = Deno.env.get("MP_WEBHOOK_SECRET");
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!accessToken || !webhookSecret || !supabaseUrl || !serviceRoleKey) {
+  if (!supabaseUrl || !serviceRoleKey) {
     return json({ error: "Webhook no configurado." }, 500);
   }
+  const admin = createClient(supabaseUrl, serviceRoleKey);
+  const { data: runtimeConfig } = await admin.rpc("mp_runtime_config");
+  const accessToken = runtimeConfig?.access_token || Deno.env.get("MP_ACCESS_TOKEN");
+  const webhookSecret = runtimeConfig?.webhook_secret || Deno.env.get("MP_WEBHOOK_SECRET");
+  if (!accessToken || !webhookSecret) return json({ error: "Webhook no configurado." }, 500);
 
   let body: Record<string, any> = {};
   try {
@@ -164,7 +183,6 @@ Deno.serve(async (req) => {
   const payment = extractPayment(resource, topic);
   if (!payment.reference) return json({ error: "La notificacion no contiene referencia." }, 400);
 
-  const admin = createClient(supabaseUrl, serviceRoleKey);
   const { data: storeOrder, error: orderError } = await admin
     .from("store_orders")
     .select("id,total,currency")
@@ -192,13 +210,29 @@ Deno.serve(async (req) => {
     return json({ error: "La notificacion no coincide con la orden." }, 400);
   }
 
-  const { data, error } = await admin.rpc("fulfill_store_order_provider", {
+  const providerEventId = `${topic.toLowerCase()}:${id}`;
+  const { data, error } = await admin.rpc("process_store_payment_event", {
     p_order_id: storeOrder.id,
     p_provider: "mercadopago",
+    p_provider_event_id: providerEventId,
+    p_idempotency_key: providerEventId,
     p_provider_order_id: payment.providerOrderId || null,
     p_provider_payment_id: payment.paymentId || payment.providerOrderId || payment.reference,
-    p_status: payment.status,
-    p_raw_response: payment.raw,
+    p_event_type: payment.status,
+    p_provider_event_at: resource.date_created || resource.date_last_updated || null,
+    p_amount: payment.amount,
+    p_currency: payment.currency,
+    p_payload: {
+      source: "mercadopago-webhook",
+      topic,
+      provider_event_id: id,
+      reference: payment.reference,
+      status: payment.status,
+      provider_order_id: payment.providerOrderId || null,
+      provider_payment_id: payment.paymentId || null,
+      amount: payment.amount,
+      currency: payment.currency,
+    },
   });
 
   if (error) {

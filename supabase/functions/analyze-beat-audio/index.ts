@@ -2,7 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-analyze-target, x-file-name",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-analyze-target, x-file-name, x-beat-product-id",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -74,10 +74,42 @@ Deno.serve(async (req) => {
     .maybeSingle();
 
   if (profileError) return error(profileError.message || "No se pudo validar usuario.", 500);
-  if (!profile || !hasAdminRole(profile.roles)) return error("Forbidden", 403);
+  const isAdmin = Boolean(profile && hasAdminRole(profile.roles));
+  let canAnalyze = isAdmin;
+  if (!canAnalyze) {
+    const [{ data: producerProfile, error: producerError }, { data: permissionRows, error: permissionError }] = await Promise.all([
+      adminClient
+        .from("producer_profiles")
+        .select("approval_status,is_active")
+        .eq("user_id", callerData.user.id)
+        .maybeSingle(),
+      adminClient
+        .from("user_permissions")
+        .select("permission_key")
+        .eq("user_id", callerData.user.id),
+    ]);
+    if (producerError || permissionError) return error((producerError || permissionError)?.message || "No se pudo validar permisos.", 500);
+    const hasBeatUploadPermission = (permissionRows || []).some((row) => String(row.permission_key || '').trim().toLowerCase() === 'beats.upload');
+    canAnalyze = producerProfile?.is_active === true && producerProfile.approval_status === 'approved' && hasBeatUploadPermission;
+  }
+  if (!canAnalyze) return error("Forbidden", 403);
 
   const target = cleanText(req.headers.get("x-analyze-target") || "all", 20).toLowerCase();
   if (!validTarget(target)) return error("Tipo de analisis invalido.", 400);
+
+  const beatProductId = cleanText(req.headers.get("x-beat-product-id"), 80);
+  let ownedAudioPath = "";
+  if (!isAdmin && beatProductId) {
+    const { data: product, error: productError } = await adminClient
+      .from("store_products")
+      .select("id,producer_user_id,beat_original_path")
+      .eq("id", beatProductId)
+      .eq("category", "beats")
+      .maybeSingle();
+    if (productError) return error(productError.message || "No se pudo validar el beat.", 500);
+    if (!product || product.producer_user_id !== callerData.user.id) return error("Forbidden", 403);
+    ownedAudioPath = String(product.beat_original_path || "");
+  }
 
   const contentType = req.headers.get("content-type") || "application/octet-stream";
   const isJson = contentType.toLowerCase().includes("application/json");
@@ -88,6 +120,7 @@ Deno.serve(async (req) => {
     const payload = await req.json().catch(() => null) as Record<string, unknown> | null;
     const audioPath = cleanText(payload?.audio_path, 300);
     if (!audioPath) return error("El beat no tiene audio en Cloud para analizar.", 400);
+    if (!isAdmin && (!beatProductId || !ownedAudioPath || audioPath !== ownedAudioPath)) return error("Forbidden", 403);
     body = JSON.stringify({ audio_path: audioPath });
     forwardedContentType = "application/json";
   } else {

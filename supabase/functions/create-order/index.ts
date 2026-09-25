@@ -133,13 +133,16 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
-  const accessToken = Deno.env.get("MP_ACCESS_TOKEN");
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
-  if (!accessToken || !supabaseUrl || !serviceRoleKey) {
+  if (!supabaseUrl || !serviceRoleKey) {
     return json({ error: "Mercado Pago no esta configurado." }, 500);
   }
+  const admin = createClient(supabaseUrl, serviceRoleKey);
+  const { data: runtimeConfig } = await admin.rpc("mp_runtime_config");
+  const accessToken = runtimeConfig?.access_token || Deno.env.get("MP_ACCESS_TOKEN");
+  if (!accessToken) return json({ error: "Mercado Pago no esta configurado." }, 500);
 
   let body: Record<string, unknown>;
   try {
@@ -177,7 +180,6 @@ Deno.serve(async (req) => {
     return json({ error: error instanceof Error ? error.message : "Carrito invalido." }, 400);
   }
 
-  const admin = createClient(supabaseUrl, serviceRoleKey);
   const authorization = req.headers.get("Authorization") ?? "";
   const bearerToken = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
   let userId: string | null = null;
@@ -299,6 +301,19 @@ Deno.serve(async (req) => {
     return json({ error: itemsError.message }, 500);
   }
 
+  const { error: reservationError } = await admin.rpc("reserve_exclusive_inventory", {
+    p_order_id: storeOrder.id,
+  });
+  if (reservationError) {
+    await admin.from("store_orders").delete().eq("id", storeOrder.id);
+    const unavailable = /exclusive|reserved|sold/i.test(reservationError.message);
+    return json({
+      error: unavailable
+        ? "La licencia exclusiva ya no está disponible."
+        : "No se pudo reservar la licencia seleccionada.",
+    }, unavailable ? 409 : 500);
+  }
+
   const { data: genericOrder, error: genericOrderError } = await admin
     .from("orders")
     .insert({
@@ -315,6 +330,7 @@ Deno.serve(async (req) => {
     .single();
 
   if (genericOrderError || !genericOrder) {
+    await admin.rpc("release_exclusive_inventory", { p_order_id: storeOrder.id });
     await admin.from("store_orders").delete().eq("id", storeOrder.id);
     return json({ error: genericOrderError?.message || "No se pudo registrar la orden." }, 500);
   }
@@ -363,13 +379,26 @@ Deno.serve(async (req) => {
       provider_payment_id: providerPaymentId || null,
     }).eq("id", storeOrder.id);
 
-    const { error: fulfillError } = await admin.rpc("fulfill_store_order_provider", {
+    const { error: fulfillError } = await admin.rpc("process_store_payment_event", {
       p_order_id: storeOrder.id,
       p_provider: "mercadopago",
+      p_provider_event_id: `order:${providerOrderId || reference}:${status}`,
+      p_idempotency_key: reference,
       p_provider_order_id: providerOrderId || null,
       p_provider_payment_id: providerPaymentId || providerOrderId || reference,
-      p_status: status,
-      p_raw_response: mpOrder,
+      p_event_type: status,
+      p_provider_event_at: null,
+      p_amount: roundedTotal,
+      p_currency: currency,
+      p_payload: {
+        source: "create-order",
+        reference,
+        provider_order_id: providerOrderId || null,
+        provider_payment_id: providerPaymentId || null,
+        status,
+        amount: roundedTotal,
+        currency,
+      },
     });
 
     if (fulfillError) {

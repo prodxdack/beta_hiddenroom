@@ -3,7 +3,7 @@ import { PaymentForm } from "./payment-form.js";
 export const SUPABASE_URL = "https://rpcunbkstadgngqrjafp.supabase.co";
 export const SUPABASE_ANON_KEY = "sb_publishable_7v_FIgTjWjJgtT1YHIAYSw_bRBmQjZO";
 export const CART_STORAGE_KEY = "hidden_room_store_cart";
-export const MP_PUBLIC_KEY = window.VITE_MP_PUBLIC_KEY || "";
+export let MP_PUBLIC_KEY = window.VITE_MP_PUBLIC_KEY || "";
 
 const BEAT_STORE_CLOUD_ORIGIN = "https://cloud.hiddenroom.mx";
 
@@ -34,6 +34,7 @@ async function initStore() {
   updateCartCount();
   const { data } = await supabase.auth.getSession();
   currentSession = data.session;
+  await loadMercadoPagoPublicKey();
   syncAccountNavigation();
 
   const page = document.body.dataset.page;
@@ -42,6 +43,11 @@ async function initStore() {
   if (page === "cart") await renderCart();
   if (page === "checkout") await initializeCheckout();
   if (page === "success") initializeSuccess();
+}
+
+async function loadMercadoPagoPublicKey() {
+  const { data, error } = await supabase.rpc("mp_public_key");
+  if (!error && typeof data === "string" && data.trim()) MP_PUBLIC_KEY = data.trim();
 }
 
 export async function fetchProducts() {

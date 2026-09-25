@@ -9,7 +9,7 @@ const BEAT_STORE_CLOUD_PATH = "/beats_store";
 const supabase = await window.HiddenRoomSupabase.getClient();
 const hrBeatStoreLifecycle = new AbortController();
 window.HiddenRoomApp?.register(() => hrBeatStoreLifecycle.abort());
-const state = { products: [], adminProducts: [], beats: [], items: [], searchIndex: new Map(), genreIndex: new Map(), renderVersion: 0, renderedKey: "", licenses: [], assignments: [], producerProfiles: [], durationDetections: new Set(), isAdmin: false, canEditOwnBeats: false, currentUserId: null, currentUsername: "", hasBeatMetadata: true, hasBeatLicenses: true, hasBeatPreviews: true, hasBeatAutodetectFlags: true };
+const state = { products: [], adminProducts: [], beats: [], items: [], searchIndex: new Map(), genreIndex: new Map(), renderVersion: 0, renderedKey: "", licenses: [], assignments: [], producerProfiles: [], beatUploadUsers: [], beatUploadPermissions: [], beatUploadPermissionsError: null, mercadoPagoConfig: null, mercadoPagoConfigError: null, durationDetections: new Set(), isAdmin: false, canEditOwnBeats: false, currentUserId: null, currentUsername: "", hasBeatMetadata: true, hasBeatLicenses: true, hasBeatPreviews: true, hasBeatAutodetectFlags: true };
 
 const grid = document.getElementById("beat-grid");
 const searchInput = document.getElementById("beat-search");
@@ -53,6 +53,12 @@ const beatLicenseStatus = document.getElementById("beat-license-status");
 const beatLicenseError = document.getElementById("beat-license-error");
 const beatLicenseWarning = document.getElementById("beat-license-warning");
 const beatLicenseCancel = document.getElementById("beat-license-cancel");
+const beatUploadPermissionsList = document.getElementById("beat-upload-permissions-list");
+const beatUploadPermissionsStatus = document.getElementById("beat-upload-permissions-status");
+const beatUploadPermissionsSearch = document.getElementById("beat-upload-permissions-search");
+const beatMercadoPagoForm = document.getElementById("beat-mercadopago-form");
+const beatMercadoPagoStatus = document.getElementById("beat-mercadopago-status");
+const beatMercadoPagoError = document.getElementById("beat-mercadopago-error");
 const beatLicenseModal = document.getElementById("beat-license-modal");
 const beatLicenseModalTitle = document.getElementById("beat-license-modal-title");
 const beatLicenseModalSubtitle = document.getElementById("beat-license-modal-subtitle");
@@ -64,6 +70,7 @@ let beatFilterPanelLastFocus = null;
 let beatFilterPanelScrollY = 0;
 let beatLicenseLastTrigger = null;
 let beatCoverObjectUrl = "";
+let beatUploadPermissionsSearchTimer = 0;
 const beatCoverCropState = { x: 0.5, y: 0.5, zoom: 1 };
 const beatCoverPointers = new Map();
 let beatCoverDragStart = null;
@@ -77,12 +84,17 @@ async function initBeatStore() {
   updateCartCount();
   if (beatFilterPanel && beatFilterPanel.parentElement !== document.body) document.body.appendChild(beatFilterPanel);
   state.isAdmin = await currentUserIsAdmin();
-  const [products, beats, licenses, producerProfiles] = await Promise.all([fetchBeatProducts(state.isAdmin), fetchCloudBeats(), fetchBeatLicenses(state.isAdmin), fetchProducerProfiles(state.isAdmin)]);
+  const [products, beats, licenses, producerProfiles, beatUploadAccess, mercadoPagoConfig] = await Promise.all([fetchBeatProducts(state.isAdmin), fetchCloudBeats(), fetchBeatLicenses(state.isAdmin), fetchProducerProfiles(state.isAdmin), fetchBeatUploadAccess(state.isAdmin), fetchMercadoPagoConfig(state.isAdmin)]);
   state.products = products;
   state.adminProducts = state.isAdmin ? products : [];
   state.beats = beats;
   state.licenses = licenses;
   state.producerProfiles = producerProfiles;
+  state.beatUploadUsers = beatUploadAccess.users;
+  state.beatUploadPermissions = beatUploadAccess.permissions;
+  state.beatUploadPermissionsError = beatUploadAccess.error;
+  state.mercadoPagoConfig = mercadoPagoConfig.data;
+  state.mercadoPagoConfigError = mercadoPagoConfig.error;
   state.assignments = await fetchBeatLicenseAssignments(products.map((product) => product.id), state.isAdmin);
   state.items = mergeProductsAndBeats(products, beats);
   buildBeatSearchIndex();
@@ -168,6 +180,9 @@ async function initBeatStore() {
   adminTabButtons.forEach((button) => button.addEventListener("click", () => setAdminTab(button.dataset.adminTab, true), { signal: hrBeatStoreLifecycle.signal }));
   adminForm?.addEventListener("change", handleBeatLicenseAssignmentChange);
   adminList?.addEventListener("click", handleAdminListClick);
+  beatUploadPermissionsList?.addEventListener("click", handleBeatUploadPermissionClick);
+  beatUploadPermissionsSearch?.addEventListener("input", handleBeatUploadPermissionsSearch);
+  beatMercadoPagoForm?.addEventListener("submit", handleMercadoPagoConfigSubmit);
   beatLicenseForm?.addEventListener("submit", handleBeatLicenseSubmit);
   beatLicenseList?.addEventListener("click", handleBeatLicenseListClick);
   beatLicenseCancel?.addEventListener("click", resetBeatLicenseForm);
@@ -268,11 +283,12 @@ function wantsAdminMode() {
 }
 
 function requestedAdminTab() {
-  return new URLSearchParams(window.location.search).get("tab") === "licenses" ? "licenses" : "beats";
+  const tab = new URLSearchParams(window.location.search).get("tab");
+  return ["licenses", "upload-permissions", "mercadopago"].includes(tab) ? tab : "beats";
 }
 
 function setAdminTab(tab = "beats", syncUrl = false) {
-  const activeTab = tab === "licenses" ? "licenses" : "beats";
+  const activeTab = ["licenses", "upload-permissions", "mercadopago"].includes(tab) ? tab : "beats";
   adminTabButtons.forEach((button) => {
     const isActive = button.dataset.adminTab === activeTab;
     button.classList.toggle("is-active", isActive);
@@ -467,6 +483,50 @@ async function fetchProducerProfiles(includeInactive = false) {
   if (error) return [];
   return data ?? [];
 }
+
+async function fetchBeatUploadAccess(includeAdmin = false, searchTerm = "") {
+  if (!includeAdmin) return { users: [], permissions: [], error: null };
+  const { data: permissions, error: permissionsError } = await supabase
+    .from("user_permissions")
+    .select("id, user_id, permission_key")
+    .eq("permission_key", "beats.upload");
+  if (permissionsError) return { users: [], permissions: [], error: permissionsError };
+
+  const normalizedSearch = String(searchTerm || "").trim();
+  const safeSearch = normalizedSearch.replace(/[%,_*\\()]/g, " ").trim().slice(0, 80);
+  let userQuery = supabase
+    .from("users")
+    .select("id, display_name, username, email, roles")
+    .order("display_name", { ascending: true })
+    .limit(50);
+  if (safeSearch) {
+    userQuery = userQuery.or(`display_name.ilike.%${safeSearch}%,username.ilike.%${safeSearch}%,email.ilike.%${safeSearch}%`);
+  } else {
+    const authorizedIds = permissions.map((permission) => String(permission.user_id)).filter(Boolean);
+    const adminUsers = await supabase
+      .from("users")
+      .select("id, display_name, username, email, roles")
+      .ilike("roles", "%admin%")
+      .order("display_name", { ascending: true });
+    const adminRows = adminUsers.data ?? [];
+    if (adminUsers.error) return { users: [], permissions, error: adminUsers.error };
+    if (!authorizedIds.length) return { users: adminRows, permissions, error: null };
+    userQuery = userQuery.in("id", [...new Set([...authorizedIds, ...adminRows.map((user) => String(user.id))])]);
+  }
+  const { data: users, error: usersError } = await userQuery;
+  return {
+    users: users ?? [],
+    permissions: permissions ?? [],
+    error: usersError || permissionsError,
+  };
+}
+
+async function fetchMercadoPagoConfig(includeAdmin = false) {
+  if (!includeAdmin) return { data: null, error: null };
+  const { data, error } = await supabase.rpc("mp_config_status");
+  return { data, error };
+}
+
 async function fetchBeatLicenseAssignments(beatIds, includeDisabled = false) {
   if (!state.hasBeatLicenses || !beatIds.length) return [];
   let query = supabase
@@ -829,14 +889,17 @@ function beatCardMarkup(item) {
 function canEditBeatItem(item) {
   const ownerId = String(item?.product?.producer_user_id || "");
   if (!item?.product?.id || !state.currentUserId) return false;
+  if (state.isAdmin) return true;
   if (ownerId !== state.currentUserId) return false;
-  return Boolean(state.isAdmin || state.canEditOwnBeats);
+  return Boolean(state.canEditOwnBeats);
 }
 
 function beatCardOptionsMarkup(item) {
   if (!canEditBeatItem(item) || !item?.product?.id) return "";
   const productId = encodeURIComponent(item.product.id);
-  const href = `new-beat.html?id=${productId}`;
+  const href = state.isAdmin
+    ? `?view=admin&tab=beats&edit=${productId}`
+    : `new-beat.html?id=${productId}`;
   return `
       <details class="beat-card__options">
         <summary aria-label="Opciones de ${escapeHtml(beatDisplayTitle(item))}">
@@ -1179,6 +1242,8 @@ function initializeAdminPanel() {
   resetBeatLicenseForm();
   renderAdminProducts();
   renderBeatLicenseAdmin();
+  renderBeatUploadPermissions();
+  renderMercadoPagoConfig();
   renderBeatLicenseAssignmentFields();
 }
 
@@ -1223,6 +1288,112 @@ function renderBeatLicenseAdmin() {
         </div>
       </article>`;
   }).join("");
+}
+
+function renderBeatUploadPermissions() {
+  if (!beatUploadPermissionsList || !beatUploadPermissionsStatus) return;
+  if (state.beatUploadPermissionsError) {
+    beatUploadPermissionsStatus.textContent = "No se pudieron cargar los permisos.";
+    beatUploadPermissionsList.innerHTML = `<div class="empty-state beat-empty"><p>${escapeHtml(state.beatUploadPermissionsError.message || "Error al cargar permisos.")}</p></div>`;
+    return;
+  }
+  const granted = new Set(state.beatUploadPermissions.map((permission) => String(permission.user_id)));
+  const users = state.beatUploadUsers;
+  const searchTerm = String(beatUploadPermissionsSearch?.value || "").trim();
+  beatUploadPermissionsStatus.textContent = searchTerm
+    ? `${users.length} resultado${users.length === 1 ? "" : "s"}.`
+    : `${users.length} usuario${users.length === 1 ? "" : "s"} autorizado${users.length === 1 ? "" : "s"}.`;
+  if (!users.length) {
+    beatUploadPermissionsList.innerHTML = '<div class="empty-state beat-empty"><p>No hay usuarios registrados.</p></div>';
+    return;
+  }
+  beatUploadPermissionsList.innerHTML = users.map((user) => {
+    const userId = String(user.id || "");
+    const isAdmin = String(user.roles || "").split(",").map((role) => role.trim().toLowerCase()).includes("admin");
+    const hasPermission = isAdmin || granted.has(userId);
+    const label = user.display_name || user.username || user.email || "Usuario";
+    const detail = [user.username ? `@${String(user.username).replace(/^@+/, "")}` : "", user.email || ""].filter(Boolean).join(" · ");
+    return `<article class="admin-product-row beat-admin-row"><div><span class="product-category">${isAdmin ? "Admin · acceso automático" : hasPermission ? "Autorizado" : "Sin autorización"}</span><h3>${escapeHtml(label)}</h3><p>${escapeHtml(detail || userId)}</p></div><div class="admin-actions">${isAdmin ? '<span class="db-field__hint">Admin</span>' : `<button class="secondary-button" type="button" data-beat-upload-permission-toggle="${escapeHtml(userId)}" data-granted="${hasPermission}">${hasPermission ? "Revocar" : "Autorizar"}</button>`}</div></article>`;
+  }).join("");
+}
+
+async function handleBeatUploadPermissionClick(event) {
+  const button = event.target.closest("[data-beat-upload-permission-toggle]");
+  if (!button || !state.isAdmin) return;
+  const userId = button.dataset.beatUploadPermissionToggle;
+  const granted = button.dataset.granted === "true";
+  button.disabled = true;
+  const result = granted
+    ? await supabase.from("user_permissions").delete().eq("user_id", userId).eq("permission_key", "beats.upload")
+    : await supabase.from("user_permissions").insert({ user_id: userId, permission_key: "beats.upload" });
+  if (result.error) {
+    showNotice(result.error.message || "No se pudo actualizar el permiso.", true);
+    button.disabled = false;
+    return;
+  }
+  showNotice(granted ? "Permiso de subida revocado." : "Usuario autorizado para subir beats.");
+  await refreshBeatUploadPermissions();
+}
+
+function handleBeatUploadPermissionsSearch() {
+  window.clearTimeout(beatUploadPermissionsSearchTimer);
+  beatUploadPermissionsSearchTimer = window.setTimeout(() => refreshBeatUploadPermissions(), 220);
+}
+
+async function refreshBeatUploadPermissions() {
+  if (!state.isAdmin) return;
+  const searchTerm = String(beatUploadPermissionsSearch?.value || "").trim();
+  beatUploadPermissionsStatus.textContent = searchTerm ? "Buscando usuarios…" : "Cargando autorizados…";
+  const beatUploadAccess = await fetchBeatUploadAccess(true, searchTerm);
+  state.beatUploadUsers = beatUploadAccess.users;
+  state.beatUploadPermissions = beatUploadAccess.permissions;
+  state.beatUploadPermissionsError = beatUploadAccess.error;
+  renderBeatUploadPermissions();
+}
+
+function renderMercadoPagoConfig() {
+  if (!beatMercadoPagoStatus || !beatMercadoPagoError) return;
+  if (state.mercadoPagoConfigError) {
+    beatMercadoPagoStatus.textContent = "Migración pendiente o configuración no disponible.";
+    beatMercadoPagoError.textContent = state.mercadoPagoConfigError.message || "No se pudo leer la configuración.";
+    return;
+  }
+  beatMercadoPagoError.textContent = "";
+  const config = state.mercadoPagoConfig || {};
+  const ready = [config.public_key_configured, config.access_token_configured, config.webhook_secret_configured].filter(Boolean).length;
+  beatMercadoPagoStatus.textContent = `${ready}/3 claves configuradas.`;
+}
+
+async function handleMercadoPagoConfigSubmit(event) {
+  event.preventDefault();
+  if (!state.isAdmin) return;
+  beatMercadoPagoError.textContent = "";
+  const publicKey = document.getElementById("beat-mp-public-key")?.value.trim() || null;
+  const accessToken = document.getElementById("beat-mp-access-token")?.value.trim() || null;
+  const webhookSecret = document.getElementById("beat-mp-webhook-secret")?.value.trim() || null;
+  if (!publicKey && !accessToken && !webhookSecret) {
+    beatMercadoPagoError.textContent = "Escribe al menos una clave nueva.";
+    return;
+  }
+  const submitButton = beatMercadoPagoForm.querySelector("button[type=submit]");
+  submitButton.disabled = true;
+  beatMercadoPagoStatus.textContent = "Guardando de forma segura…";
+  const { data, error } = await supabase.rpc("set_mp_config", {
+    p_public_key: publicKey,
+    p_access_token: accessToken,
+    p_webhook_secret: webhookSecret,
+  });
+  submitButton.disabled = false;
+  if (error) {
+    beatMercadoPagoError.textContent = error.message || "No se pudo guardar la configuración.";
+    renderMercadoPagoConfig();
+    return;
+  }
+  beatMercadoPagoForm.reset();
+  state.mercadoPagoConfig = data;
+  state.mercadoPagoConfigError = null;
+  renderMercadoPagoConfig();
+  showNotice("Configuración de Mercado Pago guardada.");
 }
 
 function renderBeatLicenseAssignmentFields() {
@@ -2054,12 +2225,21 @@ async function reloadBeatStore(options = {}) {
   state.licenses = await fetchBeatLicenses(state.isAdmin);
   state.producerProfiles = await fetchProducerProfiles(state.isAdmin);
   state.assignments = await fetchBeatLicenseAssignments(products.map((product) => product.id), state.isAdmin);
+  const beatUploadAccess = await fetchBeatUploadAccess(state.isAdmin);
+  state.beatUploadUsers = beatUploadAccess.users;
+  state.beatUploadPermissions = beatUploadAccess.permissions;
+  state.beatUploadPermissionsError = beatUploadAccess.error;
+  const mercadoPagoConfig = await fetchMercadoPagoConfig(state.isAdmin);
+  state.mercadoPagoConfig = mercadoPagoConfig.data;
+  state.mercadoPagoConfigError = mercadoPagoConfig.error;
   state.items = mergeProductsAndBeats(products, state.beats);
   buildBeatSearchIndex();
   renderGenreOptions();
   renderBeats();
   renderAdminProducts();
   renderBeatLicenseAdmin();
+  renderBeatUploadPermissions();
+  renderMercadoPagoConfig();
   renderBeatLicenseAssignmentFields();
   syncProducerProfileButton();
 }
@@ -2306,11 +2486,11 @@ function errorState(message) {
   return `<div class="empty-state hr-empty-state beat-empty"><h2>No pudimos cargar Beat Store</h2><p>${escapeHtml(message)}</p></div>`;
 }
 
-function showNotice(message) {
+function showNotice(message, isError = false) {
   const notice = document.getElementById("store-notice");
   if (!notice) return;
   elevateStoreNotice(notice);
-  notice.className = "notice hr-toast hr-toast--success visible hr-toast--visible";
+  notice.className = `notice hr-toast ${isError ? "hr-toast--error" : "hr-toast--success"} visible hr-toast--visible`;
   notice.innerHTML = '<span class="hr-toast__dot" aria-hidden="true"></span><span class="hr-toast__message"></span>';
   notice.querySelector(".hr-toast__message").textContent = message;
   window.clearTimeout(showNotice.timeout);

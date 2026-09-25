@@ -1,4 +1,6 @@
 const supabase = await window.HiddenRoomSupabase.getClient();
+const SUPABASE_URL = 'https://rpcunbkstadgngqrjafp.supabase.co';
+const ANALYZE_BEAT_AUDIO_ENDPOINT = `${SUPABASE_URL}/functions/v1/analyze-beat-audio`;
 const CLOUD_ORIGIN = 'https://cloud.hiddenroom.mx';
 const form = document.getElementById('beat-form');
 const errorElement = document.getElementById('form-error');
@@ -36,16 +38,24 @@ async function init() {
   renderLicenses();
   const id = new URLSearchParams(location.search).get('id'); if (id) await loadProduct(id);
   form.addEventListener('submit', (event) => saveDraft(event, false)); reviewButton.addEventListener('click', () => saveDraft(null, true));
+  form.addEventListener('click', handleAutodetectClick);
+  form.elements.audio.addEventListener('change', () => { markAutodetectInputs(false); updateAutodetectButtons(); });
+  form.elements.bpm.addEventListener('input', () => markAutodetectInput(form.elements.bpm, 'bpm', false));
+  form.elements.key.addEventListener('input', () => markAutodetectInput(form.elements.key, 'key', false));
+  updateAutodetectButtons();
   form.querySelector('[name=name]').addEventListener('input', () => { const slug = form.elements.slug; if (!new URLSearchParams(location.search).get('id') && !slug.dataset.touched) slug.value = slugify(form.elements.name.value); });
   form.elements.slug.addEventListener('input', (event) => { event.target.dataset.touched = 'true'; });
 }
 
 async function loadProduct(id) {
-  const { data, error } = await supabase.from('store_products').select('id, name, slug, price, description, beat_genre, beat_bpm, beat_key, beat_preview_status, beat_original_path, beat_cover_path, publication_status, review_comment').eq('id', id).eq('producer_user_id', state.session.user.id).maybeSingle();
+  const { data, error } = await supabase.from('store_products').select('id, name, slug, price, description, beat_genre, beat_bpm, beat_key, beat_bpm_autodetected, beat_key_autodetected, beat_preview_status, beat_original_path, beat_cover_path, publication_status, review_comment').eq('id', id).eq('producer_user_id', state.session.user.id).maybeSingle();
   if (error || !data) throw new Error(error?.message || 'Beat no encontrado o no pertenece a tu cuenta.');
   state.product = data; document.getElementById('form-title').textContent = 'Editar beat';
   if (data.publication_status !== 'draft') statusElement.textContent = 'Al guardar cambios, el beat volverá a borrador y deberá pasar revisión nuevamente.';
   for (const [name, value] of Object.entries({ name:data.name, slug:data.slug, price:data.price, description:data.description || '', genre:data.beat_genre || '', bpm:data.beat_bpm || '', key:data.beat_key || '' })) if (form.elements[name]) form.elements[name].value = value;
+  form.elements.bpm.dataset.autodetected = data.beat_bpm_autodetected ? 'true' : 'false';
+  form.elements.key.dataset.autodetected = data.beat_key_autodetected ? 'true' : 'false';
+  syncAutodetectBadges();
   document.getElementById('audio-state').textContent = data.beat_original_path ? `Master guardado: ${data.beat_original_path}` : 'Sin master guardado.';
   document.getElementById('cover-state').textContent = data.beat_cover_path ? 'Portada guardada.' : 'Sin portada guardada.';
   const { data: assignments } = await supabase.from('beat_license_assignments').select('license_id, price, is_enabled').eq('beat_id', id); state.assignments = assignments || []; renderLicenses();
@@ -61,7 +71,7 @@ async function saveDraft(event, sendReview) {
   try {
     const producerName = state.profile?.display_name || state.user?.display_name || state.user?.username || null;
     const producer = producerName ? `@${String(producerName).replace(/^@+/, '')}` : null;
-    const payload = { category:'beats', name:values.name.trim(), slug:values.slug.trim().toLowerCase(), description:values.description?.trim() || null, price, currency:'MXN', is_digital:true, is_active:false, publication_status:'draft', producer_user_id:state.session.user.id, producer_profile_id:state.profile?.id || null, producer, beat_genre:values.genre?.trim() || null, beat_bpm:values.bpm ? Number(values.bpm) : null, beat_key:values.key?.trim() || null, beat_preview_status: state.product?.beat_preview_status || 'pending' };
+    const payload = { category:'beats', name:values.name.trim(), slug:values.slug.trim().toLowerCase(), description:values.description?.trim() || null, price, currency:'MXN', is_digital:true, is_active:false, publication_status:'draft', producer_user_id:state.session.user.id, producer_profile_id:state.profile?.id || null, producer, beat_genre:values.genre?.trim() || null, beat_bpm:values.bpm ? Number(values.bpm) : null, beat_key:values.key?.trim() || null, beat_bpm_autodetected: form.elements.bpm.dataset.autodetected === 'true', beat_key_autodetected: form.elements.key.dataset.autodetected === 'true', beat_preview_status: state.product?.beat_preview_status || 'pending' };
     const query = state.product ? supabase.from('store_products').update(payload).eq('id', state.product.id).eq('producer_user_id', state.session.user.id).select('id').single() : supabase.from('store_products').insert(payload).select('id').single();
     const { data, error } = await query; if (error) throw new Error(error.message); const id = state.product?.id || data.id; state.product = { ...(state.product || {}), id };
     await uploadFiles(id, values.slug.trim().toLowerCase()); await saveAssignments(id);
@@ -69,6 +79,55 @@ async function saveDraft(event, sendReview) {
     else { statusElement.textContent = 'Borrador guardado. Puedes volver a abrirlo sin perder metadata.'; reviewButton.disabled = false; }
   } catch (error) { showError(error.message || 'No se pudo guardar el borrador.'); button.disabled = false; }
 }
+
+async function handleAutodetectClick(event) {
+  const button = event.target.closest('[data-autodetect]');
+  if (!button) return;
+  const target = button.dataset.autodetect;
+  if (target !== 'bpm' && target !== 'key') return;
+
+  const file = form.elements.audio.files?.[0] || null;
+  const existingAudioPath = state.product?.beat_original_path || '';
+  if (!file && !existingAudioPath) return showError('Selecciona primero el master de audio.');
+  if (file && !isAudioFile(file)) return showError('Selecciona un archivo de audio válido para autodetectar.');
+
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) return showError('Sesión requerida para autodetectar audio.');
+
+  button.disabled = true;
+  button.textContent = 'Detectando...';
+  clearError();
+  statusElement.textContent = `Autodetectando ${target === 'bpm' ? 'BPM' : 'tonalidad'}...`;
+  try {
+    const headers = { Authorization: `Bearer ${session.access_token}`, 'x-analyze-target': target };
+    if (state.product?.id) headers['x-beat-product-id'] = state.product.id;
+    let body = file;
+    if (file) {
+      headers['Content-Type'] = file.type || 'application/octet-stream';
+      headers['x-file-name'] = encodeURIComponent(file.name);
+    } else {
+      headers['Content-Type'] = 'application/json';
+      body = JSON.stringify({ audio_path: existingAudioPath });
+    }
+    const response = await fetch(ANALYZE_BEAT_AUDIO_ENDPOINT, { method: 'POST', headers, body });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || 'No se pudo autodetectar el audio.');
+    if (target === 'bpm' && Number.isFinite(Number(result.bpm))) markAutodetectInput(form.elements.bpm, 'bpm', true, String(Math.round(Number(result.bpm))));
+    if (target === 'key' && result.key) markAutodetectInput(form.elements.key, 'key', true, String(result.key));
+    statusElement.textContent = target === 'bpm' ? `BPM detectado: ${Math.round(Number(result.bpm))}.` : `Tonalidad detectada: ${result.key}.`;
+  } catch (error) {
+    showError(error.message || 'No se pudo autodetectar el audio.');
+  } finally {
+    button.textContent = 'Autodetectar';
+    updateAutodetectButtons();
+  }
+}
+
+function isAudioFile(file) { return file.type.startsWith('audio/') || /\.(mp3|wav|m4a|aac|ogg|flac|aif|aiff)$/i.test(file.name); }
+function markAutodetectInputs(value) { markAutodetectInput(form.elements.bpm, 'bpm', value); markAutodetectInput(form.elements.key, 'key', value); }
+function markAutodetectInput(input, target, autodetected, value) { if (value !== undefined) input.value = value; input.dataset.autodetected = autodetected ? 'true' : 'false'; syncAutodetectBadges(); }
+function syncAutodetectBadges() { ['bpm', 'key'].forEach((target) => { const input = form.elements[target]; const badge = document.querySelector(`[data-ad-badge="${target}"]`); if (badge) badge.hidden = input.dataset.autodetected !== 'true' || !input.value; }); }
+function updateAutodetectButtons() { const available = Boolean(form.elements.audio.files?.[0] || state.product?.beat_original_path); form.querySelectorAll('[data-autodetect]').forEach((button) => { if (!button.classList.contains('is-loading')) button.disabled = !available; }); }
 
 async function uploadFiles(productId, slug) {
   const cover = form.elements.cover.files?.[0]; if (cover) { const result = await uploadCloud('/api/beat-store/cover', cover, { 'x-beat-product-id':productId }); if (!result.success) throw new Error(result.error || 'No se pudo guardar la portada.'); }

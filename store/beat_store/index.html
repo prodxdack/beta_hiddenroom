@@ -141,6 +141,8 @@
         <nav class="beat-admin__tabs" aria-label="Secciones de administración" role="tablist">
           <button class="beat-admin__tab is-active" type="button" role="tab" aria-selected="true" aria-controls="beat-admin-beats-tab" id="beat-admin-tab-beats" data-admin-tab="beats">Beats</button>
           <button class="beat-admin__tab" type="button" role="tab" aria-selected="false" aria-controls="beat-admin-licenses-tab" id="beat-admin-tab-licenses" data-admin-tab="licenses">Licencias</button>
+          <button class="beat-admin__tab" type="button" role="tab" aria-selected="false" aria-controls="beat-admin-upload-permissions-tab" id="beat-admin-tab-upload-permissions" data-admin-tab="upload-permissions">Permisos de subida</button>
+          <button class="beat-admin__tab" type="button" role="tab" aria-selected="false" aria-controls="beat-admin-mercadopago-tab" id="beat-admin-tab-mercadopago" data-admin-tab="mercadopago">Mercado Pago</button>
           <a class="beat-admin__tab beat-admin__tab-link" href="review.html">Revisión <span aria-hidden="true">↗</span></a>
         </nav>
 
@@ -272,6 +274,36 @@
             </section>
           </div>
         </section>
+
+        <section id="beat-admin-upload-permissions-tab" class="beat-license-admin beat-admin__tab-panel hr-stack hr-stack-lg" aria-labelledby="beat-admin-tab-upload-permissions" data-admin-panel="upload-permissions" role="tabpanel" hidden>
+          <div class="section-heading hr-grid hr-grid-2">
+            <div>
+              <p class="eyebrow hr-eyebrow">Beat Store</p>
+              <h2 class="hr-section-title">Permisos de subida</h2>
+              <p>Autoriza o revoca quién puede subir beats. El usuario también debe tener un perfil de productor activo y aprobado.</p>
+            </div>
+            <div class="beat-admin__status hr-stack hr-stack-sm"><p id="beat-upload-permissions-status">Cargando autorizados…</p><label class="db-field db-field--compact db-field--search"><span>Buscar usuario</span><input id="beat-upload-permissions-search" type="search" placeholder="Nombre, username o correo" autocomplete="off"></label></div>
+          </div>
+          <div id="beat-upload-permissions-list" class="admin-products beat-license-admin__list" aria-live="polite"></div>
+        </section>
+
+        <section id="beat-admin-mercadopago-tab" class="beat-license-admin beat-admin__tab-panel hr-stack hr-stack-lg" aria-labelledby="beat-admin-tab-mercadopago" data-admin-panel="mercadopago" role="tabpanel" hidden>
+          <div class="section-heading hr-grid hr-grid-2">
+            <div>
+              <p class="eyebrow hr-eyebrow">Pagos</p>
+              <h2 class="hr-section-title">Mercado Pago</h2>
+              <p>Configura las claves del checkout. Las claves se guardan en Supabase Vault y nunca se muestran después de guardarlas.</p>
+            </div>
+            <div class="beat-admin__status hr-stack hr-stack-sm"><p id="beat-mercadopago-status">Cargando configuración…</p></div>
+          </div>
+          <form id="beat-mercadopago-form" class="checkout-form admin-form producer-ready-form beat-license-form hr-card hr-panel">
+            <div class="field hr-field"><label class="hr-label" for="beat-mp-public-key">Public key</label><input class="hr-input" id="beat-mp-public-key" autocomplete="off" placeholder="APP_USR-…"></div>
+            <div class="field hr-field"><label class="hr-label" for="beat-mp-access-token">Access token</label><input class="hr-input" id="beat-mp-access-token" type="password" autocomplete="new-password" placeholder="Dejar vacío para conservar"></div>
+            <div class="field hr-field"><label class="hr-label" for="beat-mp-webhook-secret">Webhook secret</label><input class="hr-input" id="beat-mp-webhook-secret" type="password" autocomplete="new-password" placeholder="Dejar vacío para conservar"></div>
+            <p id="beat-mercadopago-error" class="form-error hr-error" role="alert"></p>
+            <div class="product-actions hr-cluster"><button class="primary-button hr-btn hr-btn-primary" type="submit">Guardar configuración</button></div>
+          </form>
+        </section>
       </div>
     </section>
   </main>
@@ -295,7 +327,7 @@
 
   <script src="../../site.js?v=20260922-nav-more-v2"></script>
   <script src="../../analytics/analytics.js?v=20260830-analytics-minimum"></script>
-  <script type="module" src="bs.js?v=20260922-beat-edit-form-v1"></script>
+  <script type="module" src="bs.js?v=20260924-admin-upload-permissions-v1"></script>
 <script src="/spa.js?v=20260915-spa-global-style-sync-v1"></script>
 </body>
 </html>
