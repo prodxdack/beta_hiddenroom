@@ -40,6 +40,7 @@ async function init() {
   form.addEventListener('submit', (event) => saveDraft(event, false)); reviewButton.addEventListener('click', () => saveDraft(null, true));
   form.addEventListener('click', handleAutodetectClick);
   form.elements.audio.addEventListener('change', () => { markAutodetectInputs(false); updateAutodetectButtons(); });
+  form.elements.stems.addEventListener('change', updateStemsLicenseState);
   form.elements.bpm.addEventListener('input', () => markAutodetectInput(form.elements.bpm, 'bpm', false));
   form.elements.key.addEventListener('input', () => markAutodetectInput(form.elements.key, 'key', false));
   updateAutodetectButtons();
@@ -48,7 +49,7 @@ async function init() {
 }
 
 async function loadProduct(id) {
-  const { data, error } = await supabase.from('store_products').select('id, name, slug, price, description, beat_genre, beat_bpm, beat_key, beat_bpm_autodetected, beat_key_autodetected, beat_preview_status, beat_original_path, beat_cover_path, publication_status, review_comment').eq('id', id).eq('producer_user_id', state.session.user.id).maybeSingle();
+  const { data, error } = await supabase.from('store_products').select('id, name, slug, price, description, beat_genre, beat_bpm, beat_key, beat_bpm_autodetected, beat_key_autodetected, beat_preview_status, beat_original_path, beat_mp3_path, beat_stems_path, beat_cover_path, publication_status, review_comment').eq('id', id).eq('producer_user_id', state.session.user.id).maybeSingle();
   if (error || !data) throw new Error(error?.message || 'Beat no encontrado o no pertenece a tu cuenta.');
   state.product = data; document.getElementById('form-title').textContent = 'Editar beat';
   if (data.publication_status !== 'draft') statusElement.textContent = 'Al guardar cambios, el beat volverá a borrador y deberá pasar revisión nuevamente.';
@@ -61,11 +62,27 @@ async function loadProduct(id) {
   const { data: assignments } = await supabase.from('beat_license_assignments').select('license_id, price, is_enabled').eq('beat_id', id); state.assignments = assignments || []; renderLicenses();
 }
 
-function renderLicenses() { document.getElementById('license-list').innerHTML = state.licenses.length ? state.licenses.map((license) => { const assignment = state.assignments.find((candidate) => candidate.license_id === license.id); return `<label class="producer-ready-license"><input type="checkbox" data-license="${escapeHtml(license.id)}" ${assignment?.is_enabled ? 'checked' : ''}><span><strong>${escapeHtml(license.name)}</strong><br><small>${escapeHtml(license.description)}${license.format ? ` · ${escapeHtml(license.format)}` : ''}</small></span><input type="number" data-price="${escapeHtml(license.id)}" min="${Number(license.min_price)}" max="${Number(license.max_price)}" step="0.01" value="${Number(assignment?.price ?? license.min_price)}" aria-label="Precio ${escapeHtml(license.name)}"></label>`; }).join('') : '<p>No hay licencias activas configuradas por admin.</p>'; }
+function renderLicenses() { document.getElementById('license-list').innerHTML = state.licenses.length ? state.licenses.map((license) => { const assignment = state.assignments.find((candidate) => candidate.license_id === license.id); const isStems = String(license.format || '').trim().toLowerCase() === 'stems'; const stemsAvailable = hasStemsSource(); const disabled = isStems && !stemsAvailable; return `<label class="producer-ready-license${disabled ? ' producer-ready-license--disabled' : ''}" data-license-card="${escapeHtml(license.id)}"><input type="checkbox" data-license="${escapeHtml(license.id)}" ${assignment?.is_enabled && !disabled ? 'checked' : ''} ${disabled ? 'disabled' : ''}><span><strong>${escapeHtml(license.name)}</strong><br><small>${escapeHtml(license.description)}${license.format ? ` · ${escapeHtml(license.format)}` : ''}</small></span><input type="number" data-price="${escapeHtml(license.id)}" min="${Number(license.min_price)}" max="${Number(license.max_price)}" step="0.01" value="${Number(assignment?.price ?? license.min_price)}" aria-label="Precio ${escapeHtml(license.name)}" ${disabled ? 'disabled' : ''}></label>`; }).join('') : '<p>No hay licencias activas configuradas por admin.</p>'; }
+
+function hasStemsSource() { return Boolean(form.elements.stems.files?.[0] || state.product?.beat_stems_path); }
+function updateStemsLicenseState() {
+  const stemsAvailable = hasStemsSource();
+  state.licenses.filter((license) => String(license.format || '').trim().toLowerCase() === 'stems').forEach((license) => {
+    const card = document.querySelector(`[data-license-card="${CSS.escape(license.id)}"]`);
+    const checkbox = card?.querySelector('[data-license]');
+    const price = card?.querySelector('[data-price]');
+    if (!card || !checkbox || !price) return;
+    card.classList.toggle('producer-ready-license--disabled', !stemsAvailable);
+    checkbox.disabled = !stemsAvailable;
+    price.disabled = !stemsAvailable;
+    if (!stemsAvailable) checkbox.checked = false;
+  });
+}
 
 async function saveDraft(event, sendReview) {
   event?.preventDefault(); clearError(); const values = Object.fromEntries(new FormData(form).entries()); values.genre = normalizeGenre(values.genre);
   const price = Number(values.price); if (!values.name?.trim() || !values.slug?.trim() || !Number.isFinite(price) || price < 0) return showError('Título, slug y precio son obligatorios.');
+  const audioFile = form.elements.audio.files?.[0] || null; if (audioFile && !isAudioFile(audioFile)) return showError('El master debe ser un archivo WAV sin comprimir (.wav).');
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(values.slug.trim().toLowerCase())) return showError('El slug sólo puede usar minúsculas, números y guiones.');
   const button = event ? form.querySelector('button[type=submit]') : reviewButton; button.disabled = true; statusElement.textContent = 'Guardando borrador...';
   try {
@@ -123,7 +140,7 @@ async function handleAutodetectClick(event) {
   }
 }
 
-function isAudioFile(file) { return file.type.startsWith('audio/') || /\.(mp3|wav|m4a|aac|ogg|flac|aif|aiff)$/i.test(file.name); }
+function isAudioFile(file) { const type = String(file?.type || '').toLowerCase(); return /\.wav$/i.test(String(file?.name || '')) && (!type || ['audio/wav', 'audio/x-wav', 'audio/wave', 'audio/vnd.wave', 'application/octet-stream'].includes(type)); }
 function markAutodetectInputs(value) { markAutodetectInput(form.elements.bpm, 'bpm', value); markAutodetectInput(form.elements.key, 'key', value); }
 function markAutodetectInput(input, target, autodetected, value) { if (value !== undefined) input.value = value; input.dataset.autodetected = autodetected ? 'true' : 'false'; syncAutodetectBadges(); }
 function syncAutodetectBadges() { ['bpm', 'key'].forEach((target) => { const input = form.elements[target]; const badge = document.querySelector(`[data-ad-badge="${target}"]`); if (badge) badge.hidden = input.dataset.autodetected !== 'true' || !input.value; }); }
@@ -131,11 +148,11 @@ function updateAutodetectButtons() { const available = Boolean(form.elements.aud
 
 async function uploadFiles(productId, slug) {
   const cover = form.elements.cover.files?.[0]; if (cover) { const result = await uploadCloud('/api/beat-store/cover', cover, { 'x-beat-product-id':productId }); if (!result.success) throw new Error(result.error || 'No se pudo guardar la portada.'); }
-  const audio = form.elements.audio.files?.[0]; if (audio) { const result = await uploadCloud('/api/beat-store/upload-audio', audio, { 'x-beat-product-id':productId, 'x-beat-slug':slug, 'x-file-name':encodeURIComponent(audio.name) }); if (!result.success) throw new Error(result.error || 'No se pudo generar el preview.'); }
+  const audio = form.elements.audio.files?.[0]; if (audio) { if (!isAudioFile(audio)) throw new Error('El master debe ser un archivo WAV sin comprimir (.wav).'); const result = await uploadCloud('/api/beat-store/upload-audio', audio, { 'x-beat-product-id':productId, 'x-beat-slug':slug, 'x-file-name':encodeURIComponent(audio.name) }); if (!result.success) throw new Error(result.error || 'No se pudo procesar el WAV.'); }
   const stems = form.elements.stems.files?.[0]; if (stems) { if (!/\.zip$/i.test(stems.name)) throw new Error('Los stems deben subirse como un archivo ZIP.'); const result = await uploadCloud('/api/beat-store/upload-stems', stems, { 'x-beat-product-id':productId, 'x-file-name':encodeURIComponent(stems.name) }); if (!result.success) throw new Error(result.error || 'No se pudieron guardar los stems.'); }
 }
 async function uploadCloud(path, file, extraHeaders) { const token = state.session.access_token; const response = await fetch(`${CLOUD_ORIGIN}${path}`, { method:'POST', headers:{ Authorization:`Bearer ${token}`, ...extraHeaders }, body:file }); const result = await response.json().catch(() => ({})); if (!response.ok) throw new Error(result.error || 'La subida falló.'); return result; }
-async function saveAssignments(beatId) { for (const license of state.licenses) { const check = form.querySelector(`[data-license="${CSS.escape(license.id)}"]`); const price = Number(form.querySelector(`[data-price="${CSS.escape(license.id)}"]`)?.value); const existing = state.assignments.find((candidate) => candidate.license_id === license.id); if (check?.checked) { if (!Number.isFinite(price) || price < Number(license.min_price) || price > Number(license.max_price)) throw new Error(`${license.name}: precio fuera de rango.`); const { error } = await supabase.from('beat_license_assignments').upsert({ beat_id:beatId, license_id:license.id, price, is_enabled:true }, { onConflict:'beat_id,license_id' }); if (error) throw new Error(error.message); } else if (existing) { const { error } = await supabase.from('beat_license_assignments').delete().eq('id', existing.id); if (error) throw new Error(error.message); } } }
+async function saveAssignments(beatId) { for (const license of state.licenses) { const check = form.querySelector(`[data-license="${CSS.escape(license.id)}"]`); const price = Number(form.querySelector(`[data-price="${CSS.escape(license.id)}"]`)?.value); const existing = state.assignments.find((candidate) => candidate.license_id === license.id); if (check?.checked) { if (String(license.format || '').trim().toLowerCase() === 'stems' && !form.elements.stems.files?.[0] && !state.product?.beat_stems_path) throw new Error(`${license.name}: primero carga los stems protegidos en formato ZIP.`); if (!Number.isFinite(price) || price < Number(license.min_price) || price > Number(license.max_price)) throw new Error(`${license.name}: precio fuera de rango.`); const { error } = await supabase.from('beat_license_assignments').upsert({ beat_id:beatId, license_id:license.id, price, is_enabled:true }, { onConflict:'beat_id,license_id' }); if (error) throw new Error(error.message); } else if (existing) { const { error } = await supabase.from('beat_license_assignments').delete().eq('id', existing.id); if (error) throw new Error(error.message); } } }
 function normalizeGenre(value) { return String(value ?? '').trim().toLocaleLowerCase('es-MX').replace(/(^|[\s\/&'’-])(\p{L})/gu, (_, separator, letter) => separator + letter.toLocaleUpperCase('es-MX')); }
 function slugify(value) { return String(value || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 140); }
 function showError(message) { errorElement.textContent = message; statusElement.textContent = ''; }

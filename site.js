@@ -151,6 +151,12 @@ function renderSubNav(module) {
         item("/store/beat_store/", "Explorar beats", !isBeatAdmin && !isBeatUpload),
         item("/store/cart.html", 'Carrito <span class="cart-count">0</span>', path.endsWith("/cart.html")),
         item(
+          "/store/beat_store/orders.html",
+          "Mis compras",
+          path.endsWith("/orders.html"),
+          "",
+        ),
+        item(
           "/store/beat_store/new-beat.html",
           "Subir",
           isBeatUpload,
@@ -857,6 +863,11 @@ let hrBeatVisualizerFrequencyData = null;
 let hrBeatVisualizerEnergy = 0;
 let hrBeatVisualizerDisplayValues = [];
 let hrBeatVisualizerPalette = { hue: 195, saturation: 69 };
+let hrBeatPlayerShuffle = false;
+let hrBeatPlayerRepeat = false;
+let hrBeatPlayerVolumeBeforeMute = 1;
+let hrBeatPlayerColorValue = "#7cd0e9";
+let hrBeatPlayerColorPicker = { hue: 195, saturation: 69, value: 92 };
 
 function shouldRenderGlobalBeatPlayer() {
   const path = window.location.pathname;
@@ -919,11 +930,99 @@ function beatPlayerAudioContextConstructor() {
   return window.AudioContext || window.webkitAudioContext || null;
 }
 
+function beatPlayerHexToRgb(value) {
+  const safeValue = /^#[0-9a-f]{6}$/i.test(String(value || "")) ? String(value) : "#7cd0e9";
+  return {
+    red: Number.parseInt(safeValue.slice(1, 3), 16),
+    green: Number.parseInt(safeValue.slice(3, 5), 16),
+    blue: Number.parseInt(safeValue.slice(5, 7), 16),
+  };
+}
+
+function beatPlayerRgbToHsv(red, green, blue) {
+  const r = red / 255;
+  const g = green / 255;
+  const b = blue / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+  let hue = 0;
+  if (delta) {
+    if (max === r) hue = 60 * (((g - b) / delta) % 6);
+    else if (max === g) hue = 60 * ((b - r) / delta + 2);
+    else hue = 60 * ((r - g) / delta + 4);
+  }
+  if (hue < 0) hue += 360;
+  return {
+    hue,
+    saturation: max ? (delta / max) * 100 : 0,
+    value: max * 100,
+  };
+}
+
+function beatPlayerHsvToRgb(hue, saturation, value) {
+  const h = ((Number(hue) || 0) % 360 + 360) % 360;
+  const s = Math.max(0, Math.min(100, Number(saturation) || 0)) / 100;
+  const v = Math.max(0, Math.min(100, Number(value) || 0)) / 100;
+  const chroma = v * s;
+  const segment = h / 60;
+  const x = chroma * (1 - Math.abs((segment % 2) - 1));
+  const match = v - chroma;
+  let red = 0;
+  let green = 0;
+  let blue = 0;
+  if (segment < 1) [red, green, blue] = [chroma, x, 0];
+  else if (segment < 2) [red, green, blue] = [x, chroma, 0];
+  else if (segment < 3) [red, green, blue] = [0, chroma, x];
+  else if (segment < 4) [red, green, blue] = [0, x, chroma];
+  else if (segment < 5) [red, green, blue] = [x, 0, chroma];
+  else [red, green, blue] = [chroma, 0, x];
+  return {
+    red: Math.round((red + match) * 255),
+    green: Math.round((green + match) * 255),
+    blue: Math.round((blue + match) * 255),
+  };
+}
+
+function beatPlayerRgbToHex(red, green, blue) {
+  return `#${[red, green, blue].map((channel) => Math.max(0, Math.min(255, Math.round(Number(channel) || 0))).toString(16).padStart(2, "0")).join("")}`;
+}
+
+function updateBeatPlayerColorPicker(value = hrBeatPlayerColorValue) {
+  const picker = document.querySelector("[data-beat-player-color-picker]");
+  if (!picker) return;
+  const { red, green, blue } = beatPlayerHexToRgb(value);
+  const hsv = beatPlayerRgbToHsv(red, green, blue);
+  hrBeatPlayerColorValue = beatPlayerRgbToHex(red, green, blue);
+  hrBeatPlayerColorPicker = hsv;
+  const saturation = picker.querySelector("[data-color-picker-saturation]");
+  const marker = picker.querySelector("[data-color-picker-marker]");
+  const hue = picker.querySelector("[data-color-picker-hue]");
+  const hex = picker.querySelector("[data-color-picker-hex]");
+  if (saturation) saturation.style.setProperty("--hr-picker-hue", `${hsv.hue}deg`);
+  if (marker) {
+    marker.style.left = `${hsv.saturation}%`;
+    marker.style.top = `${100 - hsv.value}%`;
+  }
+  if (hue && document.activeElement !== hue) hue.value = String(Math.round(hsv.hue));
+  if (hex && document.activeElement !== hex) hex.value = hrBeatPlayerColorValue;
+  ["r", "g", "b"].forEach((channel) => {
+    const input = picker.querySelector(`[data-color-picker-channel="${channel}"]`);
+    if (input && document.activeElement !== input) input.value = String({ r: red, g: green, b: blue }[channel]);
+  });
+  const swatch = document.querySelector("[data-color-picker-swatch]");
+  if (swatch) swatch.style.backgroundColor = hrBeatPlayerColorValue;
+  const valueLabel = document.querySelector("[data-color-picker-value]");
+  if (valueLabel) valueLabel.textContent = hrBeatPlayerColorValue;
+}
+
 function setGlobalBeatPlayerColor(value) {
   const safeValue = /^#[0-9a-f]{6}$/i.test(String(value || "")) ? String(value) : "#7cd0e9";
-  const red = Number.parseInt(safeValue.slice(1, 3), 16) / 255;
-  const green = Number.parseInt(safeValue.slice(3, 5), 16) / 255;
-  const blue = Number.parseInt(safeValue.slice(5, 7), 16) / 255;
+  hrBeatPlayerColorValue = safeValue.toLowerCase();
+  const rgb = beatPlayerHexToRgb(safeValue);
+  const red = rgb.red / 255;
+  const green = rgb.green / 255;
+  const blue = rgb.blue / 255;
   const max = Math.max(red, green, blue);
   const min = Math.min(red, green, blue);
   const lightness = (max + min) / 2;
@@ -944,6 +1043,8 @@ function setGlobalBeatPlayerColor(value) {
   };
   const fullscreen = document.getElementById("hr-beat-player-fullscreen");
   hrBeatVisualizerPalette = { hue: roundedHue, saturation: roundedSaturation };
+  hrBeatPlayerColorPicker = beatPlayerRgbToHsv(rgb.red, rgb.green, rgb.blue);
+  updateBeatPlayerColorPicker(safeValue);
   if (!fullscreen) return;
   fullscreen.style.setProperty("--hr-player-color-deep", tone(7, .42));
   fullscreen.style.setProperty("--hr-player-color-dark", tone(12, .58));
@@ -1179,13 +1280,15 @@ function renderGlobalBeatPlayer() {
     <aside class="hr-beat-player is-empty" id="hr-beat-player" aria-label="Reproductor Beat Store" data-state="idle">
       <button class="hr-beat-player__art" id="beat-player-art" type="button" data-beat-player-toggle aria-label="Reproducir preview" aria-pressed="false"><span>HR</span><span class="hr-beat-player__art-icon" aria-hidden="true">${beatPlayerIcon("play")}</span></button>
       <div class="hr-beat-player__meta">
-        <strong id="player-title">Selecciona un beat</strong>
+        <strong><a id="player-title" href="#" aria-disabled="true">Selecciona un beat</a></strong>
         <span id="player-detail"></span>
       </div>
       <button class="hr-beat-player__more" type="button" data-beat-player-more aria-label="Opciones del reproductor" aria-expanded="false" aria-controls="beat-player-menu">${beatPlayerIcon("more")}</button>
       <button class="hr-beat-player__fullscreen" type="button" data-beat-player-fullscreen aria-label="Abrir reproductor en pantalla completa" aria-controls="hr-beat-player-fullscreen" disabled>${beatPlayerIcon("fullscreen")}</button>
       <div class="hr-beat-player__menu" id="beat-player-menu" hidden>
         <a href="/store/beat_store/">Ir a Beat Store</a>
+        <button type="button" data-beat-player-share hidden>Compartir beat</button>
+        <a href="#" data-beat-player-edit hidden>Editar beat</a>
       </div>
       <div class="hr-beat-player__controls">
         <div class="hr-beat-player__wave-wrap">
@@ -1215,10 +1318,20 @@ function renderGlobalBeatPlayer() {
                 <option value="y2k">Y2K</option>
               </select>
             </label>
-            <label>
-              <span>COLOR</span>
-              <input id="beat-player-fullscreen-color" type="color" value="#7cd0e9" aria-label="Color del reproductor">
-            </label>
+            <div class="hr-beat-player-color-picker" data-beat-player-color-picker>
+              <span class="hr-beat-player-color-picker__label">COLOR</span>
+              <button class="hr-beat-player-color-picker__toggle" type="button" data-color-picker-toggle aria-expanded="false" aria-controls="beat-player-color-picker-panel"><span data-color-picker-swatch aria-hidden="true"></span><span data-color-picker-value>#7cd0e9</span></button>
+              <div class="hr-beat-player-color-picker__panel" id="beat-player-color-picker-panel" data-color-picker-panel hidden>
+                <div class="hr-beat-player-color-picker__saturation" data-color-picker-saturation role="slider" aria-label="Saturación y luminosidad" tabindex="0"><span data-color-picker-marker></span></div>
+                <input class="hr-beat-player-color-picker__hue" data-color-picker-hue type="range" min="0" max="359" value="195" step="1" aria-label="Matiz del color">
+                <div class="hr-beat-player-color-picker__channels">
+                  <label><span>R</span><input data-color-picker-channel="r" type="number" min="0" max="255" inputmode="numeric" aria-label="Rojo"></label>
+                  <label><span>G</span><input data-color-picker-channel="g" type="number" min="0" max="255" inputmode="numeric" aria-label="Verde"></label>
+                  <label><span>B</span><input data-color-picker-channel="b" type="number" min="0" max="255" inputmode="numeric" aria-label="Azul"></label>
+                </div>
+                <label class="hr-beat-player-color-picker__hex"><span>HEX</span><input data-color-picker-hex type="text" value="#7cd0e9" maxlength="7" spellcheck="false" aria-label="Código hexadecimal"></label>
+              </div>
+            </div>
           </div>
         </header>
         <div class="hr-beat-player-fullscreen__content">
@@ -1231,8 +1344,8 @@ function renderGlobalBeatPlayer() {
               <button class="hr-beat-player-fullscreen__art hr-beat-player__art" id="beat-player-fullscreen-art" type="button" data-beat-player-fullscreen-toggle aria-label="Reproducir preview" aria-pressed="false" disabled><span>HR</span><span class="hr-beat-player__art-icon" aria-hidden="true">${beatPlayerIcon("play")}</span></button>
               <div class="hr-beat-player-fullscreen__meta">
                 <span class="hr-beat-player-fullscreen__label">REPRODUCTOR</span>
-                <h2 id="beat-player-fullscreen-title">Selecciona un beat</h2>
-                <p id="beat-player-fullscreen-producer"></p>
+                <h2 id="beat-player-fullscreen-title"><a href="#" aria-disabled="true">Selecciona un beat</a></h2>
+                <p id="beat-player-fullscreen-producer"><a href="#" aria-disabled="true">Productor por confirmar</a></p>
                 <div class="hr-beat-player-fullscreen__stats"><span id="beat-player-fullscreen-bpm">-- BPM</span><span id="beat-player-fullscreen-key">KEY --</span></div>
               </div>
             </div>
@@ -1251,8 +1364,8 @@ function renderGlobalBeatPlayer() {
             <button class="hr-beat-player-fullscreen__nav" type="button" data-beat-player-next aria-label="Reproducir el siguiente beat" disabled>${beatPlayerIcon("next")}</button>
           </div>
           <div class="hr-beat-player-fullscreen__hardware-row">
-            <button type="button" disabled aria-label="Shuffle no disponible">${beatPlayerIcon("shuffle")}</button>
-            <button type="button" disabled aria-label="Repeat no disponible">${beatPlayerIcon("repeat")}</button>
+            <button type="button" data-beat-player-shuffle aria-label="Activar reproducción aleatoria" aria-pressed="false">${beatPlayerIcon("shuffle")}</button>
+            <button type="button" data-beat-player-repeat aria-label="Activar repetición" aria-pressed="false">${beatPlayerIcon("repeat")}</button>
             <button class="hr-beat-player__mute" type="button" data-beat-player-mute aria-label="Silenciar preview" aria-pressed="false">${beatPlayerIcon("volume")}</button>
             <input class="hr-beat-player__volume" id="beat-player-fullscreen-volume" type="range" min="0" max="1" value="1" step="0.01" aria-label="Volumen del preview">
           </div>
@@ -1284,8 +1397,18 @@ function hydrateGlobalBeatPlayer() {
   const fullscreenClose = fullscreen?.querySelectorAll("[data-beat-player-fullscreen-close]") || [];
   const fullscreenRestart = fullscreen?.querySelector("[data-beat-player-restart]");
   const fullscreenNext = fullscreen?.querySelector("[data-beat-player-next]");
+  const fullscreenShuffle = fullscreen?.querySelector("[data-beat-player-shuffle]");
+  const fullscreenRepeat = fullscreen?.querySelector("[data-beat-player-repeat]");
   const fullscreenTheme = document.getElementById("beat-player-fullscreen-theme");
-  const fullscreenColor = document.getElementById("beat-player-fullscreen-color");
+  const colorPicker = document.querySelector("[data-beat-player-color-picker]");
+  const colorPickerToggle = colorPicker?.querySelector("[data-color-picker-toggle]");
+  const colorPickerPanel = colorPicker?.querySelector("[data-color-picker-panel]");
+  const colorPickerSaturation = colorPicker?.querySelector("[data-color-picker-saturation]");
+  const colorPickerHue = colorPicker?.querySelector("[data-color-picker-hue]");
+  const colorPickerHex = colorPicker?.querySelector("[data-color-picker-hex]");
+  const colorPickerChannels = colorPicker?.querySelectorAll("[data-color-picker-channel]") || [];
+  const colorPickerValue = colorPicker?.querySelector("[data-color-picker-value]");
+  const playerShare = document.querySelector("[data-beat-player-share]");
   const buyButtons = document.querySelectorAll("[data-beat-player-buy]");
 
   fallbackAudio.removeAttribute("controls");
@@ -1368,11 +1491,66 @@ function hydrateGlobalBeatPlayer() {
   fullscreenTheme?.addEventListener("change", () => {
     if (fullscreen) fullscreen.dataset.theme = fullscreenTheme.value || "y2k";
   });
-  fullscreenColor?.addEventListener("input", () => {
-    setGlobalBeatPlayerColor(fullscreenColor.value);
+  const applyColorPickerHsv = () => {
+    const rgb = beatPlayerHsvToRgb(hrBeatPlayerColorPicker.hue, hrBeatPlayerColorPicker.saturation, hrBeatPlayerColorPicker.value);
+    setGlobalBeatPlayerColor(beatPlayerRgbToHex(rgb.red, rgb.green, rgb.blue));
+  };
+  const updateColorPickerFromPointer = (event) => {
+    if (!colorPickerSaturation) return;
+    const rect = colorPickerSaturation.getBoundingClientRect();
+    hrBeatPlayerColorPicker.saturation = Math.max(0, Math.min(100, ((event.clientX - rect.left) / rect.width) * 100));
+    hrBeatPlayerColorPicker.value = Math.max(0, Math.min(100, (1 - ((event.clientY - rect.top) / rect.height)) * 100));
+    applyColorPickerHsv();
+  };
+  let colorPickerDragging = false;
+  colorPickerToggle?.addEventListener("click", () => {
+    const open = Boolean(colorPickerPanel?.hidden);
+    if (colorPickerPanel) colorPickerPanel.hidden = !open;
+    colorPickerToggle.setAttribute("aria-expanded", String(open));
+    if (open) updateBeatPlayerColorPicker();
+  });
+  colorPickerSaturation?.addEventListener("pointerdown", (event) => {
+    colorPickerDragging = true;
+    colorPickerSaturation.setPointerCapture?.(event.pointerId);
+    updateColorPickerFromPointer(event);
+  });
+  colorPickerSaturation?.addEventListener("pointermove", (event) => {
+    if (colorPickerDragging) updateColorPickerFromPointer(event);
+  });
+  colorPickerSaturation?.addEventListener("pointerup", () => { colorPickerDragging = false; });
+  colorPickerSaturation?.addEventListener("pointercancel", () => { colorPickerDragging = false; });
+  colorPickerHue?.addEventListener("input", () => {
+    hrBeatPlayerColorPicker.hue = Number(colorPickerHue.value) || 0;
+    applyColorPickerHsv();
+  });
+  colorPickerChannels.forEach((input) => input.addEventListener("input", () => {
+    const rgb = {};
+    colorPickerChannels.forEach((channel) => { rgb[channel.dataset.colorPickerChannel] = Number(channel.value) || 0; });
+    const hsv = beatPlayerRgbToHsv(rgb.r, rgb.g, rgb.b);
+    hrBeatPlayerColorPicker = hsv;
+    setGlobalBeatPlayerColor(beatPlayerRgbToHex(rgb.r, rgb.g, rgb.b));
+  }));
+  colorPickerHex?.addEventListener("input", () => {
+    const value = colorPickerHex.value.trim();
+    if (/^#[0-9a-f]{6}$/i.test(value)) setGlobalBeatPlayerColor(value);
+  });
+  document.addEventListener("click", (event) => {
+    if (!colorPickerPanel || colorPickerPanel.hidden || event.target.closest("[data-beat-player-color-picker]")) return;
+    colorPickerPanel.hidden = true;
+    colorPickerToggle?.setAttribute("aria-expanded", "false");
   });
   if (fullscreen) fullscreen.dataset.theme = fullscreenTheme?.value || "y2k";
-  if (fullscreenColor?.value) setGlobalBeatPlayerColor(fullscreenColor.value);
+  setGlobalBeatPlayerColor(hrBeatPlayerColorValue);
+  fullscreenShuffle?.addEventListener("click", () => {
+    hrBeatPlayerShuffle = !hrBeatPlayerShuffle;
+    sync();
+    emitGlobalBeatPlayerState();
+  });
+  fullscreenRepeat?.addEventListener("click", () => {
+    hrBeatPlayerRepeat = !hrBeatPlayerRepeat;
+    sync();
+    emitGlobalBeatPlayerState();
+  });
   fullscreenRestart?.addEventListener("click", () => {
     if (!fallbackAudio.src) return;
     if (hrWaveSurfer && hrWaveSurferReady) hrWaveSurfer.seekTo(0);
@@ -1388,8 +1566,26 @@ function hydrateGlobalBeatPlayer() {
       detail: {
         beatId: hrCurrentBeatDetail?.beatId || player.dataset.beatId || "",
         src: getBeatPlayerSrc(),
+        shuffle: hrBeatPlayerShuffle,
       },
     }));
+  });
+  playerShare?.addEventListener("click", async () => {
+    const slug = String(hrCurrentBeatDetail?.slug || "").trim();
+    if (!slug) return;
+    const url = new URL(`/store/product.html?slug=${encodeURIComponent(slug)}`, window.location.origin).href;
+    const title = String(hrCurrentBeatDetail?.title || "Beat Store");
+    const shareData = { title: `${title} | Hidden Room`, text: `Escucha ${title} en Hidden Room.`, url };
+    try {
+      if (typeof navigator.share === "function") await navigator.share(shareData);
+      else if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(url);
+      else throw new Error("clipboard unavailable");
+      playerShare.textContent = "Enlace copiado";
+      window.setTimeout(() => { if (playerShare) playerShare.textContent = "Compartir beat"; }, 1600);
+    } catch (error) {
+      if (error?.name !== "AbortError") playerShare.textContent = "No se pudo compartir";
+      window.setTimeout(() => { if (playerShare) playerShare.textContent = "Compartir beat"; }, 1600);
+    }
   });
   document.addEventListener("keydown", (event) => {
     if (!fullscreen || fullscreen.hidden) return;
@@ -1428,15 +1624,19 @@ function hydrateGlobalBeatPlayer() {
   });
   mutes.forEach((mute) => mute.addEventListener("click", () => {
     const muted = !getBeatPlayerMuted();
+    if (muted) hrBeatPlayerVolumeBeforeMute = Math.max(.01, getBeatPlayerVolume());
+    else if (getBeatPlayerVolume() <= 0) setBeatPlayerVolume(hrBeatPlayerVolumeBeforeMute || 1);
     setBeatPlayerMuted(muted);
     sync();
     emitGlobalBeatPlayerState();
   }));
   volumes.forEach((volume) => volume.addEventListener("input", () => {
     const next = Math.max(0, Math.min(1, Number(volume.value) || 0));
+    if (next > 0) hrBeatPlayerVolumeBeforeMute = next;
     setBeatPlayerVolume(next);
     setBeatPlayerMuted(next === 0);
     sync();
+    emitGlobalBeatPlayerState();
   }));
 
   try {
@@ -1453,8 +1653,18 @@ function hydrateGlobalBeatPlayer() {
       if (eventName === "waiting") player.dataset.state = "loading";
       if (eventName === "canplay") player.dataset.state = fallbackAudio.paused ? "paused" : "playing";
       if (eventName === "ended") {
-        fallbackAudio.currentTime = 0;
-        player.dataset.state = "ended";
+        if (hrBeatPlayerRepeat) {
+          fallbackAudio.currentTime = 0;
+          fallbackAudio.play().catch(() => {});
+        } else {
+          fallbackAudio.currentTime = 0;
+          player.dataset.state = "ended";
+          if (hrBeatPlayerShuffle) {
+            window.dispatchEvent(new CustomEvent("hr:beat-player-next", {
+              detail: { beatId: hrCurrentBeatDetail?.beatId || player.dataset.beatId || "", src: getBeatPlayerSrc(), shuffle: true },
+            }));
+          }
+        }
       }
       sync();
       persistGlobalBeatPlayerState();
@@ -1489,8 +1699,17 @@ function syncGlobalBeatPlayerControls(toggle, seek, time, mute, volume, waveform
   const fullscreenToggles = document.querySelectorAll("[data-beat-player-fullscreen-toggle]");
   const fullscreenOpen = document.querySelector("[data-beat-player-fullscreen]");
   const navigationControls = document.querySelectorAll("[data-beat-player-restart], [data-beat-player-next]");
+  const modeControls = document.querySelectorAll("[data-beat-player-shuffle], [data-beat-player-repeat]");
   if (fullscreenOpen) fullscreenOpen.disabled = !getBeatPlayerSrc();
   navigationControls.forEach((control) => { control.disabled = !getBeatPlayerSrc(); });
+  modeControls.forEach((control) => {
+    const isShuffle = control.hasAttribute("data-beat-player-shuffle");
+    const active = isShuffle ? hrBeatPlayerShuffle : hrBeatPlayerRepeat;
+    control.disabled = !getBeatPlayerSrc();
+    control.classList.toggle("is-active", active);
+    control.setAttribute("aria-pressed", String(active));
+    control.setAttribute("aria-label", `${active ? "Desactivar" : "Activar"} ${isShuffle ? "reproducción aleatoria" : "repetición"}`);
+  });
   fullscreenToggles.forEach((fullscreenToggle) => {
     const icon = fullscreenToggle.querySelector(".hr-beat-player__art-icon");
     if (icon) icon.innerHTML = beatPlayerIcon(isPlaying ? "pause" : "play");
@@ -1519,8 +1738,10 @@ function syncGlobalBeatPlayerControls(toggle, seek, time, mute, volume, waveform
   });
   const volumeControls = volume ? (typeof volume.length === "number" ? [...volume] : [volume]) : [];
   volumeControls.forEach((control) => {
-    if (document.activeElement !== control) control.value = String(getBeatPlayerMuted() ? 0 : getBeatPlayerVolume());
+    if (document.activeElement !== control) control.value = String(getBeatPlayerVolume());
   });
+  const colorValue = document.querySelector("[data-color-picker-value]");
+  if (colorValue) colorValue.textContent = hrBeatPlayerColorValue;
 }
 function formatGlobalBeatTime(value) {
   const seconds = Math.max(0, Math.floor(Number(value) || 0));
@@ -1532,6 +1753,13 @@ function emitGlobalBeatPlayerState() {
     src: getBeatPlayerSrc(),
     isPlaying: isBeatPlayerPlaying(),
     beatId: hrCurrentBeatDetail?.beatId || document.getElementById("hr-beat-player")?.dataset.beatId || "",
+    slug: hrCurrentBeatDetail?.slug || "",
+    producerSlug: hrCurrentBeatDetail?.producerSlug || "",
+    title: hrCurrentBeatDetail?.title || "",
+    shuffle: hrBeatPlayerShuffle,
+    repeat: hrBeatPlayerRepeat,
+    volume: getBeatPlayerVolume(),
+    muted: getBeatPlayerMuted(),
   };
   window.dispatchEvent(new CustomEvent("hr:beat-player-state", { detail: window.HiddenRoomBeatPlayer }));
 }
@@ -1549,13 +1777,15 @@ function setGlobalBeatPlayer(detail, options = {}) {
   const title = document.getElementById("player-title");
   const meta = document.getElementById("player-detail");
   const art = document.getElementById("beat-player-art");
-  const fullscreenTitle = document.getElementById("beat-player-fullscreen-title");
-  const fullscreenProducer = document.getElementById("beat-player-fullscreen-producer");
+  const fullscreenTitle = document.querySelector("#beat-player-fullscreen-title > a");
+  const fullscreenProducer = document.querySelector("#beat-player-fullscreen-producer > a");
   const fullscreenGenre = document.getElementById("beat-player-fullscreen-genre");
   const fullscreenArt = document.getElementById("beat-player-fullscreen-art");
   const bpm = document.querySelectorAll("#beat-player-bpm, #beat-player-fullscreen-bpm");
   const key = document.querySelectorAll("#beat-player-key, #beat-player-fullscreen-key");
   const buyButtons = document.querySelectorAll("[data-beat-player-buy]");
+  const playerLinks = [title, fullscreenTitle].filter(Boolean);
+  const playerShare = document.querySelector("[data-beat-player-share]");
   if (!detail?.src) return;
   hrCurrentBeatDetail = detail;
   hrBeatVisualizerDisplayValues = [];
@@ -1574,7 +1804,34 @@ function setGlobalBeatPlayer(detail, options = {}) {
   if (title) title.textContent = detail.title || "Beat Store";
   if (meta) meta.textContent = detail.detail || "";
   if (fullscreenTitle) fullscreenTitle.textContent = detail.title || "Beat Store";
+  const productUrl = detail.slug ? new URL(`/store/product.html?slug=${encodeURIComponent(detail.slug)}`, window.location.origin).href : "";
+  playerLinks.forEach((link) => {
+    if (productUrl) {
+      link.href = productUrl;
+      link.removeAttribute("aria-disabled");
+      link.removeAttribute("tabindex");
+    } else {
+      link.removeAttribute("href");
+      link.setAttribute("aria-disabled", "true");
+      link.setAttribute("tabindex", "-1");
+    }
+  });
+  if (playerShare) playerShare.hidden = !productUrl;
   if (fullscreenProducer) fullscreenProducer.textContent = detail.detail || "";
+  const producerUrl = detail.producerSlug
+    ? new URL(`/store/beat_store/producer.html?producer=${encodeURIComponent(detail.producerSlug)}`, window.location.origin).href
+    : "";
+  if (fullscreenProducer) {
+    if (producerUrl) {
+      fullscreenProducer.href = producerUrl;
+      fullscreenProducer.removeAttribute("aria-disabled");
+      fullscreenProducer.removeAttribute("tabindex");
+    } else {
+      fullscreenProducer.removeAttribute("href");
+      fullscreenProducer.setAttribute("aria-disabled", "true");
+      fullscreenProducer.setAttribute("tabindex", "-1");
+    }
+  }
   if (fullscreenGenre) fullscreenGenre.textContent = String(detail.genre || "GÉNERO").trim() || "GÉNERO";
   bpm.forEach((element) => { element.textContent = detail.bpm ? `${detail.bpm} BPM` : "-- BPM"; });
   key.forEach((element) => { element.textContent = detail.key ? `KEY ${detail.key}` : "KEY --"; });
@@ -1672,8 +1929,18 @@ async function loadBeatWaveform(src, options = {}) {
     });
   });
   hrWaveSurfer.on("finish", () => {
-    hrWaveSurfer.seekTo(0);
-    if (player) player.dataset.state = "ended";
+    if (hrBeatPlayerRepeat) {
+      hrWaveSurfer.seekTo(0);
+      hrWaveSurfer.play();
+    } else {
+      hrWaveSurfer.seekTo(0);
+      if (player) player.dataset.state = "ended";
+      if (hrBeatPlayerShuffle) {
+        window.dispatchEvent(new CustomEvent("hr:beat-player-next", {
+          detail: { beatId: hrCurrentBeatDetail?.beatId || player?.dataset.beatId || "", src: getBeatPlayerSrc(), shuffle: true },
+        }));
+      }
+    }
     syncGlobalBeatPlayerControls(
       player?.querySelectorAll("[data-beat-player-toggle]"),
       seek,
@@ -1748,7 +2015,7 @@ function isBeatPlayerPlaying() {
 }
 
 function getBeatPlayerMuted() {
-  return Boolean(document.getElementById("beat-audio")?.muted);
+  return Boolean(document.getElementById("beat-audio")?.muted || hrWaveSurfer?.getMuted?.());
 }
 
 function setBeatPlayerMuted(muted) {
@@ -1758,7 +2025,9 @@ function setBeatPlayerMuted(muted) {
 }
 
 function getBeatPlayerVolume() {
-  return document.getElementById("beat-audio")?.volume ?? hrWaveSurfer?.getVolume?.() ?? 1;
+  const waveVolume = hrWaveSurfer?.getVolume?.();
+  if (Number.isFinite(waveVolume)) return waveVolume;
+  return document.getElementById("beat-audio")?.volume ?? 1;
 }
 
 function setBeatPlayerVolume(value) {
@@ -1780,6 +2049,7 @@ function persistGlobalBeatPlayerState() {
       detail: meta?.textContent || "",
       cover,
       beatId: document.getElementById("hr-beat-player")?.dataset.beatId || hrCurrentBeatDetail?.beatId || "",
+      producerSlug: hrCurrentBeatDetail?.producerSlug || "",
       genre: hrCurrentBeatDetail?.genre || "",
       bpm: hrCurrentBeatDetail?.bpm || "",
       key: hrCurrentBeatDetail?.key || "",

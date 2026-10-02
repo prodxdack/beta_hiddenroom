@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Space+Grotesk:wght@400;500;600;700&family=Unbounded:wght@400;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="../../styles.css?v=20260922-nav-more-v2">
-  <link rel="stylesheet" href="producer-ready.css?v=20260921-beat-admin-tabs-v1">
+  <link rel="stylesheet" href="../../styles.css?v=20261001-beat-player-v1">
+  <link rel="stylesheet" href="producer-ready.css?v=20261002-beat-orders-stems-v1">
 </head>
 <body class="store-page hr-page new-beat-page" data-hr-chrome data-hr-context="store">
   <div id="hr-global-nav"></div>
@@ -56,13 +56,13 @@
               </label>
               <label class="new-beat-upload-card">
                 <span class="new-beat-upload-card__icon" aria-hidden="true">◒</span>
-                <span class="new-beat-upload-card__heading"><strong>Master / WAV</strong><small>Audio · MP3, WAV, M4A, FLAC o AIFF</small></span>
-                <span class="new-beat-upload-card__drop"><strong>Haz clic para subir</strong><small>o arrastra un archivo aquí</small><input name="audio" type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.aif,.aiff"><small id="audio-state">Sin master nuevo seleccionado.</small></span>
+                <span class="new-beat-upload-card__heading"><strong>Master / WAV</strong><small>WAV sin comprimir · se generará un MP3 protegido</small></span>
+                <span class="new-beat-upload-card__drop"><strong>Haz clic para subir</strong><small>o arrastra un archivo aquí</small><input name="audio" type="file" accept=".wav,audio/wav,audio/x-wav,audio/wave"><small id="audio-state">Sin master nuevo seleccionado.</small></span>
               </label>
               <label class="new-beat-upload-card">
                 <span class="new-beat-upload-card__icon" aria-hidden="true">⌁</span>
                 <span class="new-beat-upload-card__heading"><strong>Stems <small>(opcional)</small></strong><small>Un archivo ZIP protegido</small></span>
-                <span class="new-beat-upload-card__drop"><strong>Haz clic para subir</strong><small>o arrastra un archivo aquí</small><input name="stems" type="file" multiple accept="audio/*,.zip"><small>Se registran como archivos protegidos cuando el almacenamiento esté conectado.</small></span>
+                <span class="new-beat-upload-card__drop"><strong>Haz clic para subir</strong><small>o arrastra un archivo aquí</small><input name="stems" type="file" accept=".zip,application/zip"><small>Se registran como archivos protegidos cuando el almacenamiento esté conectado.</small></span>
               </label>
             </div>
           </div>
@@ -100,6 +100,6 @@
       </form>
     </section>
   </main>
-  <script src="../../site.js?v=20260922-nav-more-v2"></script><script type="module" src="new-beat.js?v=20260924-beat-producer-autodetect-v1"></script>
+  <script src="../../site.js?v=20261002-beat-orders-stems-v1"></script><script type="module" src="new-beat.js?v=20261002-beat-orders-stems-v1"></script>
 </body>
 </html>

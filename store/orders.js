@@ -3,26 +3,33 @@ import { supabase, escapeHtml } from "./store.js";
 const CLOUD_ORIGIN = "https://cloud.hiddenroom.mx";
 const statusElement = document.getElementById("orders-status");
 const listElement = document.getElementById("orders-list");
+const isBeatOrders = window.location.pathname.startsWith("/store/beat_store/") || new URLSearchParams(window.location.search).get("scope") === "beats";
+const ordersReturnPath = isBeatOrders ? "/store/beat_store/orders.html" : "/store/orders.html";
+const emptyOrdersHref = isBeatOrders ? "/store/beat_store/" : "/store/";
 
 initializeOrders();
 
 async function initializeOrders() {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) {
-    sessionStorage.setItem("hr_return_after_login", "../store/orders.html");
-    window.location.replace("../portal/");
+    sessionStorage.setItem("hr_return_after_login", ordersReturnPath);
+    window.location.replace("/portal/");
     return;
   }
 
-  const [{ data: orders, error: ordersError }, { data: downloads, error: downloadsError }] = await Promise.all([
-    supabase
-      .from("store_orders")
-      .select("id, status, subtotal, total, currency, created_at, paid_at, store_order_items(id, product_id, product_name, quantity, unit_price, total, beat_id, license_id, producer_name, license_name, license_snapshot)")
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("store_downloads")
-      .select("id, order_id, product_id, beat_id, license_id, license_name, file_url, available, download_count, created_at"),
-  ]);
+  const orderItemsRelation = `store_order_items${isBeatOrders ? "!inner" : ""}(id, product_id, product_name, quantity, unit_price, total, beat_id, license_id, producer_name, license_name, license_snapshot)`;
+  let ordersQuery = supabase
+    .from("store_orders")
+    .select(`id, status, subtotal, total, currency, created_at, paid_at, ${orderItemsRelation}`)
+    .order("created_at", { ascending: false });
+  let downloadsQuery = supabase
+    .from("store_downloads")
+    .select("id, order_id, product_id, beat_id, license_id, license_name, file_url, available, download_count, created_at");
+  if (isBeatOrders) {
+    ordersQuery = ordersQuery.not("store_order_items.beat_id", "is", null);
+    downloadsQuery = downloadsQuery.not("beat_id", "is", null);
+  }
+  const [{ data: orders, error: ordersError }, { data: downloads, error: downloadsError }] = await Promise.all([ordersQuery, downloadsQuery]);
 
   if (ordersError || downloadsError) {
     statusElement.textContent = `No se pudieron cargar tus compras: ${(ordersError || downloadsError).message}`;
@@ -31,7 +38,7 @@ async function initializeOrders() {
 
   if (!orders?.length) {
     statusElement.textContent = "Todavía no tienes compras ligadas a esta cuenta.";
-    listElement.innerHTML = '<a class="primary-button" href="index.html">Explorar tienda</a>';
+    listElement.innerHTML = `<a class="primary-button" href="${emptyOrdersHref}">${isBeatOrders ? "Explorar beats" : "Explorar tienda"}</a>`;
     return;
   }
 
