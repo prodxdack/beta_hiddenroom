@@ -2354,6 +2354,13 @@ html.hr-scroll-locked {
               border-color var(--duration-fast);
 }
 
+/* Keep visited navigation links in the designed state; hover/current effects still win below. */
+.hr-nav__links a:visited,
+.hr-nav__sub-link:visited {
+  color: var(--hr-muted);
+  text-decoration: none;
+}
+
 .hr-nav__links a {
   min-height: var(--hr-nav-height);
   display: inline-flex;
