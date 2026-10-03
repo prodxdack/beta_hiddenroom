@@ -17623,3 +17623,29 @@ body.hr-beat-player-fullscreen-open .hr-global-drawer {
     display: none;
   }
 }
+
+/* Custom Y2K color picker used by the fullscreen Beat Store player. */
+.hr-beat-player-color-picker { position: relative; display: grid; grid-template-columns: 34px minmax(0,1fr); align-items: center; gap: 4px; min-width: 0; color: var(--hr-player-color-muted); font: 500 7px/1 var(--hr-font-mono); letter-spacing: .08em; }
+.hr-beat-player-color-picker__toggle { display: flex; align-items: center; gap: 4px; width: 100%; min-width: 0; height: 20px; padding: 2px 3px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--hr-player-color-line), transparent 20%); border-radius: 3px; background: var(--hr-player-color-dark); color: var(--hr-player-accent); font: 500 8px/1 var(--hr-font-mono); text-align: left; cursor: pointer; }
+.hr-beat-player-color-picker__toggle > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.hr-beat-player-color-picker__toggle > span:first-child { flex: 0 0 14px; width: 14px; height: 14px; border: 1px solid rgba(255,255,255,.48); border-radius: 3px; background: #7cd0e9; }
+.hr-beat-player-color-picker__panel { position: absolute; top: calc(100% + 5px); right: 0; z-index: 20; display: grid; gap: 8px; width: 224px; padding: 10px; border: 1px solid color-mix(in srgb, var(--hr-player-color-line), transparent 25%); border-radius: 5px 3px 6px 3px; background: color-mix(in srgb, var(--hr-player-color-panel), transparent 5%); box-shadow: 0 12px 26px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.12); backdrop-filter: blur(8px); }
+.hr-beat-player-color-picker__panel[hidden] { display: none; }
+.hr-beat-player-color-picker__saturation { position: relative; height: 126px; overflow: hidden; border: 1px solid rgba(255,255,255,.22); border-radius: 3px; background: linear-gradient(to top,#000,transparent), linear-gradient(to right,#fff,transparent), hsl(var(--hr-picker-hue,195deg),100%,50%); cursor: crosshair; touch-action: none; }
+.hr-beat-player-color-picker__saturation > span { position: absolute; left: 69%; top: 8%; width: 13px; height: 13px; border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,.62); transform: translate(-50%,-50%); pointer-events: none; }
+.hr-beat-player-color-picker__hue { width: 100%; height: 14px; margin: 0; appearance: none; border-radius: 8px; background: linear-gradient(90deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00); cursor: pointer; }
+.hr-beat-player-color-picker__hue::-webkit-slider-thumb { width: 14px; height: 14px; appearance: none; border: 2px solid #fff; border-radius: 50%; background: transparent; box-shadow: 0 0 0 1px rgba(0,0,0,.7); }
+.hr-beat-player-color-picker__hue::-moz-range-thumb { width: 11px; height: 11px; border: 2px solid #fff; border-radius: 50%; background: transparent; box-shadow: 0 0 0 1px rgba(0,0,0,.7); }
+.hr-beat-player-color-picker__cycle { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--hr-player-color-muted); font: 500 8px/1 var(--hr-font-mono); letter-spacing: .08em; cursor: pointer; }
+.hr-beat-player-color-picker__cycle input { width: 14px; height: 14px; margin: 0 0 0 auto; accent-color: var(--hr-player-color-accent); cursor: pointer; }
+.hr-beat-player-color-picker__cycle small { min-width: 20px; color: var(--hr-player-color-accent); font: inherit; text-align: right; }
+.hr-beat-player-color-picker__channels { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 6px; }
+.hr-beat-player-color-picker__channels label,
+.hr-beat-player-color-picker__hex { display: grid; gap: 3px; color: var(--hr-player-color-muted); font: 500 8px/1 var(--hr-font-mono); }
+.hr-beat-player-color-picker__channels input,
+.hr-beat-player-color-picker__hex input { width: 100%; min-width: 0; height: 24px; padding: 0 5px; border: 1px solid color-mix(in srgb,var(--hr-player-color-line),transparent 20%); border-radius: 3px; background: var(--hr-player-color-dark); color: var(--hr-player-color-bright); font: 500 10px/1 var(--hr-font-mono); }
+.hr-beat-player-color-picker__channels input:focus-visible,
+.hr-beat-player-color-picker__hex input:focus-visible,
+.hr-beat-player-color-picker__toggle:focus-visible,
+.hr-beat-player-color-picker__saturation:focus-visible { outline: 1px solid var(--hr-player-accent); outline-offset: 1px; }
+@media (max-width: 620px) { .hr-beat-player-color-picker__panel { right: -6px; width: min(224px,calc(100vw - 32px)); } }

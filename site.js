@@ -868,6 +868,12 @@ let hrBeatPlayerRepeat = false;
 let hrBeatPlayerVolumeBeforeMute = 1;
 let hrBeatPlayerColorValue = "#7cd0e9";
 let hrBeatPlayerColorPicker = { hue: 195, saturation: 69, value: 92 };
+let hrBeatPlayerColorCycle = false;
+let hrBeatPlayerColorCycleFrame = 0;
+let hrBeatPlayerColorCycleLastTime = 0;
+let hrBeatPlayerColorCycleHue = 195;
+
+const HR_BEAT_PLAYER_COLOR_CYCLE_SPEED = 24;
 
 function shouldRenderGlobalBeatPlayer() {
   const path = window.location.pathname;
@@ -1062,6 +1068,54 @@ function setGlobalBeatPlayerColor(value) {
       cursorColor: tone(90, .92),
     });
   }
+}
+
+function stopBeatPlayerColorCycle() {
+  if (hrBeatPlayerColorCycleFrame) cancelAnimationFrame(hrBeatPlayerColorCycleFrame);
+  hrBeatPlayerColorCycleFrame = 0;
+  hrBeatPlayerColorCycleLastTime = 0;
+}
+
+function syncBeatPlayerColorCycleControl() {
+  const control = document.querySelector("[data-color-picker-cycle]");
+  const status = document.querySelector("[data-color-picker-cycle-status]");
+  if (control) control.checked = hrBeatPlayerColorCycle;
+  if (status) status.textContent = hrBeatPlayerColorCycle ? "ON" : "OFF";
+}
+
+function animateBeatPlayerColorCycle(timestamp) {
+  const fullscreen = document.getElementById("hr-beat-player-fullscreen");
+  if (!hrBeatPlayerColorCycle || !fullscreen || fullscreen.hidden || fullscreen.dataset.theme !== "y2k") {
+    stopBeatPlayerColorCycle();
+    return;
+  }
+  const elapsed = hrBeatPlayerColorCycleLastTime
+    ? Math.min(80, timestamp - hrBeatPlayerColorCycleLastTime) / 1000
+    : 0;
+  hrBeatPlayerColorCycleLastTime = timestamp;
+  hrBeatPlayerColorCycleHue = (hrBeatPlayerColorCycleHue + elapsed * HR_BEAT_PLAYER_COLOR_CYCLE_SPEED) % 360;
+  hrBeatPlayerColorPicker.hue = hrBeatPlayerColorCycleHue;
+  const rgb = beatPlayerHsvToRgb(
+    hrBeatPlayerColorPicker.hue,
+    hrBeatPlayerColorPicker.saturation,
+    hrBeatPlayerColorPicker.value,
+  );
+  setGlobalBeatPlayerColor(beatPlayerRgbToHex(rgb.red, rgb.green, rgb.blue));
+  hrBeatPlayerColorCycleFrame = requestAnimationFrame(animateBeatPlayerColorCycle);
+}
+
+function setBeatPlayerColorCycle(enabled) {
+  hrBeatPlayerColorCycle = Boolean(enabled);
+  if (hrBeatPlayerColorCycle) {
+    hrBeatPlayerColorCycleHue = Number(hrBeatPlayerColorPicker.hue) || 0;
+    if (!hrBeatPlayerColorCycleFrame) {
+      hrBeatPlayerColorCycleLastTime = 0;
+      hrBeatPlayerColorCycleFrame = requestAnimationFrame(animateBeatPlayerColorCycle);
+    }
+  } else {
+    stopBeatPlayerColorCycle();
+  }
+  syncBeatPlayerColorCycleControl();
 }
 
 function ensureBeatPlayerAudioGraph(audio) {
@@ -1324,6 +1378,7 @@ function renderGlobalBeatPlayer() {
               <div class="hr-beat-player-color-picker__panel" id="beat-player-color-picker-panel" data-color-picker-panel hidden>
                 <div class="hr-beat-player-color-picker__saturation" data-color-picker-saturation role="slider" aria-label="Saturación y luminosidad" tabindex="0"><span data-color-picker-marker></span></div>
                 <input class="hr-beat-player-color-picker__hue" data-color-picker-hue type="range" min="0" max="359" value="195" step="1" aria-label="Matiz del color">
+                <label class="hr-beat-player-color-picker__cycle"><span>CICLO DE COLOR</span><input type="checkbox" data-color-picker-cycle aria-label="Cambiar el color progresivamente"><small data-color-picker-cycle-status>OFF</small></label>
                 <div class="hr-beat-player-color-picker__channels">
                   <label><span>R</span><input data-color-picker-channel="r" type="number" min="0" max="255" inputmode="numeric" aria-label="Rojo"></label>
                   <label><span>G</span><input data-color-picker-channel="g" type="number" min="0" max="255" inputmode="numeric" aria-label="Verde"></label>
@@ -1405,6 +1460,7 @@ function hydrateGlobalBeatPlayer() {
   const colorPickerPanel = colorPicker?.querySelector("[data-color-picker-panel]");
   const colorPickerSaturation = colorPicker?.querySelector("[data-color-picker-saturation]");
   const colorPickerHue = colorPicker?.querySelector("[data-color-picker-hue]");
+  const colorPickerCycle = colorPicker?.querySelector("[data-color-picker-cycle]");
   const colorPickerHex = colorPicker?.querySelector("[data-color-picker-hex]");
   const colorPickerChannels = colorPicker?.querySelectorAll("[data-color-picker-channel]") || [];
   const colorPickerValue = colorPicker?.querySelector("[data-color-picker-value]");
@@ -1464,6 +1520,7 @@ function hydrateGlobalBeatPlayer() {
     fullscreen.hidden = false;
     fullscreen.setAttribute("aria-hidden", "false");
     document.body.classList.add("hr-beat-player-fullscreen-open");
+    if (hrBeatPlayerColorCycle) setBeatPlayerColorCycle(true);
     fullscreenDialog?.focus();
     resizeBeatPlayerVisualizers();
     startBeatPlayerVisualizer();
@@ -1477,6 +1534,7 @@ function hydrateGlobalBeatPlayer() {
     fullscreen.hidden = true;
     fullscreen.setAttribute("aria-hidden", "true");
     document.body.classList.remove("hr-beat-player-fullscreen-open");
+    stopBeatPlayerColorCycle();
     window.requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
     hrBeatPlayerFullscreenLastFocus?.focus?.();
     hrBeatPlayerFullscreenLastFocus = null;
@@ -1521,18 +1579,27 @@ function hydrateGlobalBeatPlayer() {
   colorPickerSaturation?.addEventListener("pointercancel", () => { colorPickerDragging = false; });
   colorPickerHue?.addEventListener("input", () => {
     hrBeatPlayerColorPicker.hue = Number(colorPickerHue.value) || 0;
+    hrBeatPlayerColorCycleHue = hrBeatPlayerColorPicker.hue;
     applyColorPickerHsv();
+  });
+  colorPickerCycle?.addEventListener("change", () => {
+    setBeatPlayerColorCycle(colorPickerCycle.checked);
   });
   colorPickerChannels.forEach((input) => input.addEventListener("input", () => {
     const rgb = {};
     colorPickerChannels.forEach((channel) => { rgb[channel.dataset.colorPickerChannel] = Number(channel.value) || 0; });
     const hsv = beatPlayerRgbToHsv(rgb.r, rgb.g, rgb.b);
     hrBeatPlayerColorPicker = hsv;
+    hrBeatPlayerColorCycleHue = hsv.hue;
     setGlobalBeatPlayerColor(beatPlayerRgbToHex(rgb.r, rgb.g, rgb.b));
   }));
   colorPickerHex?.addEventListener("input", () => {
     const value = colorPickerHex.value.trim();
-    if (/^#[0-9a-f]{6}$/i.test(value)) setGlobalBeatPlayerColor(value);
+    if (/^#[0-9a-f]{6}$/i.test(value)) {
+      const rgb = beatPlayerHexToRgb(value);
+      hrBeatPlayerColorCycleHue = beatPlayerRgbToHsv(rgb.red, rgb.green, rgb.blue).hue;
+      setGlobalBeatPlayerColor(value);
+    }
   });
   document.addEventListener("click", (event) => {
     if (!colorPickerPanel || colorPickerPanel.hidden || event.target.closest("[data-beat-player-color-picker]")) return;
@@ -1541,6 +1608,7 @@ function hydrateGlobalBeatPlayer() {
   });
   if (fullscreen) fullscreen.dataset.theme = fullscreenTheme?.value || "y2k";
   setGlobalBeatPlayerColor(hrBeatPlayerColorValue);
+  syncBeatPlayerColorCycleControl();
   fullscreenShuffle?.addEventListener("click", () => {
     hrBeatPlayerShuffle = !hrBeatPlayerShuffle;
     sync();
