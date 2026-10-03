@@ -88,17 +88,6 @@
   border-bottom: var(--border-subtle);
 }
 
-.media-section-heading {
-  align-items: baseline;
-  --hr-cluster-gap: var(--space-md);
-}
-
-.media-section-heading span {
-  color: var(--hr-accent);
-  font-size: var(--text-sm);
-  letter-spacing: var(--tracking-widest);
-}
-
 .media-section-heading h2 {
   font-size: clamp(28px, 5vw, 64px);
   letter-spacing: -.04em;

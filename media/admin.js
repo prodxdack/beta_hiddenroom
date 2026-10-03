@@ -243,6 +243,9 @@ async function savePost(saveStatus, submitButton) {
 
   try {
     const coverImage = await uploadCover();
+    const publishedAt = saveStatus === "published"
+      ? (state.currentPost?.published_at || new Date().toISOString())
+      : null;
     const payload = {
       slug,
       title,
@@ -258,6 +261,7 @@ async function savePost(saveStatus, submitButton) {
       author_name: document.getElementById("post-author-name").value.trim() || "Hidden Room Media",
       status: saveStatus,
       featured: document.getElementById("post-featured").checked,
+      published_at: publishedAt,
     };
 
     let result;
@@ -358,7 +362,7 @@ function attachEvents() {
   document.getElementById("preview-close").addEventListener("click", () => {
     document.getElementById("preview-dialog").close();
   });
-  document.getElementById("logout-button").addEventListener("click", async () => {
+  document.getElementById("logout-button")?.addEventListener("click", async () => {
     await supabase.auth.signOut();
     window.location.href = "/portal/";
   });
