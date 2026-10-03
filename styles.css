@@ -17624,6 +17624,14 @@ body.hr-beat-player-fullscreen-open .hr-global-drawer {
   }
 }
 
+#player-title,
+#player-title:visited,
+#beat-player-fullscreen-title > a,
+#beat-player-fullscreen-title > a:visited {
+  color: inherit;
+  text-decoration: none !important;
+}
+
 /* Custom Y2K color picker used by the fullscreen Beat Store player. */
 .hr-beat-player-color-picker { position: relative; display: grid; grid-template-columns: 34px minmax(0,1fr); align-items: center; gap: 4px; min-width: 0; color: var(--hr-player-color-muted); font: 500 7px/1 var(--hr-font-mono); letter-spacing: .08em; }
 .hr-beat-player-color-picker__toggle { display: flex; align-items: center; gap: 4px; width: 100%; min-width: 0; height: 20px; padding: 2px 3px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--hr-player-color-line), transparent 20%); border-radius: 3px; background: var(--hr-player-color-dark); color: var(--hr-player-accent); font: 500 8px/1 var(--hr-font-mono); text-align: left; cursor: pointer; }
