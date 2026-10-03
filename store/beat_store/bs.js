@@ -1,5 +1,5 @@
 
-import { beatCardMarkup as sharedBeatCardMarkup } from "./beat-card.js?v=20261001-shared-card-v1";
+import { beatCardMarkup as sharedBeatCardMarkup } from "./beat-card.js?v=20261002-runtime-assets-v1";
 
 const SUPABASE_URL = "https://rpcunbkstadgngqrjafp.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_7v_FIgTjWjJgtT1YHIAYSw_bRBmQjZO";

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Analytics local | Hidden Room</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Space+Grotesk:wght@400;500;600;700&family=Unbounded:wght@400;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../styles.css?v=20261001-beat-player-v1">
+  <style>
+    .analytics-page { min-height: 100vh; background: var(--black); }
+    .analytics-header { display: flex; justify-content: space-between; align-items: end; gap: 24px; padding-block: clamp(64px, 10vw, 130px) 42px; }
+    .analytics-header h1 { margin: 0; max-width: 12ch; }
+    .analytics-header p { max-width: 54ch; color: var(--hr-muted); line-height: 1.6; }
+    .analytics-summary { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    .analytics-stat { min-height: 130px; padding: 20px; display: grid; align-content: space-between; gap: 18px; }
+    .analytics-stat span { color: var(--hr-muted); font: 11px var(--font-mono); text-transform: uppercase; }
+    .analytics-stat strong { color: var(--hr-accent); font: 700 clamp(30px, 5vw, 54px)/1 var(--font-display); }
+    .analytics-recent-panel { margin-top: 34px; }
+    .analytics-recent { display: grid; gap: 0; padding: 0; margin: 0; list-style: none; }
+    .analytics-recent li { display: grid; grid-template-columns: minmax(130px, .5fr) minmax(160px, 1fr) minmax(160px, .7fr); gap: 16px; padding: 15px 0; border-bottom: 1px solid var(--hr-border); font: 12px/1.4 var(--font-mono); }
+    .analytics-recent li span, .analytics-recent li time { color: var(--hr-muted); }
+    .analytics-actions { margin-top: 24px; }
+    @media (max-width: 900px) { .analytics-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+    @media (max-width: 600px) { .analytics-header { display: block; } .analytics-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } .analytics-recent li { grid-template-columns: 1fr; gap: 5px; } }
+  </style>
+</head>
+<body class="analytics-page hr-page" data-hr-chrome data-hr-context="portal">
+  <div id="hr-global-nav"></div>
+  <main class="hr-container">
+    <header class="analytics-header">
+      <div><p class="hr-eyebrow">Revenue signals</p><h1 class="hr-title-xl">Analytics local</h1></div>
+      <div><p>Panel de verificación para el funnel común. No envía eventos: guarda únicamente señales técnicas anónimas en este navegador.</p><span id="analytics-mode" class="hr-badge">LOCAL</span></div>
+    </header>
+    <section id="analytics-summary" class="analytics-summary hr-grid" aria-label="Resumen del funnel"></section>
+    <section class="analytics-recent-panel hr-panel">
+      <div class="hr-cluster"><p class="hr-eyebrow">Últimos eventos</p><a class="hr-btn hr-btn-ghost hr-btn-sm" href="/">Volver al sitio</a></div>
+      <ul id="analytics-recent" class="analytics-recent" aria-live="polite"></ul>
+      <div class="analytics-actions"><button id="analytics-clear" class="hr-btn hr-btn-outline" type="button">Limpiar señales locales</button></div>
+    </section>
+  </main>
+  <script src="../site.js?v=20261001-beat-player-v1"></script>
+  <script src="./analytics.js?v=20261002-runtime-assets-v1"></script>
+  <script src="./dashboard.js?v=20260830-analytics-minimum"></script>
+</body>
+</html>
