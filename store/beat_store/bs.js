@@ -1,4 +1,6 @@
 
+import { beatCardMarkup as sharedBeatCardMarkup } from "./beat-card.js?v=20261001-shared-card-v1";
+
 const SUPABASE_URL = "https://rpcunbkstadgngqrjafp.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_7v_FIgTjWjJgtT1YHIAYSw_bRBmQjZO";
 const CART_STORAGE_KEY = "hidden_room_store_cart";
@@ -9,7 +11,7 @@ const BEAT_STORE_CLOUD_PATH = "/beats_store";
 const supabase = await window.HiddenRoomSupabase.getClient();
 const hrBeatStoreLifecycle = new AbortController();
 window.HiddenRoomApp?.register(() => hrBeatStoreLifecycle.abort());
-const state = { products: [], adminProducts: [], beats: [], items: [], searchIndex: new Map(), genreIndex: new Map(), renderVersion: 0, renderedKey: "", licenses: [], assignments: [], producerProfiles: [], beatUploadUsers: [], beatUploadPermissions: [], beatUploadPermissionsError: null, mercadoPagoConfig: null, mercadoPagoConfigError: null, durationDetections: new Set(), isAdmin: false, canEditOwnBeats: false, currentUserId: null, currentUsername: "", hasBeatMetadata: true, hasBeatLicenses: true, hasBeatPreviews: true, hasBeatAutodetectFlags: true };
+const state = { products: [], adminProducts: [], beats: [], items: [], searchIndex: new Map(), genreIndex: new Map(), renderVersion: 0, renderedKey: "", licenses: [], assignments: [], producerProfiles: [], beatUploadUsers: [], beatUploadPermissions: [], beatUploadPermissionsError: null, mercadoPagoConfig: null, mercadoPagoConfigError: null, durationDetections: new Set(), isAdmin: false, canEditOwnBeats: false, currentUserId: null, currentUsername: "", hasBeatMetadata: true, hasBeatLicenses: true, hasBeatPreviews: true, hasBeatDeliveryPaths: true, hasBeatAutodetectFlags: true };
 
 const grid = document.getElementById("beat-grid");
 const searchInput = document.getElementById("beat-search");
@@ -155,6 +157,7 @@ async function initBeatStore() {
   window.addEventListener("hr:beat-player-next", (event) => {
     const activeId = String(event.detail?.beatId || "");
     const activeSrc = String(event.detail?.src || "");
+    const requestedShuffle = Boolean(event.detail?.shuffle);
     const visibleIds = [...document.querySelectorAll("[data-play-beat]")]
       .map((cover) => cover.dataset.playBeat)
       .filter(Boolean)
@@ -167,9 +170,27 @@ async function initBeatStore() {
       : state.items.filter((item) => previewUrlForItem(item));
     if (!sequence.length) return;
     const currentIndex = sequence.findIndex((item) => item.id === activeId || previewUrlForItem(item) === activeSrc);
-    const nextItem = sequence[(currentIndex + 1 + sequence.length) % sequence.length];
+    let nextItem;
+    if (requestedShuffle && sequence.length > 1) {
+      const choices = sequence.filter((item) => item.id !== activeId && previewUrlForItem(item) !== activeSrc);
+      nextItem = choices[Math.floor(Math.random() * choices.length)];
+    } else {
+      nextItem = sequence[(currentIndex + 1 + sequence.length) % sequence.length];
+    }
     if (nextItem) playBeat(nextItem.id);
   }, { signal: hrBeatStoreLifecycle.signal });
+  window.addEventListener("hr:beat-player-state", (event) => {
+    const activeId = String(event.detail?.beatId || "");
+    const item = state.items.find((candidate) => candidate.id === activeId || candidate.product?.id === activeId);
+    const edit = document.querySelector("[data-beat-player-edit]");
+    if (!edit) return;
+    const canEdit = canEditBeatItem(item) && Boolean(item?.product?.id);
+    edit.hidden = !canEdit;
+    if (canEdit) edit.href = state.isAdmin
+      ? `?view=admin&tab=beats&edit=${encodeURIComponent(item.product.id)}`
+      : `new-beat.html?id=${encodeURIComponent(item.product.id)}`;
+  }, { signal: hrBeatStoreLifecycle.signal });
+  window.dispatchEvent(new CustomEvent("hr:beat-player-state", { detail: window.HiddenRoomBeatPlayer || {} }));
   window.addEventListener("hr:beat-player-buy", (event) => {
     const itemId = String(event.detail?.beatId || "");
     if (!itemId) return;
@@ -277,6 +298,55 @@ function adminProductMetaText(product) {
     product.beat_duration_seconds ? formatDuration(product.beat_duration_seconds) : null,
   ].filter(Boolean).join(" / ");
 }
+
+function adminBeatMissingAssetLabels(product) {
+  if (!state.hasBeatDeliveryPaths) return [];
+  return [
+    ["beat_original_path", ".wav", "NO WAV"],
+    ["beat_mp3_path", ".mp3", "NO MP3"],
+    ["beat_stems_path", ".zip", "NO STEMS"],
+  ]
+    .filter(([field, extension]) => !beatDeliveryPathHasExtension(product?.[field], extension))
+    .map(([, , label]) => label);
+}
+
+function beatDeliveryPathHasExtension(value, extension) {
+  return String(value || "").trim().toLowerCase().endsWith(extension);
+}
+
+function adminBeatAssetBadges(product) {
+  return adminBeatMissingAssetLabels(product)
+    .map((label) => `<span class="product-category beat-admin-row__missing-asset">${escapeHtml(label)}</span>`)
+    .join("");
+}
+
+function adminBeatDeliveryAvailability(beatId = "") {
+  const product = state.adminProducts.find((candidate) => candidate.id === beatId);
+  const selectedFile = beatUploadInput?.files?.[0];
+  return {
+    wav: beatDeliveryPathHasExtension(product?.beat_original_path, ".wav") || Boolean(selectedFile && /\.wav$/i.test(selectedFile.name)),
+    mp3: beatDeliveryPathHasExtension(product?.beat_mp3_path, ".mp3"),
+    stems: beatDeliveryPathHasExtension(product?.beat_stems_path, ".zip"),
+  };
+}
+
+function beatLicenseRequiredAssets(license) {
+  const format = String(license?.format || "").trim().toLowerCase();
+  return [
+    format.includes("wav") ? "wav" : "",
+    format.includes("mp3") ? "mp3" : "",
+    format.includes("stem") ? "stems" : "",
+  ].filter(Boolean);
+}
+
+function beatLicenseMissingAssets(license, availability) {
+  return beatLicenseRequiredAssets(license).filter((asset) => !availability[asset]);
+}
+
+function beatLicenseMissingAssetsLabel(missingAssets) {
+  return missingAssets.map((asset) => asset === "stems" ? "STEMS" : asset.toUpperCase()).join(" + ");
+}
+
 function wantsAdminMode() {
   const params = new URLSearchParams(window.location.search);
   return params.get("view") === "admin" || params.get("admin") === "1";
@@ -390,29 +460,41 @@ async function currentUserIsAdmin() {
 const BEAT_PRODUCT_BASE_SELECT = "id, slug, name, description, category, price, currency, image_url, beat_cover_path, beat_thumb_path, file_url, producer, producer_profile_id, stock, is_digital, featured, is_active, created_at";
 const BEAT_PRODUCT_META_SELECT = `${BEAT_PRODUCT_BASE_SELECT}, producer_user_id, beat_genre, beat_bpm, beat_key, beat_duration_seconds`;
 const BEAT_PRODUCT_AUTODETECT_SELECT = `${BEAT_PRODUCT_META_SELECT}, beat_bpm_autodetected, beat_key_autodetected`;
-const BEAT_PRODUCT_PREVIEW_SELECT = `${state.hasBeatAutodetectFlags ? BEAT_PRODUCT_AUTODETECT_SELECT : BEAT_PRODUCT_META_SELECT}, beat_original_path, beat_preview_path, beat_preview_status, beat_preview_error`;
+const BEAT_PRODUCT_PREVIEW_COLUMNS = "beat_preview_path, beat_preview_status, beat_preview_error";
+const BEAT_PRODUCT_DELIVERY_COLUMNS = "beat_original_path, beat_mp3_path, beat_stems_path";
+
+function beatProductSelect(includeAdminAssets = false) {
+  const metadata = state.hasBeatAutodetectFlags ? BEAT_PRODUCT_AUTODETECT_SELECT : BEAT_PRODUCT_META_SELECT;
+  const columns = [metadata];
+  if (includeAdminAssets && state.hasBeatDeliveryPaths) columns.push(BEAT_PRODUCT_DELIVERY_COLUMNS);
+  if (state.hasBeatPreviews) columns.push(BEAT_PRODUCT_PREVIEW_COLUMNS);
+  return columns.join(", ");
+}
 
 async function fetchBeatProducts(includeInactive = false) {
-  const columns = state.hasBeatPreviews
-    ? BEAT_PRODUCT_PREVIEW_SELECT
-    : (state.hasBeatMetadata ? BEAT_PRODUCT_META_SELECT : BEAT_PRODUCT_BASE_SELECT);
+  const columns = state.hasBeatMetadata ? beatProductSelect(includeInactive) : BEAT_PRODUCT_BASE_SELECT;
   const { data, error } = await runBeatProductQuery(includeInactive, columns);
 
   if (!error) return data ?? [];
 
   if (state.hasBeatPreviews && isMissingBeatPreviewError(error)) {
     state.hasBeatPreviews = false;
-    const fallbackColumns = state.hasBeatMetadata ? (state.hasBeatAutodetectFlags ? BEAT_PRODUCT_AUTODETECT_SELECT : BEAT_PRODUCT_META_SELECT) : BEAT_PRODUCT_BASE_SELECT;
+    const fallbackColumns = state.hasBeatMetadata ? beatProductSelect(includeInactive) : BEAT_PRODUCT_BASE_SELECT;
     const fallback = await runBeatProductQuery(includeInactive, fallbackColumns);
+    if (!fallback.error) return fallback.data ?? [];
+    throw new Error(`No se pudieron cargar productos: ${fallback.error.message}`);
+  }
+
+  if (includeInactive && state.hasBeatDeliveryPaths && isMissingBeatDeliveryError(error)) {
+    state.hasBeatDeliveryPaths = false;
+    const fallback = await runBeatProductQuery(includeInactive, beatProductSelect(includeInactive));
     if (!fallback.error) return fallback.data ?? [];
     throw new Error(`No se pudieron cargar productos: ${fallback.error.message}`);
   }
 
   if (state.hasBeatAutodetectFlags && isMissingBeatAutodetectFlagError(error)) {
     state.hasBeatAutodetectFlags = false;
-    const fallbackColumns = state.hasBeatPreviews
-      ? `${BEAT_PRODUCT_META_SELECT}, beat_original_path, beat_preview_path, beat_preview_status, beat_preview_error`
-      : BEAT_PRODUCT_META_SELECT;
+    const fallbackColumns = beatProductSelect(includeInactive);
     const fallback = await runBeatProductQuery(includeInactive, fallbackColumns);
     if (!fallback.error) return fallback.data ?? [];
     throw new Error(`No se pudieron cargar productos: ${fallback.error.message}`);
@@ -442,7 +524,12 @@ function runBeatProductQuery(includeInactive, columns) {
 
 function isMissingBeatPreviewError(error) {
   const message = String(error?.message || error?.details || "").toLowerCase();
-  return error?.code === "42703" && ["beat_original_path", "beat_preview_path", "beat_preview_status", "beat_preview_error"].some((column) => message.includes(column));
+  return error?.code === "42703" && ["beat_preview_path", "beat_preview_status", "beat_preview_error"].some((column) => message.includes(column));
+}
+
+function isMissingBeatDeliveryError(error) {
+  const message = String(error?.message || error?.details || "").toLowerCase();
+  return error?.code === "42703" && ["beat_original_path", "beat_mp3_path", "beat_stems_path"].some((column) => message.includes(column));
 }
 
 function isMissingBeatAutodetectFlagError(error) {
@@ -867,23 +954,16 @@ function beatCardMarkup(item) {
     ? "Precio por confirmar"
     : `Desde ${formatPrice(startingPrice, product?.currency)}`;
 
-  return `
-    <article class="product-card beat-card" data-item-id="${escapeHtml(item.id)}">
-      ${beatCardOptionsMarkup(item)}
-      ${coverMarkup(item)}
-      <div class="beat-card__body">
-        <div class="beat-card__info">
-          <h3>${escapeHtml(title)}</h3>
-          <p class="beat-card__producer">${producerLinkMarkup(item, producer)}</p>
-        </div>
-        <div class="beat-card__commercial-row">
-          <p class="beat-card__price">${escapeHtml(priceLabel)}</p>
-          <div class="beat-card__actions">
-            <button class="primary-button" type="button" data-add-beat="${escapeHtml(item.id)}" ${canBuy ? "" : "disabled"} aria-expanded="false">Ver licencias</button>
-          </div>
-        </div>
-        <div class="beat-card__meta-slot">${musicMetaMarkup(meta)}</div>
-      </div>    </article>`;
+  return sharedBeatCardMarkup({
+    id: escapeHtml(item.id),
+    title: escapeHtml(title),
+    producerMarkup: producerLinkMarkup(item, producer),
+    coverMarkup: coverMarkup(item),
+    metaMarkup: musicMetaMarkup(meta),
+    optionsMarkup: beatCardOptionsMarkup(item),
+    priceLabel: escapeHtml(priceLabel),
+    canBuy,
+  });
 }
 
 function canEditBeatItem(item) {
@@ -895,18 +975,22 @@ function canEditBeatItem(item) {
 }
 
 function beatCardOptionsMarkup(item) {
-  if (!canEditBeatItem(item) || !item?.product?.id) return "";
-  const productId = encodeURIComponent(item.product.id);
-  const href = state.isAdmin
-    ? `?view=admin&tab=beats&edit=${productId}`
-    : `new-beat.html?id=${productId}`;
+  const canEdit = canEditBeatItem(item) && Boolean(item?.product?.id);
+  const slug = String(item?.product?.slug || "").trim();
+  if (!canEdit && !slug) return "";
+  const editMarkup = canEdit
+    ? `<a href="${escapeHtml(state.isAdmin ? `?view=admin&tab=beats&edit=${encodeURIComponent(item.product.id)}` : `new-beat.html?id=${encodeURIComponent(item.product.id)}`)}">Editar beat</a>`
+    : "";
+  const shareMarkup = slug
+    ? `<button class="beat-card__share-action" type="button" data-share-beat="${escapeHtml(item.id)}" aria-label="Compartir ${escapeHtml(beatDisplayTitle(item))}">Compartir</button>`
+    : "";
   return `
       <details class="beat-card__options">
         <summary aria-label="Opciones de ${escapeHtml(beatDisplayTitle(item))}">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 9L12 15L18 9"></path></svg>
         </summary>
         <div class="beat-card__options-menu">
-          <a href="${escapeHtml(href)}">Editar beat</a>
+          ${editMarkup}${shareMarkup}
         </div>
       </details>`;
 }
@@ -1008,6 +1092,7 @@ function handleGridClick(event) {
   const genreButton = event.target.closest("[data-genre-filter]");
   const playButton = event.target.closest("[data-play-beat]");
   const addButton = event.target.closest("[data-add-beat]");
+  const shareButton = event.target.closest("[data-share-beat]");
   const buyLicenseButton = event.target.closest("[data-buy-license]");
   const licenseButton = event.target.closest("[data-add-license]");
 
@@ -1025,6 +1110,10 @@ function handleGridClick(event) {
     openBeatLicensesModal(addButton.dataset.addBeat, addButton);
     return;
   }
+  if (shareButton) {
+    void shareBeat(shareButton.dataset.shareBeat);
+    return;
+  }
   if (buyLicenseButton) {
     if (addBeatLicenseToCart(buyLicenseButton.dataset.buyLicense, buyLicenseButton.dataset.licenseId)) window.location.assign("../cart.html");
     return;
@@ -1033,6 +1122,72 @@ function handleGridClick(event) {
     addBeatLicenseToCart(licenseButton.dataset.addLicense, licenseButton.dataset.licenseId);
     return;
   }
+}
+
+async function shareBeat(itemId) {
+  const item = state.items.find((candidate) => candidate.id === itemId);
+  const slug = String(item?.product?.slug || "").trim();
+  if (!item || !slug) {
+    showNotice("Este beat no tiene un enlace público.", true);
+    return;
+  }
+
+  const title = beatDisplayTitle(item);
+  const url = new URL(`../product.html?slug=${encodeURIComponent(slug)}`, window.location.href).href;
+  const shareData = {
+    title: `${title} | Hidden Room`,
+    text: `Escucha ${title} en Hidden Room.`,
+    url,
+  };
+
+  if (typeof navigator.share === "function") {
+    try {
+      await navigator.share(shareData);
+      trackBeatShare("native_share", item);
+      return;
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+    }
+  }
+
+  try {
+    await copyTextToClipboard(url);
+    trackBeatShare("copy_link", item);
+    showNotice("Enlace del beat copiado");
+  } catch {
+    showNotice("No se pudo copiar el enlace. Intenta de nuevo.", true);
+  }
+}
+
+function trackBeatShare(method, item) {
+  if (typeof window.gtag !== "function") return;
+  window.gtag("event", "share", {
+    method,
+    content_type: "beat",
+    item_id: item?.product?.id || item?.id || "",
+    funnel: "beat_store",
+  });
+}
+
+async function copyTextToClipboard(value) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return;
+    } catch {
+      // Fall back to the synchronous copy path for browsers without clipboard permission.
+    }
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "");
+  Object.assign(textarea.style, { position: "fixed", opacity: "0", pointerEvents: "none" });
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  if (!copied) throw new Error("No se pudo copiar");
 }
 
 function addBeatLicenseToCart(itemId, licenseId) {
@@ -1153,6 +1308,28 @@ function toggleBeatPreview(itemId) {
 function syncBeatCardPlayState(event) {
   const activeSrc = event.detail?.src || "";
   const isPlaying = Boolean(event.detail?.isPlaying);
+  const activeId = String(event.detail?.beatId || "");
+  const activeItem = state.items.find((candidate) => candidate.id === activeId || candidate.product?.id === activeId);
+  const activeSlug = String(activeItem?.product?.slug || event.detail?.slug || "").trim();
+  const beatUrl = activeSlug ? `../product.html?slug=${encodeURIComponent(activeSlug)}` : "";
+  [document.getElementById("player-title"), document.querySelector("#beat-player-fullscreen-title > a")].forEach((link) => {
+    if (!link) return;
+    if (beatUrl) {
+      link.href = beatUrl;
+      link.removeAttribute("aria-disabled");
+      link.removeAttribute("tabindex");
+    }
+  });
+  const producerProfile = producerProfileForProduct(activeItem?.product);
+  const producerLink = document.querySelector("#beat-player-fullscreen-producer > a");
+  const producerUrl = producerProfile?.is_active === false || !producerProfile?.slug
+    ? ""
+    : `producer.html?producer=${encodeURIComponent(producerProfile.slug)}`;
+  if (producerLink && producerUrl) {
+    producerLink.href = producerUrl;
+    producerLink.removeAttribute("aria-disabled");
+    producerLink.removeAttribute("tabindex");
+  }
   document.querySelectorAll(".beat-card__cover[data-play-beat]").forEach((cover) => {
     const item = state.items.find((candidate) => candidate.id === cover.dataset.playBeat);
     const isActive = previewUrlForItem(item) === activeSrc;
@@ -1167,6 +1344,7 @@ function playBeat(itemId) {
   const previewUrl = previewUrlForItem(item);
   if (!item || !previewUrl) return;
   const producer = productProducer(item);
+  const producerProfile = producerProfileForProduct(item.product);
   window.dispatchEvent(new CustomEvent("hr:beat-preview", {
     detail: {
       src: previewUrl,
@@ -1174,6 +1352,8 @@ function playBeat(itemId) {
       detail: producer || "Productor por confirmar",
       cover: coverUrlForItem(item),
       beatId: item.id,
+      slug: item.product?.slug || "",
+      producerSlug: producerProfile?.is_active === false ? "" : producerProfile?.slug || "",
       genre: item.product?.beat_genre || item.beat?.genre || "",
       bpm: item.product?.beat_bpm || item.beat?.bpm || "",
       key: item.product?.beat_key || item.beat?.key || "",
@@ -1408,16 +1588,19 @@ function renderBeatLicenseAssignmentFields() {
     return;
   }
   const beatId = document.getElementById("beat-product-id")?.value || "";
+  const availability = adminBeatDeliveryAvailability(beatId);
   beatLicenseAssignmentList.innerHTML = activeLicenses.map((license) => {
     const assignment = state.assignments.find((candidate) => candidate.beat_id === beatId && candidate.license_id === license.id);
-    const checked = assignment?.is_enabled !== false && Boolean(assignment);
+    const missingAssets = beatLicenseMissingAssets(license, availability);
+    const unavailable = missingAssets.length > 0;
+    const checked = !unavailable && assignment?.is_enabled !== false && Boolean(assignment);
     const price = assignment?.price ?? license.min_price;
     const invalid = assignment && !priceWithinLicenseRange(price, license);
     return `
-      <label class="beat-license-check ${invalid ? "is-invalid" : ""}" data-license-assignment="${escapeHtml(license.id)}">
-        <span><input type="checkbox" data-beat-license-check="${escapeHtml(license.id)}" ${checked ? "checked" : ""}> ${escapeHtml(license.name)}</span>
-        <input class="hr-input" type="number" min="${Number(license.min_price)}" max="${Number(license.max_price)}" step="0.01" value="${escapeHtml(price)}" data-beat-license-price="${escapeHtml(license.id)}" ${checked ? "" : "disabled"}>
-        <small>Precio permitido: ${escapeHtml(formatPrice(license.min_price))} - ${escapeHtml(formatPrice(license.max_price))} MXN${invalid ? " / Fuera del rango vigente" : ""}</small>
+      <label class="beat-license-check ${invalid ? "is-invalid" : ""}${unavailable ? " beat-license-check--unavailable" : ""}" data-license-assignment="${escapeHtml(license.id)}">
+        <span><input type="checkbox" data-beat-license-check="${escapeHtml(license.id)}" ${checked ? "checked" : ""} ${unavailable ? "disabled" : ""}> ${escapeHtml(license.name)}</span>
+        <input class="hr-input" type="number" min="${Number(license.min_price)}" max="${Number(license.max_price)}" step="0.01" value="${escapeHtml(price)}" data-beat-license-price="${escapeHtml(license.id)}" ${checked && !unavailable ? "" : "disabled"}>
+        <small>Precio permitido: ${escapeHtml(formatPrice(license.min_price))} - ${escapeHtml(formatPrice(license.max_price))} MXN${invalid ? " / Fuera del rango vigente" : ""}${unavailable ? ` / No disponible: falta ${escapeHtml(beatLicenseMissingAssetsLabel(missingAssets))}` : ""}</small>
       </label>`;
   }).join("");
 }
@@ -1433,7 +1616,10 @@ function renderAdminProducts() {
   adminList.innerHTML = state.adminProducts.map((product) => `
     <article class="admin-product-row beat-admin-row">
       <div>
-        <span class="product-category">${escapeHtml(product.is_active ? "Activo" : "Inactivo")}${product.featured ? " / Featured" : ""}</span>
+        <div class="beat-admin-row__categories">
+          <span class="product-category">${escapeHtml(product.is_active ? "Activo" : "Inactivo")}${product.featured ? " / Featured" : ""}</span>
+          ${adminBeatAssetBadges(product)}
+        </div>
         <h3>${escapeHtml(product.name)}</h3>
         <p>${escapeHtml(product.slug)} / ${escapeHtml(product.producer || "Sin productor")} / stock ${escapeHtml(product.stock ?? "ilimitado")}</p>${adminProductMetaText(product) ? `<p class="beat-admin-row__music">${escapeHtml(adminProductMetaText(product))}</p>` : ""}
       </div>
@@ -1717,6 +1903,7 @@ async function saveBeatUploadError(id, error) {
 }
 async function saveBeatLicenseAssignments(beatId) {
   if (!state.hasBeatLicenses || !beatLicenseAssignmentList || !beatId) return;
+  const availability = adminBeatDeliveryAvailability(beatId);
   const selectedIds = new Set();
   for (const license of state.licenses.filter((candidate) => candidate.is_active)) {
     const checkbox = beatLicenseAssignmentList.querySelector(`[data-beat-license-check="${CSS.escape(license.id)}"]`);
@@ -1728,6 +1915,11 @@ async function saveBeatLicenseAssignments(beatId) {
         if (error) throw new Error(error.message);
       }
       continue;
+    }
+
+    const missingAssets = beatLicenseMissingAssets(license, availability);
+    if (missingAssets.length) {
+      throw new Error(`${license.name}: falta el archivo protegido ${beatLicenseMissingAssetsLabel(missingAssets)}.`);
     }
 
     const price = Number(priceInput?.value);
@@ -1859,6 +2051,7 @@ function beatAudioAnalysisRequest({ file, existingAudioPath, target, token }) {
 function handleBeatAudioSelection() {
   const file = beatUploadInput?.files?.[0];
   const durationInput = document.getElementById("beat-duration");
+  renderBeatLicenseAssignmentFields();
   if (!file || !durationInput) return;
   if (!file.type.startsWith("audio/") && !/\.(mp3|wav|m4a|aac|ogg|flac|aif|aiff)$/i.test(file.name)) return;
   detectAudioDuration(file)

@@ -31,6 +31,9 @@ type StoreProduct = {
   stock: number | null;
   is_digital: boolean;
   is_active: boolean;
+  beat_original_path: string | null;
+  beat_mp3_path: string | null;
+  beat_stems_path: string | null;
 };
 
 type BeatAssignment = {
@@ -67,6 +70,14 @@ function validEmail(value: string) {
 
 function validUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function beatLicenseDeliveryAvailable(product: StoreProduct, license: BeatAssignment["beat_licenses"]) {
+  const format = cleanText(license?.format, 30).toLowerCase();
+  if (format.includes("wav") && !product.beat_original_path?.trim().toLowerCase().endsWith(".wav")) return false;
+  if (format.includes("mp3") && !product.beat_mp3_path?.trim().toLowerCase().endsWith(".mp3")) return false;
+  if (format.includes("stem") && !product.beat_stems_path?.trim().toLowerCase().endsWith(".zip")) return false;
+  return true;
 }
 
 function normalizeRequestedItems(value: unknown) {
@@ -191,7 +202,7 @@ Deno.serve(async (req) => {
   const productIds = [...new Set(requestedItems.map((item) => item.id))];
   const { data: productRows, error: productsError } = await admin
     .from("store_products")
-    .select("id, name, category, price, currency, stock, is_digital, is_active, producer")
+    .select("id, name, category, price, currency, stock, is_digital, is_active, producer, beat_original_path, beat_mp3_path, beat_stems_path")
     .in("id", productIds);
 
   if (productsError) return json({ error: productsError.message }, 500);
@@ -241,6 +252,9 @@ Deno.serve(async (req) => {
       const assignment = assignmentByKey.get(`${product.id}::${item.licenseId}`);
       if (!assignment || !assignment.is_enabled || !assignment.beat_licenses?.is_active) {
         return json({ error: `${product.name}: la licencia seleccionada ya no esta disponible.` }, 409);
+      }
+      if (!beatLicenseDeliveryAvailable(product, assignment.beat_licenses)) {
+        return json({ error: `${product.name}: falta el archivo protegido requerido por esta licencia.` }, 409);
       }
     }
   }
@@ -301,17 +315,46 @@ Deno.serve(async (req) => {
     return json({ error: itemsError.message }, 500);
   }
 
-  const { error: reservationError } = await admin.rpc("reserve_exclusive_inventory", {
-    p_order_id: storeOrder.id,
-  });
-  if (reservationError) {
-    await admin.from("store_orders").delete().eq("id", storeOrder.id);
-    const unavailable = /exclusive|reserved|sold/i.test(reservationError.message);
-    return json({
-      error: unavailable
+  const beatOrderItems = orderItems.filter((item) => item.beat_id && item.license_id);
+  const exclusiveItemKeys = new Set(
+    beatOrderItems.map((item) => `${item.beat_id}::${item.license_id}`),
+  );
+  let exclusiveReservationAttempted = false;
+  let hasExclusiveInventory = false;
+
+  if (exclusiveItemKeys.size) {
+    const { data: inventoryRows, error: inventoryError } = await admin
+      .from("beat_exclusive_inventory")
+      .select("beat_id, license_id")
+      .in("beat_id", [...new Set(beatOrderItems.map((item) => item.beat_id))])
+      .in("license_id", [...new Set(beatOrderItems.map((item) => item.license_id))]);
+
+    if (inventoryError) {
+      await admin.from("store_orders").delete().eq("id", storeOrder.id);
+      return json({ error: inventoryError.message }, 500);
+    }
+
+    hasExclusiveInventory = (inventoryRows ?? []).some((row) =>
+      exclusiveItemKeys.has(`${row.beat_id}::${row.license_id}`)
+    );
+  }
+
+  if (hasExclusiveInventory) {
+    exclusiveReservationAttempted = true;
+    const { error: reservationError } = await admin.rpc("reserve_exclusive_inventory", {
+      p_order_id: storeOrder.id,
+    });
+    if (reservationError) {
+      await admin.from("store_orders").delete().eq("id", storeOrder.id);
+      const unavailable = reservationError.code === "23P01"
+        || /exclusive|reserved|sold/i.test(reservationError.message);
+      return json({
+        error: unavailable
         ? "La licencia exclusiva ya no está disponible."
         : "No se pudo reservar la licencia seleccionada.",
     }, unavailable ? 409 : 500);
+    }
+
   }
 
   const { data: genericOrder, error: genericOrderError } = await admin
@@ -330,7 +373,9 @@ Deno.serve(async (req) => {
     .single();
 
   if (genericOrderError || !genericOrder) {
-    await admin.rpc("release_exclusive_inventory", { p_order_id: storeOrder.id });
+    if (exclusiveReservationAttempted) {
+      await admin.rpc("release_exclusive_inventory", { p_order_id: storeOrder.id });
+    }
     await admin.from("store_orders").delete().eq("id", storeOrder.id);
     return json({ error: genericOrderError?.message || "No se pudo registrar la orden." }, 500);
   }

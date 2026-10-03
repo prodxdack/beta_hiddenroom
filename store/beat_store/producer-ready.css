@@ -620,6 +620,24 @@ body.new-beat-page.hr-has-beat-player {
   min-width: 0;
 }
 
+.beat-admin-page .beat-admin-row__categories {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.beat-admin-page .beat-admin-row__categories .product-category {
+  margin: 0;
+}
+
+.beat-admin-page .beat-admin-row__missing-asset {
+  border-color: rgba(219, 1, 0, .5);
+  background: rgba(219, 1, 0, .12);
+  color: var(--hr-red-hover, #ff6b67);
+}
+
 .beat-admin-page .admin-layout {
   align-items: start;
   grid-template-columns: minmax(0, .92fr) minmax(0, 1.08fr);
@@ -755,6 +773,17 @@ body.new-beat-page.hr-has-beat-player {
   border-color: var(--new-beat-line, rgba(240, 236, 228, .11));
   border-radius: 10px;
   background: rgba(3, 3, 3, .28);
+}
+
+.beat-admin-page .beat-license-check--unavailable {
+  opacity: .5;
+  filter: grayscale(1);
+  border-color: rgba(255, 255, 255, .08);
+  background: rgba(3, 3, 3, .24);
+}
+
+.beat-admin-page .beat-license-check--unavailable small {
+  color: var(--hr-red-hover, #ff6b67);
 }
 
 .beat-admin-page .beat-admin__form > #beat-admin-error,
