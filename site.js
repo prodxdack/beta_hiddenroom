@@ -901,28 +901,30 @@ function setGlobalWaveformMode(mode = "fallback") {
   if (fallback) fallback.hidden = mode === "wave";
 }
 
+function ensurePhosphorIconStyles() {
+  if (document.querySelector("link[data-hr-phosphor-icons]")) return;
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = "/assets/vendor/phosphor/phosphor.css?v=20261002-phosphor-player-v1";
+  link.dataset.hrPhosphorIcons = "true";
+  document.head.appendChild(link);
+}
+
 function beatPlayerIcon(name) {
-  const paths = {
-    play: '<path d="M8 4.75L19.5 12L8 19.25Z"></path>',
-    pause: '<path d="M7 5H11V19H7ZM13 5H17V19H13Z"></path>',
-    prev: '<path d="M9.5 4.5L2 12L9.5 19.5L12 17L7 12L12 7ZM17 4.5L9.5 12L17 19.5L19.5 17L14.5 12L19.5 7Z"></path>',
-    next: '<path d="M7 4.5L14.5 12L7 19.5L4.5 17L9.5 12L4.5 7ZM14.5 4.5L22 12L14.5 19.5L12 17L17 12L12 7Z"></path>',
-    volume: '<path d="M3 9H7L12 5V19L7 15H3Z" fill="currentColor" stroke="none"></path><path d="M15 9.5C16.8 11 16.8 13 15 14.5M17.5 7C20.8 9.7 20.8 14.3 17.5 17" fill="none" stroke="currentColor" stroke-width="2.7"></path>',
-    close: '<path d="M5 5L19 19M19 5L5 19"></path>',
-    fullscreen: '<path d="M8.5 4.5H4.5V8.5M15.5 4.5H19.5V8.5M8.5 19.5H4.5V15.5M15.5 19.5H19.5V15.5"></path>',
-    more: '<circle cx="5" cy="12" r="2.1"></circle><circle cx="12" cy="12" r="2.1"></circle><circle cx="19" cy="12" r="2.1"></circle>',
-    shuffle: '<path d="M4 7H7C10 7 12 17 17 17H20M17 14L20 17L17 20M4 17H7C8.5 17 9.5 16 10.5 14.5M14 9.5C15 8 16 7 17 7H20"></path><path d="M17 4L20 7L17 10"></path>',
-    repeat: '<path d="M5 8H16L14 6M16 8L14 10M19 16H8L10 18M8 16L10 14"></path>',
+  const names = {
+    play: "play",
+    pause: "pause",
+    prev: "skip-back",
+    next: "skip-forward",
+    volume: "speaker-high",
+    muted: "speaker-slash",
+    close: "x",
+    fullscreen: "arrows-out",
+    more: "dots-three",
+    shuffle: "shuffle",
+    repeat: "repeat",
   };
-  const solidIcons = ["play", "pause", "prev", "next", "more"];
-  const heavyIcons = ["close", "fullscreen", "shuffle", "repeat"];
-  const variant = solidIcons.includes(name)
-    ? " hr-player-icon--solid"
-    : heavyIcons.includes(name)
-      ? " hr-player-icon--heavy"
-      : "";
-  const className = `hr-player-icon${variant}`;
-  return `<svg class="${className}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${paths[name] || paths.more}</svg>`;
+  return `<i class="ph ph-${names[name] || names.more} hr-player-icon" aria-hidden="true"></i>`;
 }
 
 function globalBeatPlayerArtMarkup(cover = "") {
@@ -1329,16 +1331,17 @@ function setupBeatPlayerVisualizers(audio) {
 
 function renderGlobalBeatPlayer() {
   if (!shouldRenderGlobalBeatPlayer()) return "";
+  ensurePhosphorIconStyles();
   document.body.classList.add("hr-has-beat-player");
   return `
     <aside class="hr-beat-player is-empty" id="hr-beat-player" aria-label="Reproductor Beat Store" data-state="idle">
-      <button class="hr-beat-player__art" id="beat-player-art" type="button" data-beat-player-toggle aria-label="Reproducir preview" aria-pressed="false"><span>HR</span><span class="hr-beat-player__art-icon" aria-hidden="true">${beatPlayerIcon("play")}</span></button>
+      <button class="hr-beat-player__art" id="beat-player-art" type="button" data-beat-player-toggle aria-label="Reproducir preview" title="Reproducir preview" data-tooltip="Reproducir preview" aria-pressed="false"><span>HR</span><span class="hr-beat-player__art-icon" aria-hidden="true">${beatPlayerIcon("play")}</span></button>
       <div class="hr-beat-player__meta">
         <strong><a id="player-title" href="#" aria-disabled="true">Selecciona un beat</a></strong>
         <span id="player-detail"></span>
       </div>
-      <button class="hr-beat-player__more" type="button" data-beat-player-more aria-label="Opciones del reproductor" aria-expanded="false" aria-controls="beat-player-menu">${beatPlayerIcon("more")}</button>
-      <button class="hr-beat-player__fullscreen" type="button" data-beat-player-fullscreen aria-label="Abrir reproductor en pantalla completa" aria-controls="hr-beat-player-fullscreen" disabled>${beatPlayerIcon("fullscreen")}</button>
+      <button class="hr-beat-player__more" type="button" data-beat-player-more aria-label="Opciones del reproductor" title="Opciones del reproductor" data-tooltip="Opciones del reproductor" aria-expanded="false" aria-controls="beat-player-menu">${beatPlayerIcon("more")}</button>
+      <button class="hr-beat-player__fullscreen" type="button" data-beat-player-fullscreen aria-label="Abrir reproductor en pantalla completa" title="Abrir reproductor en pantalla completa" data-tooltip="Abrir pantalla completa" aria-controls="hr-beat-player-fullscreen" disabled>${beatPlayerIcon("fullscreen")}</button>
       <div class="hr-beat-player__menu" id="beat-player-menu" hidden>
         <a href="/store/beat_store/">Ir a Beat Store</a>
         <button type="button" data-beat-player-share hidden>Compartir beat</button>
@@ -1350,8 +1353,8 @@ function renderGlobalBeatPlayer() {
           <input class="hr-beat-player__seek hr-beat-player__seek--fallback" id="beat-player-seek" type="range" min="0" max="1000" value="0" step="1" aria-label="Progreso del preview" disabled hidden>
         </div>
         <span class="hr-beat-player__time" id="beat-player-time">0:00 / 0:00</span>
-        <button class="hr-beat-player__mute" type="button" data-beat-player-mute aria-label="Silenciar preview" aria-pressed="false">${beatPlayerIcon("volume")}</button>
-        <input class="hr-beat-player__volume" id="beat-player-volume" type="range" min="0" max="1" value="1" step="0.01" aria-label="Volumen del preview">
+        <button class="hr-beat-player__mute" type="button" data-beat-player-mute aria-label="Silenciar preview" title="Silenciar preview" data-tooltip="Silenciar preview" aria-pressed="false">${beatPlayerIcon("volume")}</button>
+        <input class="hr-beat-player__volume" id="beat-player-volume" type="range" min="0" max="1" value="1" step="0.01" aria-label="Volumen del preview" title="Ajustar volumen del preview">
       </div>
       <audio id="beat-audio" preload="metadata" crossorigin="anonymous"></audio>
     </aside>
@@ -1364,7 +1367,7 @@ function renderGlobalBeatPlayer() {
             <strong>Beat Store</strong>
           </div>
           <span class="hr-beat-player-fullscreen__serial" id="beat-player-fullscreen-genre" aria-hidden="true">GÉNERO</span>
-          <button class="hr-beat-player-fullscreen__close" type="button" data-beat-player-fullscreen-close aria-label="Cerrar reproductor en pantalla completa">${beatPlayerIcon("close")}</button>
+          <button class="hr-beat-player-fullscreen__close" type="button" data-beat-player-fullscreen-close aria-label="Cerrar reproductor en pantalla completa" title="Cerrar reproductor" data-tooltip="Cerrar reproductor">${beatPlayerIcon("close")}</button>
           <div class="hr-beat-player-fullscreen__appearance" aria-label="Apariencia del reproductor">
             <label>
               <span>TEMA</span>
@@ -1396,7 +1399,7 @@ function renderGlobalBeatPlayer() {
           <div class="hr-beat-player-fullscreen__screen">
             <div class="hr-beat-player-fullscreen__screen-top"><span>LCD / STEREO</span><span>PREVIEW</span></div>
             <div class="hr-beat-player-fullscreen__screen-main">
-              <button class="hr-beat-player-fullscreen__art hr-beat-player__art" id="beat-player-fullscreen-art" type="button" data-beat-player-fullscreen-toggle aria-label="Reproducir preview" aria-pressed="false" disabled><span>HR</span><span class="hr-beat-player__art-icon" aria-hidden="true">${beatPlayerIcon("play")}</span></button>
+              <button class="hr-beat-player-fullscreen__art hr-beat-player__art" id="beat-player-fullscreen-art" type="button" data-beat-player-fullscreen-toggle aria-label="Reproducir preview" title="Reproducir preview" data-tooltip="Reproducir preview" aria-pressed="false" disabled><span>HR</span><span class="hr-beat-player__art-icon" aria-hidden="true">${beatPlayerIcon("play")}</span></button>
               <div class="hr-beat-player-fullscreen__meta">
                 <span class="hr-beat-player-fullscreen__label">REPRODUCTOR</span>
                 <h2 id="beat-player-fullscreen-title"><a href="#" aria-disabled="true">Selecciona un beat</a></h2>
@@ -1414,15 +1417,15 @@ function renderGlobalBeatPlayer() {
             </div>
           </div>
           <div class="hr-beat-player-fullscreen__transport" aria-label="Control central de reproducción">
-            <button class="hr-beat-player-fullscreen__nav" type="button" data-beat-player-restart aria-label="Regresar el beat al inicio" disabled>${beatPlayerIcon("prev")}</button>
-            <button class="hr-beat-player-fullscreen__play" type="button" data-beat-player-fullscreen-toggle aria-label="Reproducir preview" aria-pressed="false" disabled><span class="hr-beat-player__art-icon" aria-hidden="true">${beatPlayerIcon("play")}</span></button>
-            <button class="hr-beat-player-fullscreen__nav" type="button" data-beat-player-next aria-label="Reproducir el siguiente beat" disabled>${beatPlayerIcon("next")}</button>
+            <button class="hr-beat-player-fullscreen__nav" type="button" data-beat-player-restart aria-label="Regresar el beat al inicio" title="Volver al inicio" data-tooltip="Volver al inicio" disabled>${beatPlayerIcon("prev")}</button>
+            <button class="hr-beat-player-fullscreen__play" type="button" data-beat-player-fullscreen-toggle aria-label="Reproducir preview" title="Reproducir preview" data-tooltip="Reproducir preview" aria-pressed="false" disabled><span class="hr-beat-player__art-icon" aria-hidden="true">${beatPlayerIcon("play")}</span></button>
+            <button class="hr-beat-player-fullscreen__nav" type="button" data-beat-player-next aria-label="Reproducir el siguiente beat" title="Siguiente beat" data-tooltip="Siguiente beat" disabled>${beatPlayerIcon("next")}</button>
           </div>
           <div class="hr-beat-player-fullscreen__hardware-row">
-            <button type="button" data-beat-player-shuffle aria-label="Activar reproducción aleatoria" aria-pressed="false">${beatPlayerIcon("shuffle")}</button>
-            <button type="button" data-beat-player-repeat aria-label="Activar repetición" aria-pressed="false">${beatPlayerIcon("repeat")}</button>
-            <button class="hr-beat-player__mute" type="button" data-beat-player-mute aria-label="Silenciar preview" aria-pressed="false">${beatPlayerIcon("volume")}</button>
-            <input class="hr-beat-player__volume" id="beat-player-fullscreen-volume" type="range" min="0" max="1" value="1" step="0.01" aria-label="Volumen del preview">
+            <button type="button" data-beat-player-shuffle aria-label="Activar reproducción aleatoria" title="Activar reproducción aleatoria" data-tooltip="Reproducción aleatoria" aria-pressed="false">${beatPlayerIcon("shuffle")}</button>
+            <button type="button" data-beat-player-repeat aria-label="Activar repetición" title="Activar repetición" data-tooltip="Repetir beat" aria-pressed="false">${beatPlayerIcon("repeat")}</button>
+            <button class="hr-beat-player__mute" type="button" data-beat-player-mute aria-label="Silenciar preview" title="Silenciar preview" data-tooltip="Silenciar preview" aria-pressed="false">${beatPlayerIcon("volume")}</button>
+            <input class="hr-beat-player__volume" id="beat-player-fullscreen-volume" type="range" min="0" max="1" value="1" step="0.01" aria-label="Volumen del preview" title="Ajustar volumen del preview">
           </div>
           <button class="hr-beat-player-fullscreen__buy hr-beat-player__buy" type="button" data-beat-player-buy disabled>BUY BEAT</button>
         </div>
@@ -1698,14 +1701,18 @@ function hydrateGlobalBeatPlayer() {
     sync();
     emitGlobalBeatPlayerState();
   }));
-  volumes.forEach((volume) => volume.addEventListener("input", () => {
+  const handleVolumeChange = (volume) => {
     const next = Math.max(0, Math.min(1, Number(volume.value) || 0));
     if (next > 0) hrBeatPlayerVolumeBeforeMute = next;
     setBeatPlayerVolume(next);
     setBeatPlayerMuted(next === 0);
     sync();
     emitGlobalBeatPlayerState();
-  }));
+  };
+  volumes.forEach((volume) => {
+    volume.addEventListener("input", () => handleVolumeChange(volume));
+    volume.addEventListener("change", () => handleVolumeChange(volume));
+  });
 
   try {
     sessionStorage.removeItem("hr_global_beat_player");
@@ -1715,7 +1722,7 @@ function hydrateGlobalBeatPlayer() {
     sessionStorage.removeItem(HR_BEAT_PLAYER_STORAGE_KEY);
   }
 
-  ["loadedmetadata", "durationchange", "timeupdate", "pause", "play", "waiting", "canplay", "ended"].forEach((eventName) => {
+  ["loadedmetadata", "durationchange", "timeupdate", "pause", "play", "waiting", "canplay", "ended", "volumechange"].forEach((eventName) => {
     fallbackAudio.addEventListener(eventName, () => {
       if (hrWaveSurfer) return;
       if (eventName === "waiting") player.dataset.state = "loading";
@@ -1747,6 +1754,13 @@ function hydrateGlobalBeatPlayer() {
   sync();
   emitGlobalBeatPlayerState();
 }
+function setBeatPlayerControlHint(control, label) {
+  if (!control || !label) return;
+  control.setAttribute("aria-label", label);
+  control.setAttribute("title", label);
+  control.dataset.tooltip = label;
+}
+
 function syncGlobalBeatPlayerControls(toggle, seek, time, mute, volume, waveform) {
   const fallbackAudio = document.getElementById("beat-audio");
   const player = document.getElementById("hr-beat-player");
@@ -1761,7 +1775,7 @@ function syncGlobalBeatPlayerControls(toggle, seek, time, mute, volume, waveform
   toggleControls.forEach((control) => {
     const icon = control.querySelector(".hr-beat-player__art-icon");
     if (icon) icon.innerHTML = beatPlayerIcon(isPlaying ? "pause" : "play");
-    control.setAttribute("aria-label", isPlaying ? "Pausar preview" : "Reproducir preview");
+    setBeatPlayerControlHint(control, isPlaying ? "Pausar preview" : "Reproducir preview");
     control.setAttribute("aria-pressed", String(isPlaying));
   });
   const fullscreenToggles = document.querySelectorAll("[data-beat-player-fullscreen-toggle]");
@@ -1776,13 +1790,13 @@ function syncGlobalBeatPlayerControls(toggle, seek, time, mute, volume, waveform
     control.disabled = !getBeatPlayerSrc();
     control.classList.toggle("is-active", active);
     control.setAttribute("aria-pressed", String(active));
-    control.setAttribute("aria-label", `${active ? "Desactivar" : "Activar"} ${isShuffle ? "reproducción aleatoria" : "repetición"}`);
+    setBeatPlayerControlHint(control, `${active ? "Desactivar" : "Activar"} ${isShuffle ? "reproducción aleatoria" : "repetición"}`);
   });
   fullscreenToggles.forEach((fullscreenToggle) => {
     const icon = fullscreenToggle.querySelector(".hr-beat-player__art-icon");
     if (icon) icon.innerHTML = beatPlayerIcon(isPlaying ? "pause" : "play");
     fullscreenToggle.disabled = !getBeatPlayerSrc();
-    fullscreenToggle.setAttribute("aria-label", isPlaying ? "Pausar preview" : "Reproducir preview");
+    setBeatPlayerControlHint(fullscreenToggle, isPlaying ? "Pausar preview" : "Reproducir preview");
     fullscreenToggle.setAttribute("aria-pressed", String(isPlaying));
   });
   if (seek) {
@@ -1801,12 +1815,21 @@ function syncGlobalBeatPlayerControls(toggle, seek, time, mute, volume, waveform
   if (fullscreenTime) fullscreenTime.textContent = `${formatGlobalBeatTime(current)} / ${formatGlobalBeatTime(duration)}`;
   const muteControls = mute ? (typeof mute.length === "number" ? [...mute] : [mute]) : [];
   muteControls.forEach((control) => {
-    control.innerHTML = beatPlayerIcon("volume");
-    control.setAttribute("aria-pressed", String(getBeatPlayerMuted()));
+    const muted = getBeatPlayerMuted();
+    control.innerHTML = beatPlayerIcon(muted ? "muted" : "volume");
+    control.setAttribute("aria-pressed", String(muted));
+    setBeatPlayerControlHint(control, muted ? "Activar sonido del preview" : "Silenciar preview");
   });
   const volumeControls = volume ? (typeof volume.length === "number" ? [...volume] : [volume]) : [];
+  const currentVolume = Math.max(0, Math.min(1, Number(getBeatPlayerVolume()) || 0));
   volumeControls.forEach((control) => {
-    if (document.activeElement !== control) control.value = String(getBeatPlayerVolume());
+    if (document.activeElement !== control) control.value = String(currentVolume);
+    const displayedVolume = document.activeElement === control
+      ? Math.max(0, Math.min(1, Number(control.value) || 0))
+      : currentVolume;
+    control.style.setProperty("--hr-volume-progress", `${displayedVolume * 100}%`);
+    control.setAttribute("aria-valuenow", displayedVolume.toFixed(2));
+    control.setAttribute("aria-valuetext", `${Math.round(displayedVolume * 100)}%`);
   });
   const colorValue = document.querySelector("[data-color-picker-value]");
   if (colorValue) colorValue.textContent = hrBeatPlayerColorValue;

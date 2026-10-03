@@ -3087,7 +3087,7 @@ body[data-hr-chrome] .success-brand {
   .hr-global-drawer__links a:active {
     padding-left: 14px;
     background: var(--red-ghost);
-    color: var(--hr-nav-active);
+    text-decoration: none;
   }
 
   .hr-global-drawer__links a[aria-current="page"] {
@@ -3422,7 +3422,7 @@ body[data-hr-chrome] .success-brand {
 
   .hr-portal-nav-item:active {
     background: var(--red-ghost);
-    color: var(--hr-red);
+    text-decoration: none;
   }
 
   .hr-site-footer { grid-template-columns: 1fr; align-items: start; }
@@ -10278,6 +10278,17 @@ body.beat-admin-mode .beat-admin {
   gap: 10px;
 }
 
+.beat-license-option--disabled {
+  border-color: rgba(255, 255, 255, .08);
+  background: rgba(3, 3, 3, .24);
+  filter: grayscale(1);
+  opacity: .48;
+}
+
+.beat-license-option--disabled .beat-license-actions button {
+  cursor: not-allowed;
+}
+
 .beat-license-option header {
   display: flex;
   justify-content: space-between;
@@ -10569,6 +10580,101 @@ body.beat-admin-mode .beat-admin {
   background-position: center;
   border: 1px solid rgba(255, 255, 255, .4);
   font: 800 32px/1 var(--font-display, inherit);
+}
+
+.producer-profile-hero__avatar-wrap {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+}
+
+.producer-avatar-actions[hidden],
+.producer-avatar-editor[hidden] {
+  display: none;
+}
+
+.producer-avatar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.producer-avatar-change {
+  display: inline-flex;
+  min-height: 28px;
+  padding: 6px 9px;
+  cursor: pointer;
+  font-size: 9px;
+  letter-spacing: .08em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.producer-avatar-editor {
+  width: min(280px, calc(100vw - 32px));
+  padding: 10px;
+}
+
+.producer-avatar-editor .beat-cover-editor__controls {
+  display: grid;
+  gap: 10px;
+}
+
+.producer-avatar-editor__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.producer-avatar-status {
+  min-height: 1.3em;
+  margin: 0 !important;
+  font-size: 11px;
+}
+
+.producer-avatar-status.is-error {
+  color: #ff6c67;
+}
+
+/* Producer catalog uses the same card track geometry as Beat Store home. */
+@media (min-width: 761px) {
+  .producer-page .beat-grid {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 195px)) !important;
+    gap: 32px 34px !important;
+    align-items: start !important;
+  }
+
+  .producer-page .beat-grid .beat-card {
+    width: 100% !important;
+    max-width: 195px !important;
+    justify-self: start !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .producer-page .beat-grid {
+    display: grid !important;
+    grid-auto-flow: column !important;
+    grid-auto-columns: 46vw !important;
+    grid-template-rows: 1fr !important;
+    gap: 10px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    overflow-y: visible !important;
+    padding-bottom: 7px !important;
+    scrollbar-width: none;
+  }
+
+  .producer-page .beat-grid::-webkit-scrollbar {
+    display: none;
+  }
+
+  .producer-page .beat-grid .beat-card {
+    width: 100% !important;
+    max-width: none !important;
+  }
 }
 
 .producer-profile-hero__back,
@@ -16082,25 +16188,22 @@ html:has(body.hr-has-global-nav) {
 
 .hr-beat-player .hr-player-icon,
 .hr-beat-player-fullscreen .hr-player-icon {
-  display: block;
+  display: inline-grid;
+  place-items: center;
   width: 18px;
   height: 18px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  font-size: 18px;
+  line-height: 1;
 }
 
 .hr-beat-player .hr-player-icon--solid,
 .hr-beat-player-fullscreen .hr-player-icon--solid {
-  fill: currentColor;
-  stroke: none;
+  color: currentColor;
 }
 
 .hr-beat-player .hr-player-icon--heavy,
 .hr-beat-player-fullscreen .hr-player-icon--heavy {
-  stroke-width: 2.8;
+  color: currentColor;
 }
 
 .hr-beat-player__art-icon .hr-player-icon {
@@ -16134,6 +16237,47 @@ html:has(body.hr-has-global-nav) {
 .hr-beat-player-fullscreen__hardware-row > button .hr-player-icon {
   width: 18px;
   height: 18px;
+}
+
+.hr-beat-player button[data-tooltip],
+.hr-beat-player-fullscreen button[data-tooltip] {
+  position: relative;
+}
+
+.hr-beat-player button[data-tooltip]::after,
+.hr-beat-player-fullscreen button[data-tooltip]::after {
+  position: absolute;
+  z-index: 30;
+  left: 50%;
+  bottom: calc(100% + 9px);
+  width: max-content;
+  max-width: 190px;
+  padding: 6px 8px;
+  border: 1px solid rgba(124, 208, 233, .42);
+  background: rgba(4, 12, 18, .96);
+  color: #d7e6f1;
+  content: attr(data-tooltip);
+  font: 600 10px/1.25 var(--hr-font-mono);
+  letter-spacing: .02em;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 4px);
+  transition: opacity .16s ease, transform .16s ease;
+  white-space: normal;
+}
+
+.hr-beat-player-fullscreen button[data-tooltip]::after {
+  bottom: auto;
+  top: calc(100% + 9px);
+  transform: translate(-50%, -4px);
+}
+
+.hr-beat-player button[data-tooltip]:hover::after,
+.hr-beat-player button[data-tooltip]:focus-visible::after,
+.hr-beat-player-fullscreen button[data-tooltip]:hover::after,
+.hr-beat-player-fullscreen button[data-tooltip]:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
 }
 
 .hr-beat-player__meta {
@@ -17304,19 +17448,27 @@ body.hr-beat-player-fullscreen-open .hr-global-drawer {
   box-shadow: 0 12px 28px rgba(0, 0, 0, .42);
 }
 
-.beat-store-page .beat-card__options-menu a {
+.beat-store-page .beat-card__options-menu a,
+.beat-store-page .beat-card__options-menu button {
   display: block;
+  width: 100%;
   padding: 8px 10px;
+  border: 0;
+  background: transparent;
   color: var(--hr-text);
   font: 700 10px/1.1 var(--hr-font-mono);
   letter-spacing: .08em;
   text-decoration: none;
   text-transform: uppercase;
   white-space: nowrap;
+  text-align: left;
+  cursor: pointer;
 }
 
 .beat-store-page .beat-card__options-menu a:hover,
-.beat-store-page .beat-card__options-menu a:focus-visible {
+.beat-store-page .beat-card__options-menu a:focus-visible,
+.beat-store-page .beat-card__options-menu button:hover,
+.beat-store-page .beat-card__options-menu button:focus-visible {
   background: rgba(0, 194, 198, .14);
   color: var(--white);
   outline: none;
@@ -17600,7 +17752,6 @@ body.hr-beat-player-fullscreen-open .hr-global-drawer {
 }
 
 .hr-global-drawer__more-links a:hover,
-.hr-global-drawer__more-links a:active,
 .hr-global-drawer__more-links a[aria-current="page"] {
   border-left-color: var(--hr-nav-active);
   background: var(--red-ghost);
@@ -17616,12 +17767,18 @@ body.hr-beat-player-fullscreen-open .hr-global-drawer {
 #player-title,
 #player-title:visited,
 #beat-player-fullscreen-title > a,
-#beat-player-fullscreen-title > a:visited {
-  color: inherit;
-  text-decoration: none !important;
-}
-
-/* Custom Y2K color picker used by the fullscreen Beat Store player. */
+#beat-player-fullscreen-title > a:visited { color: inherit; text-decoration: none !important; }
+#beat-player-fullscreen-producer > a { color: inherit; text-decoration: none; }
+#player-title:not([aria-disabled="true"]):hover,
+#player-title:not([aria-disabled="true"]):focus-visible,
+#beat-player-fullscreen-title > a:not([aria-disabled="true"]):hover,
+#beat-player-fullscreen-title > a:not([aria-disabled="true"]):focus-visible,
+#beat-player-fullscreen-producer > a:not([aria-disabled="true"]):hover,
+#beat-player-fullscreen-producer > a:not([aria-disabled="true"]):focus-visible { text-decoration: none; }
+.hr-beat-player__menu button { display: block; width: 100%; padding: 8px 10px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.hr-beat-player__menu button:hover,
+.hr-beat-player__menu button:focus-visible { background: rgba(255,255,255,.07); color: #fff; }
+.hr-beat-player-fullscreen__hardware-row > button.is-active { border-color: var(--hr-player-accent); background: linear-gradient(var(--hr-player-color-panel), var(--hr-player-color-dark)); color: var(--hr-player-color-bright); box-shadow: 0 0 0 1px color-mix(in srgb, var(--hr-player-accent), transparent 45%), inset 0 1px 0 color-mix(in srgb, var(--hr-player-color-bright), transparent 68%); }
 .hr-beat-player-color-picker { position: relative; display: grid; grid-template-columns: 34px minmax(0,1fr); align-items: center; gap: 4px; min-width: 0; color: var(--hr-player-color-muted); font: 500 7px/1 var(--hr-font-mono); letter-spacing: .08em; }
 .hr-beat-player-color-picker__toggle { display: flex; align-items: center; gap: 4px; width: 100%; min-width: 0; height: 20px; padding: 2px 3px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--hr-player-color-line), transparent 20%); border-radius: 3px; background: var(--hr-player-color-dark); color: var(--hr-player-accent); font: 500 8px/1 var(--hr-font-mono); text-align: left; cursor: pointer; }
 .hr-beat-player-color-picker__toggle > span:last-child { overflow: hidden; text-overflow: ellipsis; }
@@ -17646,3 +17803,57 @@ body.hr-beat-player-fullscreen-open .hr-global-drawer {
 .hr-beat-player-color-picker__toggle:focus-visible,
 .hr-beat-player-color-picker__saturation:focus-visible { outline: 1px solid var(--hr-player-accent); outline-offset: 1px; }
 @media (max-width: 620px) { .hr-beat-player-color-picker__panel { right: -6px; width: min(224px,calc(100vw - 32px)); } }
+
+/* Safari/WebKit keeps the volume thumb interactive when the track has its own hit area. */
+.hr-beat-player__volume {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 24px;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.hr-beat-player__volume::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--red) 0 var(--hr-volume-progress, 100%), rgba(240, 236, 228, .2) var(--hr-volume-progress, 100%) 100%);
+}
+
+.hr-beat-player__volume::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border: 2px solid var(--red);
+  border-radius: 50%;
+  background: var(--white);
+}
+
+.hr-beat-player__volume::-moz-range-track {
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(240, 236, 228, .2);
+}
+
+.hr-beat-player__volume::-moz-range-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--red);
+}
+
+.hr-beat-player__volume::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--red);
+  border-radius: 50%;
+  background: var(--white);
+}

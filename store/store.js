@@ -53,7 +53,7 @@ async function loadMercadoPagoPublicKey() {
 export async function fetchProducts() {
   const { data, error } = await supabase
     .from("store_products")
-    .select("id, slug, name, description, category, price, currency, image_url, stock, is_digital, featured")
+    .select("id, slug, name, description, category, price, currency, image_url, stock, is_digital, featured, producer_profile_id")
     .eq("is_active", true)
     .order("featured", { ascending: false })
     .order("created_at", { ascending: false });
@@ -268,7 +268,7 @@ function productCardMarkup(product) {
       ${productVisualMarkup(product)}
       <span class="product-category">${escapeHtml(categoryLabel(product.category))}${product.featured ? " · Featured" : ""}</span>
       <h3>${escapeHtml(product.name)}</h3>
-      <p class="product-description">${escapeHtml(product.description || "Producto Hidden Room.")}</p>
+      ${product.description ? `<p class="product-description">${escapeHtml(product.description)}</p>` : ""}
       <p class="product-price">${formatPrice(product.price, product.currency)}</p>
       <div class="product-actions">
         <a class="secondary-button" href="product.html?slug=${encodeURIComponent(product.slug)}">Ver producto</a>
@@ -290,7 +290,7 @@ async function renderProduct() {
 
   const { data: product, error } = await supabase
     .from("store_products")
-    .select("id, slug, name, description, category, price, currency, image_url, stock, is_digital, featured")
+    .select("id, slug, name, description, category, price, currency, image_url, stock, is_digital, featured, producer_profile_id")
     .eq("slug", slug)
     .eq("is_active", true)
     .maybeSingle();
@@ -307,6 +307,14 @@ async function renderProduct() {
       .eq("id", product.id)
       .maybeSingle();
     if (beatDetails) Object.assign(product, beatDetails);
+    if (product.producer_profile_id) {
+      const { data: producerProfile } = await supabase
+        .from("producer_profiles")
+        .select("slug, is_active")
+        .eq("id", product.producer_profile_id)
+        .maybeSingle();
+      product.producerSlug = producerProfile?.is_active === false ? "" : producerProfile?.slug || "";
+    }
   }
 
   products = [product];
@@ -314,30 +322,99 @@ async function renderProduct() {
   document.title = `${product.name} | Hidden Room`;
   const beatAssignments = product.category === "beats" ? await fetchDetailBeatLicenses(product.id) : [];
   const beatPreview = product.category === "beats" ? previewUrlForStoreBeat(product.beat_preview_path, product.beat_preview_status) : "";
-  const beatMarkup = product.category === "beats" ? `
-      <div class="beat-detail-meta"><p>${escapeHtml(product.producer || "Productor por confirmar")}</p><p>${escapeHtml(product.beat_genre || "Género por confirmar")} · ${escapeHtml(product.beat_bpm || "BPM por confirmar")} BPM · ${escapeHtml(product.beat_key || "Tonalidad por confirmar")}</p></div>
-      ${beatPreview ? `<audio controls preload="none" src="${escapeHtml(beatPreview)}" aria-label="Preview de ${escapeHtml(product.name)}"></audio>` : "<p class=\"stock-note\">Preview pendiente de procesamiento.</p>"}
-      <section class="beat-detail-licenses" aria-labelledby="beat-detail-licenses-title"><h2 id="beat-detail-licenses-title">Elige tu licencia</h2>${beatAssignments.length ? beatAssignments.map((assignment) => `<article class="beat-detail-license"><div><h3>${escapeHtml(assignment.beat_licenses?.name || "Licencia")}</h3><p>${escapeHtml(assignment.beat_licenses?.description || "Licencia para este beat.")}</p><p><small>${escapeHtml(assignment.beat_licenses?.format || "Formato por confirmar")} · ${escapeHtml(streamLimitLabel(assignment.beat_licenses))}</small></p></div><strong>${escapeHtml(formatPrice(assignment.price, product.currency))}</strong><button class="primary-button" type="button" data-beat-license-detail="${escapeHtml(product.id)}" data-license-id="${escapeHtml(assignment.license_id)}">Agregar licencia</button></article>`).join("") : "<p>No hay licencias disponibles para este beat.</p>"}</section>` : "";
+  const productDescription = String(product.description || "").trim();
+  const productDescriptionMarkup = productDescription ? `<p class="product-description">${escapeHtml(productDescription)}</p>` : "";
+  const beatPriceLabel = product.category === "beats" ? beatLicenseStartingPriceLabel(beatAssignments, product.currency) : "";
+  if (product.category === "beats") {
+    container.innerHTML = renderBeatProductMarkup(product, beatAssignments, beatPreview, beatPriceLabel, productDescriptionMarkup);
+  } else {
   container.innerHTML = `
     ${productVisualMarkup(product)}
     <div>
       <span class="product-category">${escapeHtml(categoryLabel(product.category))}</span>
       <h1>${escapeHtml(product.name)}</h1>
-      <p class="product-description">${escapeHtml(product.description || "Producto Hidden Room.")}</p>
+      ${productDescriptionMarkup}
       <p class="product-price">${formatPrice(product.price, product.currency)}</p>
       <p class="stock-note">${stockLabel(product)}</p>
-      ${beatMarkup}
       ${product.category === "beats" ? "" : `<button class="primary-button" id="add-detail-product" type="button" ${soldOut ? "disabled" : ""}>${soldOut ? "Agotado" : "Agregar al carrito"}</button>`}
     </div>`;
+  }
 
   document.getElementById("add-detail-product")
     ?.addEventListener("click", () => addToCart(product.id));
   container.addEventListener("click", (event) => {
+    const previewButton = event.target.closest("[data-beat-preview-detail]");
+    if (previewButton && beatPreview) {
+      if (window.HiddenRoomBeatPlayer?.src === beatPreview && window.HiddenRoomBeatPlayer?.isPlaying) {
+        window.dispatchEvent(new CustomEvent("hr:beat-preview-toggle", { detail: { action: "pause" } }));
+        return;
+      }
+      window.dispatchEvent(new CustomEvent("hr:beat-preview", {
+        detail: {
+          src: beatPreview,
+          title: product.name,
+          detail: product.producer || "Productor por confirmar",
+          cover: productImageUrl(product.beat_cover_path || product.image_url),
+          beatId: product.id,
+          slug: product.slug || "",
+          producerSlug: product.producerSlug || "",
+          genre: product.beat_genre || "",
+          bpm: product.beat_bpm || "",
+          key: product.beat_key || "",
+        },
+      }));
+      return;
+    }
     const button = event.target.closest("[data-beat-license-detail]");
     if (!button) return;
     const assignment = beatAssignments.find((candidate) => candidate.license_id === button.dataset.licenseId);
     if (assignment) addBeatLicenseToCart(product, assignment);
   });
+
+  const detailPreviewButtons = [...container.querySelectorAll("[data-beat-preview-detail]")];
+  const syncDetailPreviewState = (event) => {
+    if (!detailPreviewButtons.length) return;
+    const isActive = String(event.detail?.src || "") === beatPreview;
+    const isPlaying = isActive && Boolean(event.detail?.isPlaying);
+    detailPreviewButtons.forEach((detailPreviewButton) => {
+      detailPreviewButton.classList.toggle("is-playing", isPlaying);
+      detailPreviewButton.setAttribute("aria-pressed", String(isPlaying));
+      detailPreviewButton.setAttribute("aria-label", `${isPlaying ? "Pausar" : "Reproducir"} preview de ${product.name}`);
+      const icon = detailPreviewButton.querySelector("[data-beat-preview-icon]");
+      const label = detailPreviewButton.querySelector("[data-beat-preview-label]");
+      if (icon) icon.innerHTML = isPlaying ? "&#10074;&#10074;" : "&#9654;";
+      if (label) label.textContent = isPlaying ? "Pausar preview" : "Escuchar preview";
+    });
+  };
+  window.addEventListener("hr:beat-player-state", syncDetailPreviewState, { signal: hrStoreLifecycle.signal });
+  syncDetailPreviewState({ detail: window.HiddenRoomBeatPlayer || {} });
+}
+
+function renderBeatProductMarkup(product, assignments, previewUrl, priceLabel, productDescriptionMarkup) {
+  const producer = product.producer || "Productor por confirmar";
+  const genre = product.beat_genre || "Género por confirmar";
+  const bpm = product.beat_bpm || "BPM por confirmar";
+  const key = product.beat_key || "Tonalidad por confirmar";
+  const previewMarkup = previewUrl
+    ? `<div class="beat-detail-preview"><button class="beat-detail-preview__button" type="button" data-beat-preview-detail aria-pressed="false" aria-label="Reproducir preview de ${escapeHtml(product.name)}"><span class="beat-detail-preview__icon" data-beat-preview-icon aria-hidden="true">&#9654;</span><span><strong data-beat-preview-label>Escuchar preview</strong><small>Reproducir en el player de Hidden Room</small></span></button></div>`
+    : `<p class="stock-note beat-detail-preview-empty">Preview pendiente de procesamiento.</p>`;
+  const licensesMarkup = assignments.length
+    ? `<div class="beat-detail-license-list">${assignments.map((assignment) => {
+      const license = assignment.beat_licenses;
+      return `<article class="beat-detail-license"><div class="beat-detail-license__main"><div class="beat-detail-license__heading"><h3>${escapeHtml(license?.name || "Licencia")}</h3><strong>${escapeHtml(formatPrice(assignment.price, product.currency))}</strong></div><p class="beat-detail-license__description">${escapeHtml(license?.description || "Licencia para este beat.")}</p><div class="beat-detail-license__meta"><span>${escapeHtml(license?.format || "Formato por confirmar")}</span><span>${escapeHtml(streamLimitLabel(license))}</span></div>${license?.terms ? `<details class="beat-detail-license__terms"><summary>Ver términos</summary><p>${escapeHtml(license.terms)}</p></details>` : ""}</div><button class="primary-button beat-detail-license__button" type="button" data-beat-license-detail="${escapeHtml(product.id)}" data-license-id="${escapeHtml(assignment.license_id)}">Seleccionar</button></article>`;
+    }).join("")}</div>`
+    : `<p class="beat-detail-empty">No hay licencias disponibles para este beat.</p>`;
+
+  return `
+    <div class="product-detail__visual">${productVisualMarkup(product)}${previewUrl ? `<button class="product-detail__cover-play" type="button" data-beat-preview-detail aria-pressed="false" aria-label="Reproducir preview de ${escapeHtml(product.name)}"><span data-beat-preview-icon aria-hidden="true">&#9654;</span></button>` : ""}</div>
+    <div class="product-detail__content">
+      <h1>${escapeHtml(product.name)}</h1>
+      ${productDescriptionMarkup}
+      <p class="product-price product-price--from">${escapeHtml(priceLabel)}</p>
+      <div class="beat-detail-meta"><p class="beat-detail-meta__producer">${escapeHtml(producer)}</p><p class="beat-detail-meta__stats">${escapeHtml(genre)} · ${escapeHtml(bpm)} BPM · ${escapeHtml(key)}</p></div>
+      ${previewMarkup}
+      <section class="beat-detail-licenses" aria-labelledby="beat-detail-licenses-title"><header class="beat-detail-licenses__header"><div><p class="eyebrow">Beat Store</p><h2 id="beat-detail-licenses-title">Elige tu licencia</h2></div><p>Selecciona el formato y los derechos que necesitas.</p></header>${licensesMarkup}</section>
+    </div>`;
 }
 
 async function fetchDetailBeatLicenses(beatId) {
@@ -360,6 +437,14 @@ function streamLimitLabel(license) {
   if (!license) return "Límite por confirmar";
   if (license.unlimited_streams) return "Streams ilimitados";
   return Number.isFinite(Number(license.stream_limit)) ? `${new Intl.NumberFormat("es-MX").format(Number(license.stream_limit))} streams` : "Límite por confirmar";
+}
+
+function beatLicenseStartingPriceLabel(assignments, currency = "MXN") {
+  const prices = assignments
+    .map((assignment) => Number(assignment.price))
+    .filter((price) => Number.isFinite(price) && price >= 0);
+  if (!prices.length) return "Licencias por confirmar";
+  return `Licencias desde ${formatPrice(Math.min(...prices), currency)} ${currency || "MXN"}`;
 }
 
 function addBeatLicenseToCart(product, assignment) {

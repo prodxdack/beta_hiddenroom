@@ -222,6 +222,31 @@
   transform: translateY(-2px);
 }
 
+.new-beat-upload-card--disabled,
+.new-beat-upload-card--disabled:hover,
+.new-beat-upload-card--disabled:focus-within {
+  border-color: rgba(255, 255, 255, .08);
+  background: rgba(3, 3, 3, .24);
+  cursor: not-allowed;
+  filter: grayscale(1);
+  opacity: .48;
+  transform: none;
+}
+
+.new-beat-upload-card--disabled .new-beat-upload-card__icon,
+.new-beat-upload-card--disabled .new-beat-upload-card__heading strong,
+.new-beat-upload-card--disabled .new-beat-upload-card__drop > strong {
+  color: var(--hr-muted, var(--white-dim));
+}
+
+.new-beat-upload-card--disabled .new-beat-upload-card__drop {
+  border-style: dashed;
+}
+
+.new-beat-upload-card--disabled input[type="file"] {
+  pointer-events: none;
+}
+
 .new-beat-upload-card__icon {
   display: grid;
   place-items: center;
@@ -642,6 +667,11 @@ body.new-beat-page.hr-has-beat-player {
   align-items: start;
   grid-template-columns: minmax(0, .92fr) minmax(0, 1.08fr);
   gap: clamp(20px, 4vw, 42px);
+}
+
+/* The Beats tab now contains only the product rows; let that list use the full tab width. */
+.beat-admin-page #beat-admin-beats-tab > .admin-layout {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .beat-admin-page .beat-admin__form,

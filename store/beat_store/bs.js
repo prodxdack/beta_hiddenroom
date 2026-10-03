@@ -33,6 +33,7 @@ const SELECT_PLACEHOLDER = "__placeholder__";
 const MERGED_GENRE_KEY = "perreo-reggaeton";
 const adminPanel = document.getElementById("beat-admin-panel");
 const adminForm = document.getElementById("beat-admin-form");
+const adminFormSlot = document.getElementById("beat-admin-upload-form-slot");
 const adminList = document.getElementById("beat-admin-products");
 const adminTabButtons = [...document.querySelectorAll("[data-admin-tab]")];
 const adminTabPanels = [...document.querySelectorAll("[data-admin-panel]")];
@@ -209,7 +210,10 @@ async function initBeatStore() {
   beatLicenseCancel?.addEventListener("click", resetBeatLicenseForm);
   beatLicenseForm?.addEventListener("input", updateBeatLicenseRangeWarning);
   document.getElementById("beat-license-unlimited")?.addEventListener("change", syncBeatLicenseStreamLimitState);
-  cancelEditButton?.addEventListener("click", resetAdminForm);
+  cancelEditButton?.addEventListener("click", () => {
+    resetAdminForm();
+    setAdminTab("beats", true);
+  });
   beatCoverInput?.addEventListener("change", handleBeatCoverSelection);
   beatUploadInput?.addEventListener("change", handleBeatAudioSelection);
   document.getElementById("beat-bpm")?.addEventListener("input", handleManualBeatMetadataInput);
@@ -354,11 +358,11 @@ function wantsAdminMode() {
 
 function requestedAdminTab() {
   const tab = new URLSearchParams(window.location.search).get("tab");
-  return ["licenses", "upload-permissions", "mercadopago"].includes(tab) ? tab : "beats";
+  return ["upload", "licenses", "upload-permissions", "mercadopago"].includes(tab) ? tab : "beats";
 }
 
 function setAdminTab(tab = "beats", syncUrl = false) {
-  const activeTab = ["licenses", "upload-permissions", "mercadopago"].includes(tab) ? tab : "beats";
+  const activeTab = ["upload", "licenses", "upload-permissions", "mercadopago"].includes(tab) ? tab : "beats";
   adminTabButtons.forEach((button) => {
     const isActive = button.dataset.adminTab === activeTab;
     button.classList.toggle("is-active", isActive);
@@ -998,7 +1002,6 @@ function beatCardOptionsMarkup(item) {
 function beatLicensesContentMarkup(item) {
   if (!item?.product) return '<p class="beat-license-empty">Licencias no disponibles para este beat.</p>';
   const licenses = availableBeatLicenses(item);
-  if (!licenses.length) return '<p class="beat-license-empty">Este beat todavia no tiene licencias habilitadas.</p>';
   return `
     <div class="beat-license-list">
       ${licenses.map((license) => `
@@ -1021,7 +1024,30 @@ function beatLicensesContentMarkup(item) {
           </div>
         </article>
       `).join("")}
+      ${stemsComingSoonMarkup()}
     </div>`;
+}
+
+// TODO(stems): Remove this always-visible placeholder once producer stems upload,
+// protected entitlements and fulfillment are implemented end to end.
+function stemsComingSoonMarkup() {
+  return `
+    <article class="beat-license-option beat-license-option--disabled" aria-disabled="true">
+      <header>
+        <div>
+          <h5>Stems</h5>
+          <p>Esta licencia estará disponible próximamente.</p>
+        </div>
+        <strong>PRÓXIMAMENTE</strong>
+      </header>
+      <dl>
+        <div><dt>Estado</dt><dd>Bloqueada</dd></div>
+        <div><dt>Formato</dt><dd>Stems</dd></div>
+      </dl>
+      <div class="beat-license-actions">
+        <button class="secondary-button" type="button" disabled aria-disabled="true">Próximamente</button>
+      </div>
+    </article>`;
 }
 function availableBeatLicenses(item) {
   return state.assignments
@@ -1413,6 +1439,7 @@ function addBeatToCart(itemId) {
 
 function initializeAdminPanel() {
   if (!state.isAdmin || !adminPanel) return;
+  if (adminFormSlot && adminForm && adminForm.parentElement !== adminFormSlot) adminFormSlot.append(adminForm);
   setAdminMode(wantsAdminMode());
   setAdminTab(requestedAdminTab());
   if (adminStatus && !adminStatus.querySelector('[data-review-queue-link]')) {
@@ -1431,7 +1458,7 @@ function openRequestedAdminEdit() {
   const editId = new URLSearchParams(window.location.search).get("edit");
   if (!editId || !state.isAdmin) return;
   setAdminMode(true);
-  setAdminTab("beats");
+  setAdminTab("upload", true);
   requestAnimationFrame(() => editAdminProduct(editId));
 }
 
@@ -1813,6 +1840,7 @@ async function handleAdminSubmit(event) {
 
     showNotice(id ? "Beat actualizado" : "Beat creado");
     resetAdminForm();
+    setAdminTab("beats", true);
     await reloadBeatStore({ refreshBeats: Boolean(uploadedBeatAudio || uploadedCoverUrl) });
   } catch (error) {
     if (error.beatUploadResult) await saveBeatUploadError(editingId, error).catch(() => {});
@@ -2358,7 +2386,7 @@ function editAdminProduct(id) {
   const product = state.adminProducts.find((candidate) => candidate.id === id);
   if (!product) return;
 
-  setAdminTab("beats");
+  setAdminTab("upload", true);
   const productId = String(product.id);
   const productIdInput = document.getElementById("beat-product-id");
   productIdInput.value = productId;

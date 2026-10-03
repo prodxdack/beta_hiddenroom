@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Space+Grotesk:wght@400;500;600;700&family=Unbounded:wght@400;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="../../styles.css?v=20261002-y2k-color-cycle-v1">
-  <link rel="stylesheet" href="producer-ready.css?v=20261002-beat-orders-stems-v1">
+  <link rel="stylesheet" href="../../styles.css?v=20261002-safari-phosphor-player-v2">
+  <link rel="stylesheet" href="producer-ready.css?v=20261002-beat-orders-stems-v2">
 </head>
 <body class="store-page hr-page new-beat-page" data-hr-chrome data-hr-context="store">
   <div id="hr-global-nav"></div>
@@ -51,7 +51,7 @@
             <div class="new-beat-upload-grid">
               <label class="new-beat-upload-card">
                 <span class="new-beat-upload-card__icon" aria-hidden="true">▧</span>
-                <span class="new-beat-upload-card__heading"><strong>Portada</strong><small>JPG, PNG o WEBP · recomendada 1:1</small></span>
+                <span class="new-beat-upload-card__heading"><strong>Portada</strong><small>JPG, PNG o WEBP · obligatoria · recomendada 1:1</small></span>
                 <span class="new-beat-upload-card__drop"><strong>Haz clic para subir</strong><small>o arrastra un archivo aquí</small><input name="cover" type="file" accept="image/*,.jpg,.jpeg,.png,.webp"><small id="cover-state">Sin portada nueva seleccionada.</small></span>
               </label>
               <label class="new-beat-upload-card">
@@ -59,10 +59,10 @@
                 <span class="new-beat-upload-card__heading"><strong>Master / WAV</strong><small>WAV sin comprimir · se generará un MP3 protegido</small></span>
                 <span class="new-beat-upload-card__drop"><strong>Haz clic para subir</strong><small>o arrastra un archivo aquí</small><input name="audio" type="file" accept=".wav,audio/wav,audio/x-wav,audio/wave"><small id="audio-state">Sin master nuevo seleccionado.</small></span>
               </label>
-              <label class="new-beat-upload-card">
+              <label class="new-beat-upload-card new-beat-upload-card--disabled" aria-disabled="true">
                 <span class="new-beat-upload-card__icon" aria-hidden="true">⌁</span>
-                <span class="new-beat-upload-card__heading"><strong>Stems <small>(opcional)</small></strong><small>Un archivo ZIP protegido</small></span>
-                <span class="new-beat-upload-card__drop"><strong>Haz clic para subir</strong><small>o arrastra un archivo aquí</small><input name="stems" type="file" accept=".zip,application/zip"><small>Se registran como archivos protegidos cuando el almacenamiento esté conectado.</small></span>
+                <span class="new-beat-upload-card__heading"><strong>Stems <small>PRÓXIMAMENTE</small></strong><small>Función bloqueada temporalmente</small></span>
+                <span class="new-beat-upload-card__drop"><strong>Próximamente</strong><small>La carga de stems estará disponible más adelante.</small><input name="stems" type="file" accept=".zip,application/zip" disabled aria-disabled="true"><small>Mientras tanto, esta licencia se mostrará bloqueada en la compra.</small></span>
               </label>
             </div>
           </div>
@@ -100,6 +100,6 @@
       </form>
     </section>
   </main>
-  <script src="../../site.js?v=20261002-y2k-color-cycle-v1"></script><script type="module" src="new-beat.js?v=20261002-beat-orders-stems-v1"></script>
+  <script src="../../site.js?v=20261002-safari-phosphor-player-v1"></script><script type="module" src="new-beat.js?v=20261002-beat-orders-stems-v2"></script>
 </body>
 </html>
