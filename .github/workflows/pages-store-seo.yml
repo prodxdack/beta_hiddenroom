@@ -1,0 +1,109 @@
+name: Build and deploy GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      SITE_URL: https://beta.hiddenroom.mx
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Test read-only fetcher contract
+        run: npm run test:store-seo-fetch
+
+      - name: Test snapshot sanitization
+        run: npm run test:store-seo-snapshot
+
+      - name: Test prerender SEO
+        run: npm run test:store-seo
+
+      - name: Fetch public Store source
+        run: node scripts/fetch-store-seo-source.mjs --output "$RUNNER_TEMP/store-seo-source.json" --page-size 100
+
+      - name: Sanitize public snapshot
+        run: node scripts/export-store-seo-snapshot.mjs --input "$RUNNER_TEMP/store-seo-source.json" --output "$RUNNER_TEMP/store-seo-snapshot.json"
+
+      - name: Build SEO pages in isolated staging
+        run: node scripts/build-store-seo.mjs --input "$RUNNER_TEMP/store-seo-snapshot.json" --output "$RUNNER_TEMP/store-seo-pages" --site-url "$SITE_URL"
+
+      - name: Validate sitemap, robots and generated pages
+        run: node scripts/validate-store-seo-output.mjs --output "$RUNNER_TEMP/store-seo-pages" --site-url "$SITE_URL"
+
+      - name: Record sanitized SEO build evidence
+        shell: bash
+        run: |
+          {
+            echo "site_url=$SITE_URL"
+            echo "commit=$GITHUB_SHA"
+            echo "snapshot_sha256=$(sha256sum \"$RUNNER_TEMP/store-seo-snapshot.json\" | cut -d' ' -f1)"
+            echo "snapshot_bytes=$(wc -c < \"$RUNNER_TEMP/store-seo-snapshot.json\")"
+          } > "$RUNNER_TEMP/store-seo-manifest.txt"
+
+      - name: Upload sanitized SEO evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-seo-build-evidence
+          path: |
+            ${{ runner.temp }}/store-seo-snapshot.json
+            ${{ runner.temp }}/store-seo-manifest.txt
+          retention-days: 30
+
+      - name: Assemble Pages artifact
+        shell: bash
+        run: |
+          rm -rf "$RUNNER_TEMP/pages-site"
+          mkdir -p "$RUNNER_TEMP/pages-site"
+          rsync -a --exclude '.git' --exclude 'node_modules' --exclude '.github' --exclude '.store-seo-*' --exclude 'scripts' ./ "$RUNNER_TEMP/pages-site/"
+          rm -rf "$RUNNER_TEMP/pages-site/beats"
+          rm -f "$RUNNER_TEMP/pages-site/sitemap.xml" "$RUNNER_TEMP/pages-site/robots.txt"
+          cp -a "$RUNNER_TEMP/store-seo-pages/beats" "$RUNNER_TEMP/pages-site/beats"
+          cp "$RUNNER_TEMP/store-seo-pages/sitemap.xml" "$RUNNER_TEMP/pages-site/sitemap.xml"
+          cp "$RUNNER_TEMP/store-seo-pages/robots.txt" "$RUNNER_TEMP/pages-site/robots.txt"
+          test -f "$RUNNER_TEMP/pages-site/CNAME"
+          test -d "$RUNNER_TEMP/pages-site/beats"
+          test -f "$RUNNER_TEMP/pages-site/sitemap.xml"
+          test -f "$RUNNER_TEMP/pages-site/robots.txt"
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ runner.temp }}/pages-site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy Pages artifact
+        id: deployment
+        uses: actions/deploy-pages@v4
