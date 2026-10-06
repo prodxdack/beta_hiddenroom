@@ -143,6 +143,7 @@ function handleResultClick(event) {
 renderServiceOptions();
 renderLocationOptions();
 renderServices();
+window.dispatchEvent(new CustomEvent('hr:spa-content-updated'));
 setMinDate();
 updatePrice();
 serviceSelect?.addEventListener('change', updatePrice);
