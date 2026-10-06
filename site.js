@@ -51,7 +51,7 @@ function renderMoreNav(activeModule, navPath, drawer = false) {
 let globalSessionSnapshot = null;
 
 const HR_COPY_EDITOR_CANDIDATE_SELECTOR = "h1,h2,h3,h4,h5,h6,p,a,button,li,dt,dd,blockquote,figcaption,legend,summary,span,small";
-const HR_COPY_EDITOR_IGNORE_SELECTOR = "#hr-global-nav,#hr-beat-player,#hr-beat-player-fullscreen,script,style,noscript,svg,canvas,video,audio,iframe,input,textarea,select,option,[aria-hidden=\"true\"],[data-hr-copy-ignore],[data-hr-session],[data-hr-drawer-session],.site-status,.site-version,#cursor,#cursorRing";
+const HR_COPY_EDITOR_IGNORE_SELECTOR = "#hr-global-nav,#hr-beat-player,#hr-beat-player-fullscreen,#posts-grid,#editorial-grid,#featured-grid,#post-content,#related-grid,#product-grid,#beat-grid,#product-detail,#cart-items,#cart-summary,#orders-list,#tickets-list,#ticket-result,#studio-request-result,#studio-price,script,style,noscript,svg,canvas,video,audio,iframe,input,textarea,select,option,[aria-hidden=\"true\"],[data-hr-copy-ignore],[data-hr-session],[data-hr-drawer-session],.site-status,.site-version,#cursor,#cursorRing";
 const hrCopyEditorState = {
   root: null,
   toggle: null,
@@ -98,8 +98,8 @@ function copyEditorKey(element) {
 }
 
 function prepareGlobalCopyTextSegments() {
-  document.querySelectorAll(HR_COPY_EDITOR_CANDIDATE_SELECTOR).forEach((parent) => {
-    if (parent.closest(HR_COPY_EDITOR_IGNORE_SELECTOR)) return;
+  document.body?.querySelectorAll("*").forEach((parent) => {
+    if (parent.matches("[data-hr-copy-segment]") || parent.closest(HR_COPY_EDITOR_IGNORE_SELECTOR)) return;
     [...parent.childNodes].forEach((node) => {
       if (node.nodeType !== Node.TEXT_NODE || !copyEditorText(node.textContent)) return;
       const text = copyEditorText(node.textContent);
