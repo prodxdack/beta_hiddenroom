@@ -17822,6 +17822,16 @@ body.hr-beat-player-fullscreen-open .hr-global-drawer {
   font-family: var(--hr-font-mono, monospace);
 }
 .hr-copy-editor[hidden] { display: none; }
+.hr-copy-editor__mode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(213, 238, 246, .72);
+  font: 600 10px/1 var(--hr-font-mono, monospace);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.hr-copy-editor__mode-title { white-space: nowrap; }
 .hr-copy-editor__toggle,
 .hr-copy-editor__save {
   border: 1px solid rgba(124, 208, 233, .62);
@@ -17833,10 +17843,47 @@ body.hr-beat-player-fullscreen-open .hr-global-drawer {
   font: 600 11px/1 var(--hr-font-mono, monospace);
   letter-spacing: .04em;
 }
-.hr-copy-editor__toggle { padding: 9px 13px; }
+.hr-copy-editor__toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-width: 144px;
+  padding: 6px 9px;
+  overflow: hidden;
+}
+.hr-copy-editor__mode-option {
+  position: relative;
+  z-index: 1;
+  min-width: 52px;
+  padding: 4px 0;
+  text-align: center;
+  transition: color .18s ease;
+}
+.hr-copy-editor__mode-option--viewer { color: #effaff; }
+.hr-copy-editor__mode-option--editor { color: rgba(213, 238, 246, .5); }
+.hr-copy-editor__mode-thumb {
+  position: absolute;
+  z-index: 0;
+  top: 3px;
+  left: 3px;
+  width: 70px;
+  height: calc(100% - 6px);
+  border-radius: 999px;
+  background: rgba(34, 105, 132, .9);
+  box-shadow: 0 0 12px rgba(124, 208, 233, .24);
+  transition: transform .18s ease, background .18s ease;
+}
 .hr-copy-editor__toggle[aria-checked="true"] {
-  border-color: var(--red, #db0100);
-  background: rgba(75, 7, 8, .96);
+  border-color: rgba(124, 208, 233, .9);
+  background: rgba(4, 20, 29, .96);
+}
+.hr-copy-editor__toggle[data-mode="editor"] .hr-copy-editor__mode-option--viewer { color: rgba(213, 238, 246, .5); }
+.hr-copy-editor__toggle[data-mode="editor"] .hr-copy-editor__mode-option--editor { color: #effaff; }
+.hr-copy-editor__toggle[data-mode="editor"] .hr-copy-editor__mode-thumb {
+  transform: translateX(66px);
+  background: rgba(0, 141, 170, .92);
 }
 .hr-copy-editor__panel {
   display: grid;
@@ -17904,7 +17951,7 @@ body.hr-beat-player-fullscreen-open .hr-global-drawer {
 .hr-copy-editor__status[data-state="success"] { color: #83e6b4; }
 .hr-copy-editor__status[data-state="error"] { color: #ff9b9b; }
 .hr-copy-editor-target {
-  outline: 1px dashed rgba(219, 1, 0, .78);
+  outline: 1px dashed rgba(124, 208, 233, .9);
   outline-offset: 3px;
   cursor: text;
 }
@@ -17927,6 +17974,10 @@ body span[data-hr-copy-segment] {
 @media (max-width: 620px) {
   .hr-copy-editor { top: 66px; right: 8px; }
   .hr-copy-editor__panel { max-height: calc(100vh - 108px); }
+  .hr-copy-editor__mode { gap: 5px; }
+  .hr-copy-editor__toggle { min-width: 132px; gap: 12px; }
+  .hr-copy-editor__mode-thumb { width: 64px; }
+  .hr-copy-editor__toggle[data-mode="editor"] .hr-copy-editor__mode-thumb { transform: translateX(60px); }
 }
 
 /* Safari/WebKit keeps the volume thumb interactive when the track has its own hit area. */

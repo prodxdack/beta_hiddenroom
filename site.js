@@ -127,13 +127,29 @@ function collectGlobalCopyEntries() {
       seenKeys.add(key);
       const defaultText = copyEditorText(element.textContent);
       element.dataset.hrCopyRuntimeKey = key;
-      const entry = { key, defaultText, value: defaultText, element };
+      const entry = { key, defaultText, value: defaultText, element, editing: false, lastTapAt: 0 };
       element.addEventListener("input", () => {
         if (!hrCopyEditorState.active) return;
         entry.value = copyEditorText(element.textContent);
         const field = hrCopyEditorState.fields?.querySelector(`[data-hr-copy-editor-field="${CSS.escape(entry.key)}"]`);
         if (field && document.activeElement !== field) field.value = entry.value;
         element.classList.toggle("hr-copy-editor-target--changed", entry.value !== entry.defaultText);
+      });
+      element.addEventListener("dblclick", (event) => beginGlobalCopyInlineEdit(entry, event));
+      element.addEventListener("pointerup", (event) => {
+        if (!hrCopyEditorState.active || event.pointerType !== "touch") return;
+        const now = Date.now();
+        if (now - entry.lastTapAt < 420) {
+          entry.lastTapAt = 0;
+          beginGlobalCopyInlineEdit(entry, event);
+          return;
+        }
+        entry.lastTapAt = now;
+      });
+      element.addEventListener("blur", () => {
+        if (!entry.editing) return;
+        entry.editing = false;
+        applyGlobalCopyEditorState();
       });
       return entry;
     })
@@ -153,20 +169,50 @@ function applyGlobalCopyEditorState() {
     entry.element.classList.toggle("hr-copy-editor-target--changed", active && entry.value !== entry.defaultText);
     if (active) {
       entry.element.setAttribute("data-hr-copy-runtime-key", entry.key);
-      entry.element.setAttribute("contenteditable", "true");
-      entry.element.setAttribute("spellcheck", "true");
+      if (entry.editing) {
+        entry.element.setAttribute("contenteditable", "true");
+        entry.element.setAttribute("spellcheck", "true");
+      } else {
+        entry.element.removeAttribute("contenteditable");
+        entry.element.removeAttribute("spellcheck");
+      }
     } else {
       entry.element.removeAttribute("data-hr-copy-runtime-key");
       entry.element.removeAttribute("contenteditable");
       entry.element.removeAttribute("spellcheck");
+      entry.editing = false;
     }
   });
   hrCopyEditorState.root?.classList.toggle("is-active", active);
   hrCopyEditorState.panel?.toggleAttribute("hidden", !active);
   if (hrCopyEditorState.toggle) {
     hrCopyEditorState.toggle.setAttribute("aria-checked", String(active));
-    hrCopyEditorState.toggle.textContent = active ? "Cerrar edición" : "Editar textos";
+    hrCopyEditorState.toggle.dataset.mode = active ? "editor" : "espectador";
+    hrCopyEditorState.toggle.setAttribute(
+      "aria-label",
+      active ? "Cambiar a modo espectador" : "Cambiar a modo editor",
+    );
   }
+}
+
+function placeGlobalCopyCaret(element) {
+  const selection = window.getSelection();
+  if (!selection) return;
+  const range = document.createRange();
+  range.selectNodeContents(element);
+  range.collapse(false);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function beginGlobalCopyInlineEdit(entry, event) {
+  if (!hrCopyEditorState.active || !entry?.element) return;
+  event?.preventDefault();
+  event?.stopPropagation();
+  entry.editing = true;
+  applyGlobalCopyEditorState();
+  entry.element.focus();
+  placeGlobalCopyCaret(entry.element);
 }
 
 function renderGlobalCopyEditorFields() {
@@ -278,10 +324,17 @@ function initGlobalCopyEditor() {
   root.dataset.hrCopyIgnore = "";
   root.hidden = true;
   root.innerHTML = `
-    <button class="hr-copy-editor__toggle" type="button" role="switch" aria-checked="false">Editar textos</button>
+    <div class="hr-copy-editor__mode" aria-label="Modo de edición">
+      <span class="hr-copy-editor__mode-title">Modo</span>
+      <button class="hr-copy-editor__toggle" type="button" role="switch" aria-checked="false" aria-label="Cambiar a modo editor" data-mode="espectador">
+        <span class="hr-copy-editor__mode-option hr-copy-editor__mode-option--viewer">Espectador</span>
+        <span class="hr-copy-editor__mode-option hr-copy-editor__mode-option--editor">Editor</span>
+        <span class="hr-copy-editor__mode-thumb" aria-hidden="true"></span>
+      </button>
+    </div>
     <aside class="hr-copy-editor__panel" aria-label="Editor de textos" hidden>
       <div class="hr-copy-editor__header"><strong>Editar textos</strong><span>Solo contenido estático</span></div>
-      <p class="hr-copy-editor__help">Activa el modo, toca cualquier texto resaltado y escribe directamente, como en un editor de páginas. Los campos que vienen de la base de datos quedan fuera.</p>
+      <p class="hr-copy-editor__help">Activa el modo Editor y toca dos veces cualquier texto resaltado para editarlo directamente. Los campos que vienen de la base de datos quedan fuera.</p>
       <div class="hr-copy-editor__fields"></div>
       <div class="hr-copy-editor__actions"><button class="hr-copy-editor__save" type="button">Guardar cambios</button><span class="hr-copy-editor__status" role="status" aria-live="polite"></span></div>
     </aside>
