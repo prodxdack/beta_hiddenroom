@@ -17973,7 +17973,8 @@ body span[data-hr-copy-segment] {
 }
 @media (max-width: 620px) {
   .hr-copy-editor { top: 66px; right: 8px; }
-  .hr-copy-editor__panel { max-height: calc(100vh - 108px); }
+  /* En móvil se edita directamente sobre el texto; el listado queda solo para web. */
+  .hr-copy-editor__panel { display: none !important; }
   .hr-copy-editor__mode { gap: 5px; }
   .hr-copy-editor__toggle { min-width: 132px; gap: 12px; }
   .hr-copy-editor__mode-thumb { width: 64px; }
