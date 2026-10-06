@@ -68,6 +68,8 @@ const hrCopyEditorState = {
   pagePath: "",
   entries: [],
   refreshId: 0,
+  refreshTimer: 0,
+  observer: null,
 };
 
 function copyEditorPagePath(url = window.location.href) {
@@ -129,9 +131,12 @@ function collectGlobalCopyEntries() {
       const key = copyEditorKey(element);
       if (!key || seenKeys.has(key)) return null;
       seenKeys.add(key);
+      const existingEntry = element.__hrCopyEditorEntry;
+      if (existingEntry) return existingEntry;
       const defaultText = copyEditorText(element.textContent);
       element.dataset.hrCopyRuntimeKey = key;
       const entry = { key, defaultText, value: defaultText, element, editing: false, lastTapAt: 0, savedValue: defaultText };
+      element.__hrCopyEditorEntry = entry;
       element.addEventListener("input", () => {
         if (!hrCopyEditorState.active) return;
         entry.value = copyEditorText(element.textContent);
@@ -272,6 +277,44 @@ async function loadGlobalCopyOverrides(entries, pagePath) {
   } catch {}
 }
 
+function isRelevantGlobalCopyEditorMutation(record) {
+  const target = record.target?.nodeType === Node.ELEMENT_NODE
+    ? record.target
+    : record.target?.parentElement;
+  if (!target
+    || target.closest(HR_COPY_EDITOR_IGNORE_SELECTOR)
+    || target.closest("#hr-copy-editor")
+    || target.closest("[data-hr-copy-runtime-key]")) {
+    return false;
+  }
+
+  return [...record.addedNodes, ...record.removedNodes].some((node) => {
+    if (node.nodeType !== Node.ELEMENT_NODE) return false;
+    const element = node;
+    return !element.matches(HR_COPY_EDITOR_IGNORE_SELECTOR)
+      && !element.closest(HR_COPY_EDITOR_IGNORE_SELECTOR)
+      && !element.closest("#hr-copy-editor")
+      && !element.closest("[data-hr-copy-runtime-key]");
+  });
+}
+
+function scheduleGlobalCopyEditorRefresh() {
+  if (hrCopyEditorState.refreshTimer) window.clearTimeout(hrCopyEditorState.refreshTimer);
+  hrCopyEditorState.refreshTimer = window.setTimeout(() => {
+    hrCopyEditorState.refreshTimer = 0;
+    refreshGlobalCopyEditorPage();
+  }, 180);
+}
+
+function observeGlobalCopyEditorContent() {
+  if (!document.body || typeof MutationObserver === "undefined") return;
+  hrCopyEditorState.observer?.disconnect();
+  hrCopyEditorState.observer = new MutationObserver((records) => {
+    if (records.some(isRelevantGlobalCopyEditorMutation)) scheduleGlobalCopyEditorRefresh();
+  });
+  hrCopyEditorState.observer.observe(document.body, { childList: true, subtree: true });
+}
+
 async function refreshGlobalCopyEditorPage() {
   const refreshId = ++hrCopyEditorState.refreshId;
   hrCopyEditorState.pagePath = copyEditorPagePath();
@@ -396,6 +439,7 @@ function initGlobalCopyEditor() {
     target.focus();
   }, true);
   window.addEventListener("hr:spa-content-updated", refreshGlobalCopyEditorPage);
+  observeGlobalCopyEditorContent();
   refreshGlobalCopyEditorPage();
 }
 
