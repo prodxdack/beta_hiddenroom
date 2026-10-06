@@ -333,6 +333,7 @@ function initGlobalCopyEditor() {
         <span class="hr-copy-editor__mode-option hr-copy-editor__mode-option--editor">Editor</span>
         <span class="hr-copy-editor__mode-thumb" aria-hidden="true"></span>
       </button>
+      <button class="hr-copy-editor__save hr-copy-editor__quick-save" type="button" hidden>Guardar cambios</button>
     </div>
     <aside class="hr-copy-editor__panel" aria-label="Editor de textos" hidden>
       <div class="hr-copy-editor__header"><strong>Editar textos</strong><span>Solo contenido estático</span></div>
@@ -357,7 +358,7 @@ function initGlobalCopyEditor() {
     }
     applyGlobalCopyEditorState();
   });
-  hrCopyEditorState.quickSave.addEventListener("click", saveGlobalCopyEditor);
+  if (hrCopyEditorState.quickSave) hrCopyEditorState.quickSave.addEventListener("click", saveGlobalCopyEditor);
   hrCopyEditorState.save.addEventListener("click", saveGlobalCopyEditor);
   document.addEventListener("click", (event) => {
     if (!hrCopyEditorState.active) return;
