@@ -15009,4 +15009,5 @@ body span[data-hr-copy-segment] {
   .hr-copy-editor__toggle { min-width: 132px; gap: 12px; }
   .hr-copy-editor__mode-thumb { width: 64px; }
   .hr-copy-editor__toggle[data-mode="editor"] .hr-copy-editor__mode-thumb { transform: translateX(60px); }
+  .hr-copy-editor__quick-save:not([hidden]) { display: inline-flex; align-items: center; }
 }

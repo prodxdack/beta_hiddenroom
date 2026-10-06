@@ -55,6 +55,7 @@ const HR_COPY_EDITOR_IGNORE_SELECTOR = "#hr-global-nav,#hr-beat-player,#hr-beat-
 const hrCopyEditorState = {
   root: null,
   toggle: null,
+  quickSave: null,
   panel: null,
   fields: null,
   status: null,
@@ -184,6 +185,7 @@ function applyGlobalCopyEditorState() {
     }
   });
   hrCopyEditorState.root?.classList.toggle("is-active", active);
+  hrCopyEditorState.quickSave?.toggleAttribute("hidden", !active);
   hrCopyEditorState.panel?.toggleAttribute("hidden", !active);
   if (hrCopyEditorState.toggle) {
     hrCopyEditorState.toggle.setAttribute("aria-checked", String(active));
@@ -342,6 +344,7 @@ function initGlobalCopyEditor() {
   document.body.append(root);
   hrCopyEditorState.root = root;
   hrCopyEditorState.toggle = root.querySelector(".hr-copy-editor__toggle");
+  hrCopyEditorState.quickSave = root.querySelector(".hr-copy-editor__quick-save");
   hrCopyEditorState.panel = root.querySelector(".hr-copy-editor__panel");
   hrCopyEditorState.fields = root.querySelector(".hr-copy-editor__fields");
   hrCopyEditorState.status = root.querySelector(".hr-copy-editor__status");
@@ -354,6 +357,7 @@ function initGlobalCopyEditor() {
     }
     applyGlobalCopyEditorState();
   });
+  hrCopyEditorState.quickSave.addEventListener("click", saveGlobalCopyEditor);
   hrCopyEditorState.save.addEventListener("click", saveGlobalCopyEditor);
   document.addEventListener("click", (event) => {
     if (!hrCopyEditorState.active) return;
