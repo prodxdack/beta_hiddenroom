@@ -55,11 +55,14 @@ const HR_COPY_EDITOR_IGNORE_SELECTOR = "#hr-global-nav,#hr-beat-player,#hr-beat-
 const hrCopyEditorState = {
   root: null,
   toggle: null,
+  quickActions: null,
   quickSave: null,
+  quickCancel: null,
   panel: null,
   fields: null,
   status: null,
   save: null,
+  cancel: null,
   canEdit: false,
   active: false,
   pagePath: "",
@@ -128,7 +131,7 @@ function collectGlobalCopyEntries() {
       seenKeys.add(key);
       const defaultText = copyEditorText(element.textContent);
       element.dataset.hrCopyRuntimeKey = key;
-      const entry = { key, defaultText, value: defaultText, element, editing: false, lastTapAt: 0 };
+      const entry = { key, defaultText, value: defaultText, element, editing: false, lastTapAt: 0, savedValue: defaultText };
       element.addEventListener("input", () => {
         if (!hrCopyEditorState.active) return;
         entry.value = copyEditorText(element.textContent);
@@ -185,7 +188,7 @@ function applyGlobalCopyEditorState() {
     }
   });
   hrCopyEditorState.root?.classList.toggle("is-active", active);
-  hrCopyEditorState.quickSave?.toggleAttribute("hidden", !active);
+  hrCopyEditorState.quickActions?.toggleAttribute("hidden", !active);
   hrCopyEditorState.panel?.toggleAttribute("hidden", !active);
   if (hrCopyEditorState.toggle) {
     hrCopyEditorState.toggle.setAttribute("aria-checked", String(active));
@@ -261,9 +264,10 @@ async function loadGlobalCopyOverrides(entries, pagePath) {
     if (error) return;
     const overrides = new Map((data || []).map((row) => [String(row.content_key || ""), row.override_text ?? ""]));
     entries.forEach((entry) => {
-      if (!overrides.has(entry.key)) return;
-      entry.value = String(overrides.get(entry.key));
-      entry.element.textContent = entry.value;
+      const value = overrides.has(entry.key) ? String(overrides.get(entry.key)) : entry.defaultText;
+      entry.savedValue = value;
+      entry.value = value;
+      entry.element.textContent = value;
     });
   } catch {}
 }
@@ -309,6 +313,9 @@ async function saveGlobalCopyEditor() {
       .from("site_text_overrides")
       .upsert(rows, { onConflict: "page_path,content_key" });
     if (error) throw error;
+    hrCopyEditorState.entries.forEach((entry) => {
+      entry.savedValue = entry.value.trim();
+    });
     setCopyEditorStatus("Cambios guardados", "success");
     applyGlobalCopyEditorState();
   } catch (error) {
@@ -316,6 +323,19 @@ async function saveGlobalCopyEditor() {
   } finally {
     if (hrCopyEditorState.save) hrCopyEditorState.save.disabled = false;
   }
+}
+
+function cancelGlobalCopyEditor() {
+  if (!hrCopyEditorState.canEdit || !hrCopyEditorState.entries.length) return;
+  hrCopyEditorState.entries.forEach((entry) => {
+    entry.value = entry.savedValue ?? entry.defaultText;
+    entry.element.textContent = entry.value;
+    entry.editing = false;
+    entry.lastTapAt = 0;
+  });
+  if (hrCopyEditorState.active) renderGlobalCopyEditorFields();
+  setCopyEditorStatus("Cambios cancelados", "success");
+  applyGlobalCopyEditorState();
 }
 
 function initGlobalCopyEditor() {
@@ -333,23 +353,29 @@ function initGlobalCopyEditor() {
         <span class="hr-copy-editor__mode-option hr-copy-editor__mode-option--editor">Editor</span>
         <span class="hr-copy-editor__mode-thumb" aria-hidden="true"></span>
       </button>
-      <button class="hr-copy-editor__save hr-copy-editor__quick-save" type="button" hidden>Guardar cambios</button>
+    </div>
+    <div class="hr-copy-editor__quick-actions" hidden>
+      <button class="hr-copy-editor__save hr-copy-editor__quick-save" type="button">Guardar</button>
+      <button class="hr-copy-editor__cancel hr-copy-editor__quick-cancel" type="button">Cancelar</button>
     </div>
     <aside class="hr-copy-editor__panel" aria-label="Editor de textos" hidden>
       <div class="hr-copy-editor__header"><strong>Editar textos</strong><span>Solo contenido estático</span></div>
       <p class="hr-copy-editor__help">Activa el modo Editor y toca dos veces cualquier texto resaltado para editarlo directamente. Los campos que vienen de la base de datos quedan fuera.</p>
       <div class="hr-copy-editor__fields"></div>
-      <div class="hr-copy-editor__actions"><button class="hr-copy-editor__save" type="button">Guardar cambios</button><span class="hr-copy-editor__status" role="status" aria-live="polite"></span></div>
+      <div class="hr-copy-editor__actions"><button class="hr-copy-editor__cancel" type="button">Cancelar</button><button class="hr-copy-editor__save" type="button">Guardar cambios</button><span class="hr-copy-editor__status" role="status" aria-live="polite"></span></div>
     </aside>
   `;
   document.body.append(root);
   hrCopyEditorState.root = root;
   hrCopyEditorState.toggle = root.querySelector(".hr-copy-editor__toggle");
+  hrCopyEditorState.quickActions = root.querySelector(".hr-copy-editor__quick-actions");
   hrCopyEditorState.quickSave = root.querySelector(".hr-copy-editor__quick-save");
+  hrCopyEditorState.quickCancel = root.querySelector(".hr-copy-editor__quick-cancel");
   hrCopyEditorState.panel = root.querySelector(".hr-copy-editor__panel");
   hrCopyEditorState.fields = root.querySelector(".hr-copy-editor__fields");
   hrCopyEditorState.status = root.querySelector(".hr-copy-editor__status");
-  hrCopyEditorState.save = root.querySelector(".hr-copy-editor__save");
+  hrCopyEditorState.save = root.querySelector(".hr-copy-editor__panel .hr-copy-editor__save");
+  hrCopyEditorState.cancel = root.querySelector(".hr-copy-editor__panel .hr-copy-editor__cancel");
   hrCopyEditorState.toggle.addEventListener("click", () => {
     hrCopyEditorState.active = !hrCopyEditorState.active;
     if (hrCopyEditorState.active) {
@@ -359,7 +385,9 @@ function initGlobalCopyEditor() {
     applyGlobalCopyEditorState();
   });
   if (hrCopyEditorState.quickSave) hrCopyEditorState.quickSave.addEventListener("click", saveGlobalCopyEditor);
-  hrCopyEditorState.save.addEventListener("click", saveGlobalCopyEditor);
+  if (hrCopyEditorState.quickCancel) hrCopyEditorState.quickCancel.addEventListener("click", cancelGlobalCopyEditor);
+  if (hrCopyEditorState.save) hrCopyEditorState.save.addEventListener("click", saveGlobalCopyEditor);
+  if (hrCopyEditorState.cancel) hrCopyEditorState.cancel.addEventListener("click", cancelGlobalCopyEditor);
   document.addEventListener("click", (event) => {
     if (!hrCopyEditorState.active) return;
     const target = event.target.closest("[data-hr-copy-runtime-key]");
