@@ -47,6 +47,7 @@ async function initProducerPage() {
   grid.addEventListener("keydown", handleGridKeydown);
   window.addEventListener("hr:beat-player-state", syncBeatCardPlayState);
   window.addEventListener("hr:beat-player-next", (event) => {
+    if (event.defaultPrevented) return;
     const activeId = String(event.detail?.beatId || "");
     const activeSrc = String(event.detail?.src || "");
     const sequence = state.products.filter((product) => previewUrlForProduct(product));
@@ -314,15 +315,28 @@ function playBeat(productId) {
   const product = state.products.find((candidate) => candidate.id === productId);
   const previewUrl = previewUrlForProduct(product);
   if (!product || !previewUrl) return;
+  const detail = beatPlayerDetailForProduct(product);
   window.dispatchEvent(new CustomEvent("hr:beat-preview", {
     detail: {
-      src: previewUrl,
-      title: product.name || "Beat",
-      detail: producerDisplayName(state.profile.display_name),
-      cover: coverUrlForProduct(product),
-      genre: product.beat_genre || product.genre || "",
+      ...detail,
+      queue: state.products.filter((candidate) => previewUrlForProduct(candidate)).map(beatPlayerDetailForProduct),
     },
   }));
+}
+
+function beatPlayerDetailForProduct(product) {
+  return {
+    src: previewUrlForProduct(product),
+    title: product.name || "Beat",
+    detail: producerDisplayName(state.profile.display_name),
+    cover: coverUrlForProduct(product),
+    beatId: product.id,
+    slug: product.slug || "",
+    producerSlug: state.profile.slug || "",
+    genre: product.beat_genre || product.genre || "",
+    bpm: product.beat_bpm || "",
+    key: product.beat_key || "",
+  };
 }
 
 function syncBeatCardPlayState(event) {

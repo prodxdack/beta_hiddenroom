@@ -1,4 +1,4 @@
-const HR_SPA_ROUTES = new Set(['/','/store/','/store/beat_store/','/media/','/academia/','/kairen/','/tickets/']);
+const HR_SPA_ROUTES = new Set(['/','/store/','/store/product.html','/store/beat_store/','/store/beat_store/producer.html','/media/','/academia/','/kairen/','/tickets/']);
 const HR_SPA_EXCLUDED = ['/portal/','/portal/dashboard.html','/tickets/generate.html','/tickets/validate.html','/tickets/view.html'];
 const HR_SPA_CACHE_TTL = 60 * 1000;
 const hrSpaViewCache = new Map();
@@ -10,6 +10,7 @@ let hrSpaActiveNavigation = 0;
 
 function hrSpaPath(url) {
   const path = url.pathname.replace(/\/index\.html$/, '/') || '/';
+  if (path.endsWith('.html')) return path;
   return path.endsWith('/') ? path : `${path}/`;
 }
 function hrSpaCacheKey(url) { return `${url.origin}${hrSpaPath(url)}${url.search}`; }
@@ -39,6 +40,11 @@ function hrSpaCanPrefetch(url) {
 function hrSpaEnsureRoot() {
   let root = document.getElementById('hr-spa-content');
   if (root) return root;
+  document.head.querySelectorAll('link[rel="stylesheet"]').forEach((link) => {
+    if (!hrSpaIsGlobalStylesheet(link) && link.href.startsWith(window.location.origin)) {
+      link.setAttribute('data-hr-spa-page-asset', '');
+    }
+  });
   root = document.createElement('div');
   root.id = 'hr-spa-content';
   const keep = new Set(['hr-global-nav', 'cursor', 'cursorRing', 'hr-beat-player', 'hr-beat-player-fullscreen']);
@@ -63,6 +69,29 @@ function hrSpaShowSkeleton(root, url) {
   root.replaceChildren();
   root.insertAdjacentHTML("beforeend", hrSpaSkeletonMarkup(url));
   root.setAttribute("aria-busy", "true");
+}
+function hrSpaCaptureBeatPlayback() {
+  const audio = document.getElementById("beat-audio");
+  if (!audio?.src) return null;
+  return {
+    audio,
+    src: audio.src,
+    currentTime: Number(audio.currentTime) || 0,
+    wasPlaying: !audio.paused && !audio.ended,
+    volume: audio.volume,
+    muted: audio.muted,
+  };
+}
+function hrSpaRestoreBeatPlayback(snapshot) {
+  if (!snapshot?.wasPlaying) return;
+  const audio = document.getElementById("beat-audio");
+  if (!audio || audio !== snapshot.audio || audio.src !== snapshot.src) return;
+  if (Number.isFinite(snapshot.currentTime) && Math.abs(audio.currentTime - snapshot.currentTime) > 0.25) {
+    try { audio.currentTime = snapshot.currentTime; } catch {}
+  }
+  audio.volume = snapshot.volume;
+  audio.muted = snapshot.muted;
+  if (audio.paused) audio.play().catch(() => {});
 }
 function hrSpaUpdateActiveNavigation(url) {
   const target = new URL(url, window.location.href);
@@ -135,15 +164,16 @@ async function hrSpaSyncPageHeadAssets(parsed, url) {
     const href = source.getAttribute('href');
     if (!href) continue;
     const resolved = new URL(href, url.href);
-    const isPageStylesheet = hrSpaIsGlobalStylesheet(source, url.href);
+    const isGlobalStylesheet = hrSpaIsGlobalStylesheet(source, url.href);
+    const isPageStylesheet = resolved.origin === window.location.origin && !isGlobalStylesheet;
     const isGoogleFont = resolved.origin === 'https://fonts.googleapis.com';
-    if (!isPageStylesheet && !isGoogleFont) continue;
+    if (!isPageStylesheet && !isGlobalStylesheet && !isGoogleFont) continue;
 
     const link = source.cloneNode(true);
     link.href = resolved.href;
     link.setAttribute('data-hr-spa-page-asset', '');
     document.head.appendChild(link);
-    if (isPageStylesheet) newStylesheets.push(link);
+    if (isPageStylesheet || isGlobalStylesheet) newStylesheets.push(link);
   }
 
   const stylesLoaded = await Promise.all(newStylesheets.map((link) => hrSpaWaitForStylesheet(link)));
@@ -206,6 +236,7 @@ async function hrSpaNavigate(input, { replace = false, fromPopState = false } = 
   const url = new URL(input, window.location.href);
   if (url.pathname.endsWith('/index.html')) url.pathname = url.pathname.slice(0, -'index.html'.length);
   if (!hrSpaIsCompatible(url)) return false;
+  const beatPlayback = hrSpaCaptureBeatPlayback();
   window.releaseGlobalOverlayState?.();
   const root = hrSpaEnsureRoot();
   const navigationId = ++hrSpaActiveNavigation;
@@ -223,8 +254,10 @@ async function hrSpaNavigate(input, { replace = false, fromPopState = false } = 
     if (typeof window.renderGlobalNav === 'function') window.renderGlobalNav();
     if (typeof window.initGlobalFooter === 'function') window.initGlobalFooter();
     if (typeof window.hydrateGlobalSession === 'function') window.hydrateGlobalSession();
+    window.dispatchEvent(new CustomEvent('hr:spa-content-updated', { detail: { url: url.href } }));
     document.querySelectorAll('.site-status').forEach((el) => { el.textContent = window.HiddenRoomSite?.status || el.textContent; });
     await hrSpaMount(parsed, url);
+    hrSpaRestoreBeatPlayback(beatPlayback);
     if (url.hash) document.getElementById(url.hash.slice(1))?.scrollIntoView({ behavior: 'smooth' });
     root.classList.add('hr-spa-content--entering');
     requestAnimationFrame(() => root.classList.remove('hr-spa-content--leaving'));

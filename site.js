@@ -50,6 +50,269 @@ function renderMoreNav(activeModule, navPath, drawer = false) {
 
 let globalSessionSnapshot = null;
 
+const HR_COPY_EDITOR_CANDIDATE_SELECTOR = "h1,h2,h3,h4,h5,h6,p,a,button,li,dt,dd,blockquote,figcaption,legend,summary,span,small";
+const HR_COPY_EDITOR_IGNORE_SELECTOR = "#hr-global-nav,#hr-beat-player,#hr-beat-player-fullscreen,script,style,noscript,svg,canvas,video,audio,iframe,input,textarea,select,option,[aria-hidden=\"true\"],[data-hr-copy-ignore],[data-hr-session],[data-hr-drawer-session],.site-status,.site-version,#cursor,#cursorRing";
+const hrCopyEditorState = {
+  root: null,
+  toggle: null,
+  panel: null,
+  fields: null,
+  status: null,
+  save: null,
+  canEdit: false,
+  active: false,
+  pagePath: "",
+  entries: [],
+  refreshId: 0,
+};
+
+function copyEditorPagePath(url = window.location.href) {
+  const parsed = new URL(url, window.location.href);
+  let pathname = parsed.pathname || "/";
+  if (pathname.endsWith("/index.html")) pathname = pathname.slice(0, -"index.html".length);
+  if (!pathname.startsWith("/")) pathname = `/${pathname}`;
+  return pathname || "/";
+}
+
+function copyEditorText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function copyEditorKey(element) {
+  if (element.dataset.hrCopyKey) return element.dataset.hrCopyKey;
+  const parts = [];
+  let current = element;
+  while (current && current !== document.body) {
+    if (current.id) {
+      parts.unshift(`#${current.id}`);
+      break;
+    }
+    const parent = current.parentElement;
+    if (!parent) break;
+    const siblings = [...parent.children].filter((candidate) => candidate.tagName === current.tagName);
+    parts.unshift(`${current.tagName.toLowerCase()}:${Math.max(1, siblings.indexOf(current) + 1)}`);
+    current = parent;
+  }
+  return parts.join("/").slice(0, 500);
+}
+
+function prepareGlobalCopyTextSegments() {
+  document.querySelectorAll(HR_COPY_EDITOR_CANDIDATE_SELECTOR).forEach((parent) => {
+    if (parent.closest(HR_COPY_EDITOR_IGNORE_SELECTOR)) return;
+    [...parent.childNodes].forEach((node) => {
+      if (node.nodeType !== Node.TEXT_NODE || !copyEditorText(node.textContent)) return;
+      const text = copyEditorText(node.textContent);
+      if (text.length <= 1 || text.length > 2000) return;
+      const segment = document.createElement("span");
+      segment.dataset.hrCopySegment = "";
+      segment.textContent = text;
+      node.replaceWith(segment);
+    });
+  });
+}
+
+function collectGlobalCopyEntries() {
+  prepareGlobalCopyTextSegments();
+  const seenKeys = new Set();
+  return [...document.querySelectorAll(HR_COPY_EDITOR_CANDIDATE_SELECTOR)]
+    .filter((element) => {
+      if (element.closest(HR_COPY_EDITOR_IGNORE_SELECTOR)) return false;
+      if (element.children.length) return false;
+      const text = copyEditorText(element.textContent);
+      return text.length > 1 && text.length <= 2000;
+    })
+    .map((element) => {
+      const key = copyEditorKey(element);
+      if (!key || seenKeys.has(key)) return null;
+      seenKeys.add(key);
+      const defaultText = copyEditorText(element.textContent);
+      element.dataset.hrCopyRuntimeKey = key;
+      const entry = { key, defaultText, value: defaultText, element };
+      element.addEventListener("input", () => {
+        if (!hrCopyEditorState.active) return;
+        entry.value = copyEditorText(element.textContent);
+        const field = hrCopyEditorState.fields?.querySelector(`[data-hr-copy-editor-field="${CSS.escape(entry.key)}"]`);
+        if (field && document.activeElement !== field) field.value = entry.value;
+        element.classList.toggle("hr-copy-editor-target--changed", entry.value !== entry.defaultText);
+      });
+      return entry;
+    })
+    .filter(Boolean);
+}
+
+function setCopyEditorStatus(message, type = "") {
+  if (!hrCopyEditorState.status) return;
+  hrCopyEditorState.status.textContent = message;
+  hrCopyEditorState.status.dataset.state = type;
+}
+
+function applyGlobalCopyEditorState() {
+  const active = hrCopyEditorState.active;
+  hrCopyEditorState.entries.forEach((entry) => {
+    entry.element.classList.toggle("hr-copy-editor-target", active);
+    entry.element.classList.toggle("hr-copy-editor-target--changed", active && entry.value !== entry.defaultText);
+    if (active) {
+      entry.element.setAttribute("data-hr-copy-runtime-key", entry.key);
+      entry.element.setAttribute("contenteditable", "true");
+      entry.element.setAttribute("spellcheck", "true");
+    } else {
+      entry.element.removeAttribute("data-hr-copy-runtime-key");
+      entry.element.removeAttribute("contenteditable");
+      entry.element.removeAttribute("spellcheck");
+    }
+  });
+  hrCopyEditorState.root?.classList.toggle("is-active", active);
+  hrCopyEditorState.panel?.toggleAttribute("hidden", !active);
+  if (hrCopyEditorState.toggle) {
+    hrCopyEditorState.toggle.setAttribute("aria-checked", String(active));
+    hrCopyEditorState.toggle.textContent = active ? "Cerrar edición" : "Editar textos";
+  }
+}
+
+function renderGlobalCopyEditorFields() {
+  const fields = hrCopyEditorState.fields;
+  if (!fields) return;
+  fields.replaceChildren();
+  if (!hrCopyEditorState.entries.length) {
+    const empty = document.createElement("p");
+    empty.className = "hr-copy-editor__empty";
+    empty.textContent = "Esta página no tiene textos estáticos editables.";
+    fields.append(empty);
+    return;
+  }
+
+  hrCopyEditorState.entries.forEach((entry, index) => {
+    const label = document.createElement("label");
+    label.className = "hr-copy-editor__field";
+    const heading = document.createElement("span");
+    heading.className = "hr-copy-editor__field-label";
+    heading.textContent = `${entry.element.tagName.toLowerCase()} · ${index + 1}`;
+    const textarea = document.createElement("textarea");
+    textarea.rows = Math.min(5, Math.max(2, Math.ceil(entry.value.length / 48)));
+    textarea.value = entry.value;
+    textarea.dataset.hrCopyEditorField = entry.key;
+    textarea.setAttribute("aria-label", `Texto ${index + 1}`);
+    textarea.addEventListener("input", () => {
+      entry.value = textarea.value.trim();
+      entry.element.textContent = entry.value;
+      entry.element.classList.toggle("hr-copy-editor-target--changed", entry.value !== entry.defaultText);
+    });
+    label.append(heading, textarea);
+    fields.append(label);
+  });
+}
+
+async function loadGlobalCopyOverrides(entries, pagePath) {
+  try {
+    const supabase = await getHiddenRoomSupabaseClient();
+    const { data, error } = await supabase
+      .from("site_text_overrides")
+      .select("content_key,override_text")
+      .eq("page_path", pagePath)
+      .eq("is_active", true);
+    if (error) return;
+    const overrides = new Map((data || []).map((row) => [String(row.content_key || ""), row.override_text ?? ""]));
+    entries.forEach((entry) => {
+      if (!overrides.has(entry.key)) return;
+      entry.value = String(overrides.get(entry.key));
+      entry.element.textContent = entry.value;
+    });
+  } catch {}
+}
+
+async function refreshGlobalCopyEditorPage() {
+  const refreshId = ++hrCopyEditorState.refreshId;
+  hrCopyEditorState.pagePath = copyEditorPagePath();
+  hrCopyEditorState.entries = collectGlobalCopyEntries();
+  await loadGlobalCopyOverrides(hrCopyEditorState.entries, hrCopyEditorState.pagePath);
+  if (refreshId !== hrCopyEditorState.refreshId) return;
+  if (hrCopyEditorState.active) renderGlobalCopyEditorFields();
+  applyGlobalCopyEditorState();
+}
+
+function setGlobalCopyEditorAccess(visible) {
+  hrCopyEditorState.canEdit = Boolean(visible);
+  if (!hrCopyEditorState.root) return;
+  hrCopyEditorState.root.hidden = !hrCopyEditorState.canEdit;
+  if (!hrCopyEditorState.canEdit) {
+    hrCopyEditorState.active = false;
+    applyGlobalCopyEditorState();
+  }
+}
+
+async function saveGlobalCopyEditor() {
+  if (!hrCopyEditorState.canEdit || !hrCopyEditorState.entries.length) return;
+  if (hrCopyEditorState.save) hrCopyEditorState.save.disabled = true;
+  setCopyEditorStatus("Guardando…");
+  try {
+    const supabase = await getHiddenRoomSupabaseClient();
+    const rows = hrCopyEditorState.entries.map((entry) => {
+      const value = entry.value.trim();
+      const changed = value !== entry.defaultText;
+      return {
+        page_path: hrCopyEditorState.pagePath,
+        content_key: entry.key,
+        default_text: entry.defaultText,
+        override_text: changed ? value : null,
+        is_active: changed,
+      };
+    });
+    const { error } = await supabase
+      .from("site_text_overrides")
+      .upsert(rows, { onConflict: "page_path,content_key" });
+    if (error) throw error;
+    setCopyEditorStatus("Cambios guardados", "success");
+    applyGlobalCopyEditorState();
+  } catch (error) {
+    setCopyEditorStatus(error?.message || "No se pudieron guardar los cambios.", "error");
+  } finally {
+    if (hrCopyEditorState.save) hrCopyEditorState.save.disabled = false;
+  }
+}
+
+function initGlobalCopyEditor() {
+  if (!document.body?.hasAttribute("data-hr-chrome")) return;
+  const root = document.createElement("div");
+  root.id = "hr-copy-editor";
+  root.className = "hr-copy-editor";
+  root.dataset.hrCopyIgnore = "";
+  root.hidden = true;
+  root.innerHTML = `
+    <button class="hr-copy-editor__toggle" type="button" role="switch" aria-checked="false">Editar textos</button>
+    <aside class="hr-copy-editor__panel" aria-label="Editor de textos" hidden>
+      <div class="hr-copy-editor__header"><strong>Editar textos</strong><span>Solo contenido estático</span></div>
+      <p class="hr-copy-editor__help">Activa el modo, toca cualquier texto resaltado y escribe directamente, como en un editor de páginas. Los campos que vienen de la base de datos quedan fuera.</p>
+      <div class="hr-copy-editor__fields"></div>
+      <div class="hr-copy-editor__actions"><button class="hr-copy-editor__save" type="button">Guardar cambios</button><span class="hr-copy-editor__status" role="status" aria-live="polite"></span></div>
+    </aside>
+  `;
+  document.body.append(root);
+  hrCopyEditorState.root = root;
+  hrCopyEditorState.toggle = root.querySelector(".hr-copy-editor__toggle");
+  hrCopyEditorState.panel = root.querySelector(".hr-copy-editor__panel");
+  hrCopyEditorState.fields = root.querySelector(".hr-copy-editor__fields");
+  hrCopyEditorState.status = root.querySelector(".hr-copy-editor__status");
+  hrCopyEditorState.save = root.querySelector(".hr-copy-editor__save");
+  hrCopyEditorState.toggle.addEventListener("click", () => {
+    hrCopyEditorState.active = !hrCopyEditorState.active;
+    if (hrCopyEditorState.active) {
+      renderGlobalCopyEditorFields();
+      setCopyEditorStatus("");
+    }
+    applyGlobalCopyEditorState();
+  });
+  hrCopyEditorState.save.addEventListener("click", saveGlobalCopyEditor);
+  document.addEventListener("click", (event) => {
+    if (!hrCopyEditorState.active) return;
+    const target = event.target.closest("[data-hr-copy-runtime-key]");
+    if (!target || root.contains(target)) return;
+    if (target.closest("a,button")) event.preventDefault();
+    target.focus();
+  }, true);
+  window.addEventListener("hr:spa-content-updated", refreshGlobalCopyEditorPage);
+  refreshGlobalCopyEditorPage();
+}
+
 function setGlobalAuthState(state) {
   document.querySelectorAll("[data-hr-session], [data-hr-drawer-session]").forEach((target) => {
     target.dataset.hrAuthState = state;
@@ -626,6 +889,7 @@ async function hydrateGlobalSession() {
       sessionTargets.forEach((target) => { target.hidden = false; });
       drawerTargets.forEach((target) => { target.hidden = false; });
       setAdminNavigationVisibility(false);
+      setGlobalCopyEditorAccess(false);
       setPermissionNavigationVisibility("beats.upload", false);
       renderGlobalNotifications([]);
       toggleGlobalNotifications(false);
@@ -677,6 +941,7 @@ async function hydrateGlobalSession() {
         .includes("academia.admin");
     }
     setAdminNavigationVisibility(canSeeAdminNav);
+    setGlobalCopyEditorAccess(roleListIncludesAdmin(profile?.roles));
     globalSessionSnapshot = { profile, user, notifications, unread };
 
     sessionTargets.forEach((target) => {
@@ -692,6 +957,7 @@ async function hydrateGlobalSession() {
     showGlobalInstagramUsernamePrompt(profile, user, supabase);
   } catch (error) {
     setAdminNavigationVisibility(false);
+    setGlobalCopyEditorAccess(false);
     setPermissionNavigationVisibility("beats.upload", false);
     sessionTargets.forEach((target) => {
       target.innerHTML = guestHeaderMarkup();
@@ -850,6 +1116,7 @@ let hrWaveSurferSrc = "";
 let hrWaveSurferReady = false;
 let hrWaveSurferFailed = false;
 let hrCurrentBeatDetail = null;
+let hrBeatPlayerQueue = [];
 let hrGlobalBeatPlayerHydrated = false;
 let hrBeatPlayerFullscreenPlaceholder = null;
 let hrBeatPlayerFullscreenLastFocus = null;
@@ -901,30 +1168,29 @@ function setGlobalWaveformMode(mode = "fallback") {
   if (fallback) fallback.hidden = mode === "wave";
 }
 
-function ensurePhosphorIconStyles() {
-  if (document.querySelector("link[data-hr-phosphor-icons]")) return;
-  const link = document.createElement("link");
-  link.rel = "stylesheet";
-  link.href = "/assets/vendor/phosphor/phosphor.css?v=20261002-phosphor-player-v1";
-  link.dataset.hrPhosphorIcons = "true";
-  document.head.appendChild(link);
-}
-
 function beatPlayerIcon(name) {
-  const names = {
-    play: "play",
-    pause: "pause",
-    prev: "skip-back",
-    next: "skip-forward",
-    volume: "speaker-high",
-    muted: "speaker-slash",
-    close: "x",
-    fullscreen: "arrows-out",
-    more: "dots-three",
-    shuffle: "shuffle",
-    repeat: "repeat",
+  const paths = {
+    play: '<path d="M8 4.75L19.5 12L8 19.25Z"></path>',
+    pause: '<path d="M7 5H11V19H7ZM13 5H17V19H13Z"></path>',
+    prev: '<path d="M9.5 4.5L2 12L9.5 19.5L12 17L7 12L12 7ZM17 4.5L9.5 12L17 19.5L19.5 17L14.5 12L19.5 7Z"></path>',
+    next: '<path d="M7 4.5L14.5 12L7 19.5L4.5 17L9.5 12L4.5 7ZM14.5 4.5L22 12L14.5 19.5L12 17L17 12L12 7Z"></path>',
+    volume: '<path d="M3 9H7L12 5V19L7 15H3Z" fill="currentColor" stroke="none"></path><path d="M15 9.5C16.8 11 16.8 13 15 14.5M17.5 7C20.8 9.7 20.8 14.3 17.5 17" fill="none" stroke="currentColor" stroke-width="2.7"></path>',
+    muted: '<path d="M3 9H7L12 5V19L7 15H3Z" fill="currentColor" stroke="none"></path><path d="M15 9L20 15M20 9L15 15" fill="none" stroke="currentColor" stroke-width="2.5"></path>',
+    close: '<path d="M5 5L19 19M19 5L5 19"></path>',
+    fullscreen: '<path d="M8.5 4.5H4.5V8.5M15.5 4.5H19.5V8.5M8.5 19.5H4.5V15.5M15.5 19.5H19.5V15.5"></path>',
+    more: '<circle cx="5" cy="12" r="2.1"></circle><circle cx="12" cy="12" r="2.1"></circle><circle cx="19" cy="12" r="2.1"></circle>',
+    shuffle: '<path d="M4 7H7C10 7 12 17 17 17H20M17 14L20 17L17 20M4 17H7C8.5 17 9.5 16 10.5 14.5M14 9.5C15 8 16 7 17 7H20"></path><path d="M17 4L20 7L17 10"></path>',
+    repeat: '<path d="M5 8H16L14 6M16 8L14 10M19 16H8L10 18M8 16L10 14"></path>',
   };
-  return `<i class="ph ph-${names[name] || names.more} hr-player-icon" aria-hidden="true"></i>`;
+  const solidIcons = ["play", "pause", "prev", "next", "more"];
+  const heavyIcons = ["close", "fullscreen", "shuffle", "repeat"];
+  const variant = solidIcons.includes(name)
+    ? " hr-player-icon--solid"
+    : heavyIcons.includes(name)
+      ? " hr-player-icon--heavy"
+      : "";
+  const className = `hr-player-icon${variant}`;
+  return `<svg class="${className}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${paths[name] || paths.more}</svg>`;
 }
 
 function globalBeatPlayerArtMarkup(cover = "") {
@@ -1331,13 +1597,12 @@ function setupBeatPlayerVisualizers(audio) {
 
 function renderGlobalBeatPlayer() {
   if (!shouldRenderGlobalBeatPlayer()) return "";
-  ensurePhosphorIconStyles();
   document.body.classList.add("hr-has-beat-player");
   return `
     <aside class="hr-beat-player is-empty" id="hr-beat-player" aria-label="Reproductor Beat Store" data-state="idle">
       <button class="hr-beat-player__art" id="beat-player-art" type="button" data-beat-player-toggle aria-label="Reproducir preview" title="Reproducir preview" data-tooltip="Reproducir preview" aria-pressed="false"><span>HR</span><span class="hr-beat-player__art-icon" aria-hidden="true">${beatPlayerIcon("play")}</span></button>
       <div class="hr-beat-player__meta">
-        <strong><a id="player-title" href="#" aria-disabled="true">Selecciona un beat</a></strong>
+        <strong><a id="player-title" href="#" data-hr-spa="off" aria-disabled="true">Selecciona un beat</a></strong>
         <span id="player-detail"></span>
       </div>
       <button class="hr-beat-player__more" type="button" data-beat-player-more aria-label="Opciones del reproductor" title="Opciones del reproductor" data-tooltip="Opciones del reproductor" aria-expanded="false" aria-controls="beat-player-menu">${beatPlayerIcon("more")}</button>
@@ -1402,7 +1667,7 @@ function renderGlobalBeatPlayer() {
               <button class="hr-beat-player-fullscreen__art hr-beat-player__art" id="beat-player-fullscreen-art" type="button" data-beat-player-fullscreen-toggle aria-label="Reproducir preview" title="Reproducir preview" data-tooltip="Reproducir preview" aria-pressed="false" disabled><span>HR</span><span class="hr-beat-player__art-icon" aria-hidden="true">${beatPlayerIcon("play")}</span></button>
               <div class="hr-beat-player-fullscreen__meta">
                 <span class="hr-beat-player-fullscreen__label">REPRODUCTOR</span>
-                <h2 id="beat-player-fullscreen-title"><a href="#" aria-disabled="true">Selecciona un beat</a></h2>
+                <h2 id="beat-player-fullscreen-title"><a href="#" data-hr-spa="off" aria-disabled="true">Selecciona un beat</a></h2>
                 <p id="beat-player-fullscreen-producer"><a href="#" aria-disabled="true">Productor por confirmar</a></p>
                 <div class="hr-beat-player-fullscreen__stats"><span id="beat-player-fullscreen-bpm">-- BPM</span><span id="beat-player-fullscreen-key">KEY --</span></div>
               </div>
@@ -1633,13 +1898,11 @@ function hydrateGlobalBeatPlayer() {
   });
   fullscreenNext?.addEventListener("click", () => {
     if (!fallbackAudio.src) return;
-    window.dispatchEvent(new CustomEvent("hr:beat-player-next", {
-      detail: {
-        beatId: hrCurrentBeatDetail?.beatId || player.dataset.beatId || "",
-        src: getBeatPlayerSrc(),
-        shuffle: hrBeatPlayerShuffle,
-      },
-    }));
+    dispatchGlobalBeatPlayerNext({
+      beatId: hrCurrentBeatDetail?.beatId || player.dataset.beatId || "",
+      src: getBeatPlayerSrc(),
+      shuffle: hrBeatPlayerShuffle,
+    });
   });
   playerShare?.addEventListener("click", async () => {
     const slug = String(hrCurrentBeatDetail?.slug || "").trim();
@@ -1717,7 +1980,7 @@ function hydrateGlobalBeatPlayer() {
   try {
     sessionStorage.removeItem("hr_global_beat_player");
     const saved = JSON.parse(sessionStorage.getItem(HR_BEAT_PLAYER_STORAGE_KEY) || "null");
-    if (saved?.src) setGlobalBeatPlayer(sanitizeBeatPlayerDetail(saved), { autoplay: false, restoreTime: true });
+    if (saved?.src) setGlobalBeatPlayer(sanitizeBeatPlayerDetail(saved), { autoplay: Boolean(saved.wasPlaying), restoreTime: true });
   } catch {
     sessionStorage.removeItem(HR_BEAT_PLAYER_STORAGE_KEY);
   }
@@ -1735,9 +1998,11 @@ function hydrateGlobalBeatPlayer() {
           fallbackAudio.currentTime = 0;
           player.dataset.state = "ended";
           if (hrBeatPlayerShuffle) {
-            window.dispatchEvent(new CustomEvent("hr:beat-player-next", {
-              detail: { beatId: hrCurrentBeatDetail?.beatId || player.dataset.beatId || "", src: getBeatPlayerSrc(), shuffle: true },
-            }));
+            dispatchGlobalBeatPlayerNext({
+              beatId: hrCurrentBeatDetail?.beatId || player.dataset.beatId || "",
+              src: getBeatPlayerSrc(),
+              shuffle: true,
+            });
           }
         }
       }
@@ -1855,10 +2120,40 @@ function emitGlobalBeatPlayerState() {
   window.dispatchEvent(new CustomEvent("hr:beat-player-state", { detail: window.HiddenRoomBeatPlayer }));
 }
 
+function dispatchGlobalBeatPlayerNext(detail = {}) {
+  window.dispatchEvent(new CustomEvent("hr:beat-player-next", {
+    cancelable: true,
+    detail,
+  }));
+}
+
 function sanitizeBeatPlayerDetail(detail) {
   const clean = { ...(detail || {}) };
   if (/compra para descargar|compra el beat para descargarlo/i.test(String(clean.detail || ""))) clean.detail = "";
   return clean;
+}
+
+function sanitizeBeatPlayerQueue(queue, fallbackDetail) {
+  const candidates = Array.isArray(queue) ? queue : [];
+  const entries = [...candidates, fallbackDetail].filter((entry) => entry?.src);
+  const seen = new Set();
+  return entries.map((entry) => sanitizeBeatPlayerDetail(entry)).filter((entry) => {
+    const key = String(entry.beatId || entry.src || "");
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function nextGlobalBeatPlayerDetail({ beatId = "", src = "", shuffle = false } = {}) {
+  const sequence = hrBeatPlayerQueue.length ? hrBeatPlayerQueue : (hrCurrentBeatDetail ? [hrCurrentBeatDetail] : []);
+  if (!sequence.length) return null;
+  const currentIndex = sequence.findIndex((entry) => String(entry.beatId || "") === String(beatId) || entry.src === src);
+  if (shuffle && sequence.length > 1) {
+    const choices = sequence.filter((entry) => entry !== sequence[currentIndex]);
+    return choices[Math.floor(Math.random() * choices.length)] || null;
+  }
+  return sequence[(currentIndex + 1 + sequence.length) % sequence.length] || sequence[0];
 }
 
 function setGlobalBeatPlayer(detail, options = {}) {
@@ -1878,6 +2173,7 @@ function setGlobalBeatPlayer(detail, options = {}) {
   const playerLinks = [title, fullscreenTitle].filter(Boolean);
   const playerShare = document.querySelector("[data-beat-player-share]");
   if (!detail?.src) return;
+  hrBeatPlayerQueue = sanitizeBeatPlayerQueue(options.queue || detail.queue, detail);
   hrCurrentBeatDetail = detail;
   hrBeatVisualizerDisplayValues = [];
 
@@ -1942,7 +2238,7 @@ function setGlobalBeatPlayer(detail, options = {}) {
   }
 
   loadBeatFallbackAudio(detail, { ...options, keepWaveform: true });
-  loadBeatWaveform(detail.src, { ...options, autoplay: false, media: fallbackAudio }).catch(() => {
+  loadBeatWaveform(detail.src, { ...options, autoplay: Boolean(options.autoplay), media: fallbackAudio }).catch(() => {
     loadBeatFallbackAudio(detail, { ...options, keepCurrentAudio: true });
   });
 }
@@ -2001,6 +2297,9 @@ async function loadBeatWaveform(src, options = {}) {
       document.querySelectorAll("#beat-player-volume, #beat-player-fullscreen-volume"),
       waveform,
     );
+    if (options.autoplay && !hrWaveSurfer.isPlaying()) {
+      Promise.resolve(hrWaveSurfer.play()).catch(() => {});
+    }
     emitGlobalBeatPlayerState();
 
   });
@@ -2027,9 +2326,11 @@ async function loadBeatWaveform(src, options = {}) {
       hrWaveSurfer.seekTo(0);
       if (player) player.dataset.state = "ended";
       if (hrBeatPlayerShuffle) {
-        window.dispatchEvent(new CustomEvent("hr:beat-player-next", {
-          detail: { beatId: hrCurrentBeatDetail?.beatId || player?.dataset.beatId || "", src: getBeatPlayerSrc(), shuffle: true },
-        }));
+        dispatchGlobalBeatPlayerNext({
+          beatId: hrCurrentBeatDetail?.beatId || player?.dataset.beatId || "",
+          src: getBeatPlayerSrc(),
+          shuffle: true,
+        });
       }
     }
     syncGlobalBeatPlayerControls(
@@ -2140,10 +2441,12 @@ function persistGlobalBeatPlayerState() {
       detail: meta?.textContent || "",
       cover,
       beatId: document.getElementById("hr-beat-player")?.dataset.beatId || hrCurrentBeatDetail?.beatId || "",
+      slug: hrCurrentBeatDetail?.slug || "",
       producerSlug: hrCurrentBeatDetail?.producerSlug || "",
       genre: hrCurrentBeatDetail?.genre || "",
       bpm: hrCurrentBeatDetail?.bpm || "",
       key: hrCurrentBeatDetail?.key || "",
+      queue: hrBeatPlayerQueue,
       currentTime: getBeatPlayerCurrentTime(),
       wasPlaying: isBeatPlayerPlaying(),
     }));
@@ -2153,7 +2456,14 @@ function persistGlobalBeatPlayerState() {
 window.addEventListener("pagehide", persistGlobalBeatPlayerState);
 window.addEventListener("beforeunload", persistGlobalBeatPlayerState);
 window.addEventListener("hr:beat-preview", (event) => {
-  setGlobalBeatPlayer(event.detail, { autoplay: true });
+  setGlobalBeatPlayer(event.detail, { autoplay: true, queue: event.detail?.queue });
+});
+window.addEventListener("hr:beat-player-next", (event) => {
+  if (event.defaultPrevented) return;
+  const next = nextGlobalBeatPlayerDetail(event.detail);
+  if (!next) return;
+  event.preventDefault();
+  setGlobalBeatPlayer(next, { autoplay: true, queue: hrBeatPlayerQueue });
 });
 window.addEventListener("hr:beat-preview-toggle", (event) => {
   const action = event.detail?.action;
@@ -2378,6 +2688,7 @@ attachGlobalNotificationListeners();
 hydrateGlobalSession();
 attachGlobalSessionSync();
 initGlobalFooter();
+initGlobalCopyEditor();
 
 document.querySelectorAll(".site-status").forEach(el => {
   el.textContent = SITE_STATUS;

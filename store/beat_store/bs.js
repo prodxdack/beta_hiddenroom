@@ -156,6 +156,7 @@ async function initBeatStore() {
   window.addEventListener("hr:beat-player-state", syncBeatCardPlayState, { signal: hrBeatStoreLifecycle.signal });
   syncBeatCardPlayState({ detail: window.HiddenRoomBeatPlayer || {} });
   window.addEventListener("hr:beat-player-next", (event) => {
+    if (event.defaultPrevented) return;
     const activeId = String(event.detail?.beatId || "");
     const activeSrc = String(event.detail?.src || "");
     const requestedShuffle = Boolean(event.detail?.shuffle);
@@ -1337,13 +1338,19 @@ function syncBeatCardPlayState(event) {
   const activeId = String(event.detail?.beatId || "");
   const activeItem = state.items.find((candidate) => candidate.id === activeId || candidate.product?.id === activeId);
   const activeSlug = String(activeItem?.product?.slug || event.detail?.slug || "").trim();
-  const beatUrl = activeSlug ? `../product.html?slug=${encodeURIComponent(activeSlug)}` : "";
+  const beatUrl = activeSlug
+    ? new URL(`/store/product.html?slug=${encodeURIComponent(activeSlug)}`, window.location.origin).href
+    : "";
   [document.getElementById("player-title"), document.querySelector("#beat-player-fullscreen-title > a")].forEach((link) => {
     if (!link) return;
     if (beatUrl) {
       link.href = beatUrl;
       link.removeAttribute("aria-disabled");
       link.removeAttribute("tabindex");
+    } else {
+      link.removeAttribute("href");
+      link.setAttribute("aria-disabled", "true");
+      link.setAttribute("tabindex", "-1");
     }
   });
   const producerProfile = producerProfileForProduct(activeItem?.product);
@@ -1369,22 +1376,43 @@ function playBeat(itemId) {
   const item = state.items.find((candidate) => candidate.id === itemId);
   const previewUrl = previewUrlForItem(item);
   if (!item || !previewUrl) return;
+  const visibleIds = [...document.querySelectorAll("[data-play-beat]")]
+    .map((cover) => cover.dataset.playBeat)
+    .filter(Boolean)
+    .filter((id, index, ids) => ids.indexOf(id) === index);
+  const visibleItems = visibleIds
+    .map((id) => state.items.find((candidate) => candidate.id === id))
+    .filter((candidate) => candidate && previewUrlForItem(candidate));
+  const sequence = visibleItems.length ? visibleItems : state.items.filter((candidate) => previewUrlForItem(candidate));
+  const detail = beatPlayerDetailForItem(item);
   const producer = productProducer(item);
   const producerProfile = producerProfileForProduct(item.product);
+  detail.detail = producer || "Productor por confirmar";
+  detail.producerSlug = producerProfile?.is_active === false ? "" : producerProfile?.slug || "";
   window.dispatchEvent(new CustomEvent("hr:beat-preview", {
     detail: {
-      src: previewUrl,
-      title: beatDisplayTitle(item),
-      detail: producer || "Productor por confirmar",
-      cover: coverUrlForItem(item),
-      beatId: item.id,
-      slug: item.product?.slug || "",
-      producerSlug: producerProfile?.is_active === false ? "" : producerProfile?.slug || "",
-      genre: item.product?.beat_genre || item.beat?.genre || "",
-      bpm: item.product?.beat_bpm || item.beat?.bpm || "",
-      key: item.product?.beat_key || item.beat?.key || "",
+      ...detail,
+      queue: sequence.map(beatPlayerDetailForItem),
     },
   }));
+}
+
+function beatPlayerDetailForItem(item) {
+  if (!item) return null;
+  const producer = productProducer(item);
+  const producerProfile = producerProfileForProduct(item.product);
+  return {
+    src: previewUrlForItem(item),
+    title: beatDisplayTitle(item),
+    detail: producer || "Productor por confirmar",
+    cover: coverUrlForItem(item),
+    beatId: item.id,
+    slug: item.product?.slug || "",
+    producerSlug: producerProfile?.is_active === false ? "" : producerProfile?.slug || "",
+    genre: item.product?.beat_genre || item.beat?.genre || "",
+    bpm: item.product?.beat_bpm || item.beat?.bpm || "",
+    key: item.product?.beat_key || item.beat?.key || "",
+  };
 }
 function previewUrlForItem(item) {
   const productPreview = beatPreviewRelativeFile(item?.product?.beat_preview_path);
