@@ -1142,10 +1142,10 @@ const TABLE_EDITOR_CONFIG = {
   events: {
     label: 'Eventos',
     primaryKey: 'id',
-    select: 'id, event_key, name, event_date, venue, city, status, notes',
+    select: 'id, event_key, name, event_date, venue, city, status, visibility, notes',
     defaultSort: { field: 'event_date', direction: 'desc' },
     lockedFields: ['id'],
-    editableFields: ['event_key', 'name', 'event_date', 'venue', 'city', 'status', 'notes'],
+    editableFields: ['event_key', 'name', 'event_date', 'venue', 'city', 'status', 'visibility', 'notes'],
     hiddenColumns: ['id'],
   },
   event_participations: {
@@ -5941,6 +5941,9 @@ async function renderErpOps() {
           <div class="db-form__row">
             <label class="db-field"><span>Fecha</span><input name="event_date" type="date" /></label>
             <label class="db-field"><span>Status</span><select name="status">${EVENT_STATUS_OPTIONS.map((status) => optionHTML(status, status, 'closed')).join('')}</select></label>
+          </div>
+          <div class="db-form__row">
+            <label class="db-field"><span>Visibilidad</span><select name="visibility"><option value="private" selected>Privado</option><option value="public">Público</option></select></label>
           </div>
           <div class="db-form__row">
             <label class="db-field"><span>Venue</span><input name="venue" /></label>

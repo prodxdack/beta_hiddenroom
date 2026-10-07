@@ -52,7 +52,7 @@ function renderMoreNav(activeModule, navPath, drawer = false) {
 let globalSessionSnapshot = null;
 
 const HR_COPY_EDITOR_CANDIDATE_SELECTOR = "h1,h2,h3,h4,h5,h6,p,a,button,li,dt,dd,blockquote,figcaption,legend,summary,span,small";
-const HR_COPY_EDITOR_IGNORE_SELECTOR = "#hr-global-nav,#hr-beat-player,#hr-beat-player-fullscreen,#posts-grid,#editorial-grid,#featured-grid,#post-content,#related-grid,#product-grid,#beat-grid,#product-detail,#cart-items,#cart-summary,#orders-list,#tickets-list,#ticket-result,#studio-request-result,#studio-price,script,style,noscript,svg,canvas,video,audio,iframe,input,textarea,select,option,[aria-hidden=\"true\"],[data-hr-copy-ignore],[data-hr-session],[data-hr-drawer-session],.site-status,.site-version,#cursor,#cursorRing";
+const HR_COPY_EDITOR_IGNORE_SELECTOR = "#hr-global-nav,#hr-beat-player,#hr-beat-player-fullscreen,#posts-grid,#editorial-grid,#featured-grid,#post-content,#related-grid,#product-grid,#beat-grid,#product-detail,#cart-items,#cart-summary,#orders-list,#tickets-list,#ticket-result,#studio-request-result,#studio-price,#events-grid,#events-status,script,style,noscript,svg,canvas,video,audio,iframe,input,textarea,select,option,[aria-hidden=\"true\"],[data-hr-copy-ignore],[data-hr-session],[data-hr-drawer-session],.site-status,.site-version,#cursor,#cursorRing";
 const hrCopyEditorState = {
   root: null,
   toggle: null,
@@ -599,6 +599,14 @@ function renderSubNav(module) {
 
   if (module === "portal") {
     return "";
+  }
+
+  if (module === "events") {
+    const isAdminPage = path.endsWith("/admin.html");
+    return [
+      item("/eventos/", "Cartelera", !isAdminPage),
+      item("/eventos/admin.html", "Administrar", isAdminPage, " data-admin-nav-link hidden"),
+    ].join("");
   }
 
   if (module === "tickets") {
