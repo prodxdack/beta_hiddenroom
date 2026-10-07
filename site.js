@@ -620,8 +620,13 @@ function renderSubNav(module) {
   return "";
 }
 
+function isPortalDashboardPage() {
+  return document.body.classList.contains("db-body")
+    && !document.body.classList.contains("events-admin-page");
+}
+
 function renderNavActions(module) {
-  if (document.body.classList.contains("db-body")) {
+  if (isPortalDashboardPage()) {
     return `
       <button class="hr-nav__notifications" id="js-notifications-toggle" aria-label="Notificaciones"
         aria-expanded="false" aria-controls="js-notifications-panel">
@@ -680,7 +685,7 @@ function globalAuthLoadingMarkup(drawer = false) {
 }
 
 function renderGlobalDrawer(activeModule) {
-  const isPortalDashboard = document.body.classList.contains("db-body");
+  const isPortalDashboard = isPortalDashboardPage();
   const navPath = window.location.pathname;
   const drawerSessionMarkup = isPortalDashboard
     ? `
@@ -1007,7 +1012,7 @@ window.HiddenRoomNavigation = window.HiddenRoomNavigation || {
 };
 
 async function hydrateGlobalSession() {
-  if (document.body.classList.contains("db-body")) return;
+  if (isPortalDashboardPage()) return;
   const sessionTargets = document.querySelectorAll("[data-hr-session]");
   const drawerTargets = document.querySelectorAll("[data-hr-drawer-session]");
   if (!sessionTargets.length && !drawerTargets.length) return;

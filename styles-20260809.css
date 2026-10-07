@@ -15026,3 +15026,36 @@ body span[data-hr-copy-segment] {
     font-size: 10px;
   }
 }
+
+/* Events admin uses the global site shell without the ERP viewport lock. */
+body.events-admin-page {
+  height: auto;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+body.events-admin-page .db-main {
+  width: 100%;
+  min-height: calc(100dvh - var(--hr-nav-height, 72px));
+  overflow: visible;
+  padding-top: clamp(28px, 4vw, 56px);
+  padding-bottom: calc(
+    var(--hr-player-height, 104px) +
+    var(--hr-player-bottom, 12px) +
+    48px
+  );
+}
+
+@media (max-width: 800px) {
+  body.events-admin-page.hr-has-global-nav.hr-has-subnav {
+    padding-top: calc(
+      var(--hr-nav-height-mobile, 64px) +
+      var(--hr-subnav-height-mobile, 42px)
+    );
+  }
+
+  body.events-admin-page .db-main {
+    padding-top: 28px;
+  }
+}
