@@ -410,6 +410,7 @@ function initGlobalCopyEditor() {
     </aside>
   `;
   document.body.append(root);
+  root.querySelector(".hr-copy-editor__panel")?.remove();
   hrCopyEditorState.root = root;
   hrCopyEditorState.toggle = root.querySelector(".hr-copy-editor__toggle");
   hrCopyEditorState.quickActions = root.querySelector(".hr-copy-editor__quick-actions");
