@@ -8896,6 +8896,7 @@ function membershipPendingBalanceSummary(rows = []) {
 function membershipSummaryTone(key, value) {
   const normalized = normalizeCatalogValue(value);
   if (key === 'status') {
+    if (normalized.includes('CANCELADA POR INCUMPLIMIENTOS')) return 'danger';
     if (normalized === 'CON ADEUDO') return 'danger';
     if (normalized === 'ACTIVE') return 'success';
     if (normalized === 'PAUSED') return 'warning';
@@ -8925,8 +8926,17 @@ function membershipDisplayStatus(rows = []) {
     .sort((a, b) => compareDateOnly(a.fecha_esperada, b.fecha_esperada))
     .at(-1);
   if (!latest) return '-';
-  if (rows.some(rowHasOpenMembershipDebt)) return 'CON ADEUDO';
-  return latest.estado_operativo || '-';
+
+  const normalizedStatus = normalizeCatalogValue(latest.estado_operativo);
+  const statusLabel = rows.some(rowHasOpenMembershipDebt)
+    ? 'CON ADEUDO'
+    : latest.estado_operativo || '-';
+
+  if (!['CANCELLED', 'CANCELADA'].includes(normalizedStatus)) return statusLabel;
+  if (['CANCELLED', 'CANCELADA'].includes(normalizeCatalogValue(statusLabel))) {
+    return 'CANCELADA POR INCUMPLIMIENTOS';
+  }
+  return 'CANCELADA POR INCUMPLIMIENTOS - ' + statusLabel;
 }
 
 function monthLabel(monthKey) {
