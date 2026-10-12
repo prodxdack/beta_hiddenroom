@@ -7923,7 +7923,7 @@ function renderMembershipDashboardTable(rows = [], options = {}) {
     ? rows.map((row) => renderMembershipDashboardRow(row, deliveryByWeek.get(Number(row.semana ?? 0)), options)).join('')
     : `
       <tr class="db-table__empty-row hr-table-empty">
-        <td colspan="8" class="db-empty hr-table-empty">Sin datos de membresía.</td>
+        <td colspan="7" class="db-empty hr-table-empty">Sin datos de membresía.</td>
       </tr>
     `;
 
@@ -7937,7 +7937,6 @@ function renderMembershipDashboardTable(rows = [], options = {}) {
             <th scope="col">Estado</th>
             <th scope="col">Saldo</th>
             <th scope="col">Fecha de saldo</th>
-            <th scope="col">Entrega programada</th>
             <th scope="col">Fecha de entrega</th>
             <th scope="col">Notas</th>
           </tr>
@@ -7984,7 +7983,6 @@ function renderMembershipDashboardRow(row, delivery = null, options = {}) {
       <td class="${escapeAttr(membershipCellClass('estado', row).trim())}">${escapeHTML(row.estado ?? '-')}</td>
       <td class="${escapeAttr(membershipCellClass('saldo', row).trim())}">${formatMembershipRowBalance(row)}</td>
       <td>${escapeHTML(formatDisplayDateOnly(row.fecha_de_saldo))}</td>
-      <td>${escapeHTML(formatDisplayDateOnly(computedDelivery?.estimatedDelivery))}<br><small>${escapeHTML(computedDelivery ? (computedDelivery.delayApplied || `${computedDelivery.deliveryDelayWeeks ?? 0} semanas`) : 'Sin entrega calculada')}</small></td>
       <td>${options.canEditMaterialDelivery ? renderMembershipDeliveryDateInput(row, computedDelivery, deliveryFormId, cycleNumber, deliveredAtText) : escapeHTML(deliveredAtText)}</td>
       <td>${options.canEditMaterialDelivery ? renderMembershipSessionNotesInput(row, sessionNotesFormId) : escapeHTML(displayNotes || '-')}</td>
     </tr>
