@@ -8672,8 +8672,7 @@ function buildMembershipRows(memberships = [], sessions = [], transactions = [],
       const weeks = generateMembershipWeeks(membership, generationEndDate);
       const payments = membershipPayments.filter((tx) => rowMatchesMembership(tx, membership));
       let paymentIndex = 0;
-      let availableCredit = 0;
-      let availableCreditDate = null;
+      const availableCredits = [];
 
       weeks.forEach((week) => {
         const weekSessions = sessionsForMembershipWeek(week, membershipSessionRows);
@@ -8682,21 +8681,38 @@ function buildMembershipRows(memberships = [], sessions = [], transactions = [],
         const weekObligation = membershipWeekObligation(week, weekSessions);
 
         while (paymentIndex < payments.length && compareDateOnly(payments[paymentIndex].date, week.fecha_esperada) <= 0) {
-          availableCredit += payments[paymentIndex].amount;
-          availableCreditDate = payments[paymentIndex].date;
+          availableCredits.push({
+            amount: payments[paymentIndex].amount,
+            date: payments[paymentIndex].date,
+          });
           paymentIndex += 1;
         }
 
-        let coveringPayment = null;
-        while (availableCredit < weekObligation && paymentIndex < payments.length) {
-          availableCredit += payments[paymentIndex].amount;
-          coveringPayment = payments[paymentIndex];
-          availableCreditDate = payments[paymentIndex].date;
+        let remainingObligation = weekObligation;
+        let fechaSaldo = null;
+        const consumeAvailableCredit = () => {
+          while (remainingObligation > 0 && availableCredits.length) {
+            const credit = availableCredits[0];
+            const consumed = Math.min(credit.amount, remainingObligation);
+            credit.amount -= consumed;
+            remainingObligation -= consumed;
+            if (consumed > 0) fechaSaldo = credit.date;
+            if (credit.amount <= 0) availableCredits.shift();
+          }
+        };
+
+        consumeAvailableCredit();
+        while (remainingObligation > 0 && paymentIndex < payments.length) {
+          availableCredits.push({
+            amount: payments[paymentIndex].amount,
+            date: payments[paymentIndex].date,
+          });
           paymentIndex += 1;
+          consumeAvailableCredit();
         }
 
-        const covered = availableCredit >= weekObligation;
-        const fechaSaldo = covered ? (coveringPayment?.date ?? availableCreditDate ?? week.fecha_esperada) : null;
+        const covered = remainingObligation <= 0;
+        const availableCredit = availableCredits.reduce((total, credit) => total + credit.amount, 0);
         let estado = 'PENDIENTE';
         let saldo = null;
         let saldo_tipo = null;
@@ -8706,15 +8722,11 @@ function buildMembershipRows(memberships = [], sessions = [], transactions = [],
           else if (compareDateOnly(fechaSaldo, week.week_end) <= 0) estado = 'CORRIENTE';
           else estado = 'ATRASADO';
 
-          availableCredit -= weekObligation;
           saldo = availableCredit > 0 ? availableCredit : null;
-          if (availableCredit <= 0) availableCreditDate = null;
         } else if (compareDateOnly(week.week_end, today) < 0) {
           estado = 'ATRASADO';
           saldo = availableCredit - weekObligation;
           saldo_tipo = 'adeudo';
-          availableCredit = 0;
-          availableCreditDate = null;
         } else if (availableCredit < weekObligation) {
           saldo = availableCredit - weekObligation;
           saldo_tipo = 'pendiente';
