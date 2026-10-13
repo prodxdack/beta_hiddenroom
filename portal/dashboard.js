@@ -9173,6 +9173,7 @@ function membershipHasCancelledStatus(rows = []) {
 }
 
 function nextMembershipDeliveryText(rows = []) {
+  if (membershipHasCancelledStatus(rows)) return 'SIN PR\u00D3XIMA ENTREGA POR MEMBRES\u00CDA CANCELADA';
   const deliveries = membershipMaterialDeliveries(rows);
   if (!deliveries.length) return 'Sin material trabajado';
   const nextDelivery = deliveries.find((item) => item.status !== 'ENTREGADA');
@@ -9214,7 +9215,7 @@ function renderMembershipSummary(rows = []) {
     { key: 'next-session', label: 'PRÓXIMA SESIÓN:', value: upcoming ? formatDisplayDateOnly(upcoming.fecha_de_sesion || upcoming.fecha_esperada) : 'Sin próxima sesión' },
     { key: 'next-delivery', label: 'PRÓXIMA ENTREGA:', value: nextMembershipDeliveryText(rows) },
     { key: 'expired', label: 'MEMBRESÍAS VENCIDAS:', value: expiredText },
-  ].filter((item) => !(item.key === 'next-delivery' && membershipHasCancelledStatus(rows)));
+  ];
 
   return `
     <div class="db-membership-summary" aria-label="Resumen de membresía">
