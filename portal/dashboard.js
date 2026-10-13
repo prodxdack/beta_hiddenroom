@@ -9162,6 +9162,16 @@ function applyMembershipComputedDeliveries(rows = []) {
   });
 }
 
+function membershipHasCancelledStatus(rows = []) {
+  const latest = rows
+    .slice()
+    .sort((a, b) => compareDateOnly(a.fecha_esperada, b.fecha_esperada))
+    .at(-1);
+  const normalized = normalizeCatalogValue(latest?.estado_operativo);
+  return ['CANCELLED', 'CANCELADA'].includes(normalized)
+    || normalized.includes('CANCELADA POR INCUMPLIMIENTOS');
+}
+
 function nextMembershipDeliveryText(rows = []) {
   const deliveries = membershipMaterialDeliveries(rows);
   if (!deliveries.length) return 'Sin material trabajado';
@@ -9204,7 +9214,7 @@ function renderMembershipSummary(rows = []) {
     { key: 'next-session', label: 'PRÓXIMA SESIÓN:', value: upcoming ? formatDisplayDateOnly(upcoming.fecha_de_sesion || upcoming.fecha_esperada) : 'Sin próxima sesión' },
     { key: 'next-delivery', label: 'PRÓXIMA ENTREGA:', value: nextMembershipDeliveryText(rows) },
     { key: 'expired', label: 'MEMBRESÍAS VENCIDAS:', value: expiredText },
-  ];
+  ].filter((item) => !(item.key === 'next-delivery' && membershipHasCancelledStatus(rows)));
 
   return `
     <div class="db-membership-summary" aria-label="Resumen de membresía">
