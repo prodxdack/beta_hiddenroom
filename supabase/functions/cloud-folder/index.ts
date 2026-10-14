@@ -128,11 +128,23 @@ Deno.serve(async (req) => {
     .maybeSingle();
 
   if (callerProfileError) return error(callerProfileError.message ?? 'Failed to verify user', 500);
-  if (!callerProfile || !hasAdminRole(callerProfile.roles)) return error('Forbidden', 403);
 
   const body = await req.json().catch(() => null);
   const requestedPath = normalizeRequestPath((body as any)?.path);
   const folderName = String((body as any)?.folderName || '').trim();
+  const isAdmin = Boolean(callerProfile && hasAdminRole(callerProfile.roles));
+  let hasAcademiaAdmin = false;
+  if (!isAdmin && ((requestedPath === '/academia' || requestedPath.startsWith('/academia/')) || (requestedPath === '/' && folderName.toLowerCase() === 'academia'))) {
+    const { data: permissionRows, error: permissionError } = await adminClient
+      .from('user_permissions')
+      .select('permission_key')
+      .eq('user_id', callerData.user.id)
+      .eq('permission_key', 'academia.admin')
+      .limit(1);
+    if (permissionError) return error(permissionError.message ?? 'Failed to verify permissions', 500);
+    hasAcademiaAdmin = Array.isArray(permissionRows) && permissionRows.length > 0;
+  }
+  if (!isAdmin && !hasAcademiaAdmin) return error('Forbidden', 403);
 
   if (!folderName) return error('El nombre de carpeta es requerido.', 400);
 

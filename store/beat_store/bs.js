@@ -2,12 +2,15 @@
 import { beatCardMarkup as sharedBeatCardMarkup } from "./beat-card.js?v=20261002-runtime-assets-v1";
 
 const SUPABASE_URL = "https://rpcunbkstadgngqrjafp.supabase.co";
+import { createCloudSourcePicker } from '../../assets/js/cloud-source-picker.js';
+
 const SUPABASE_ANON_KEY = "sb_publishable_7v_FIgTjWjJgtT1YHIAYSw_bRBmQjZO";
 const CART_STORAGE_KEY = "hidden_room_store_cart";
 const CLOUD_ORIGIN = "https://cloud.hiddenroom.mx";
 const BEAT_STORE_ENDPOINT = `${CLOUD_ORIGIN}/api/beat-store`;
 const ANALYZE_BEAT_AUDIO_ENDPOINT = `${SUPABASE_URL}/functions/v1/analyze-beat-audio`;
 const BEAT_STORE_CLOUD_PATH = "/beats_store";
+const CLOUD_FUNCTION_BASE = `${SUPABASE_URL}/functions/v1`;
 const supabase = await window.HiddenRoomSupabase.getClient();
 const hrBeatStoreLifecycle = new AbortController();
 window.HiddenRoomApp?.register(() => hrBeatStoreLifecycle.abort());
@@ -1465,6 +1468,36 @@ function addBeatToCart(itemId) {
   showNotice("Beat agregado al carrito");
 }
 
+function setBeatCloudInputFile(input, file) {
+  if (!input || !file) return;
+  const transfer = new DataTransfer();
+  transfer.items.add(file);
+  input.files = transfer.files;
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function setupBeatCloudPickers() {
+  if (!state.isAdmin) return;
+  [{ key: "beat-cover", input: beatCoverInput, label: "portada" }, { key: "beat-audio", input: beatUploadInput, label: "audio" }].forEach(({ key, input, label }) => {
+    const button = document.querySelector(`[data-cloud-source="${key}"]`);
+    if (!button || !input || button.dataset.cloudPickerReady === "true") return;
+    button.dataset.cloudPickerReady = "true";
+    createCloudSourcePicker({
+      button,
+      supabase,
+      cloudFunctionBase: CLOUD_FUNCTION_BASE,
+      allowFolders: false,
+      title: `Seleccionar ${label} desde Cloud`,
+      onSelect: ({ sourceFile, source }) => {
+        if (!sourceFile) throw new Error("Beat Store solo permite archivos individuales.");
+        setBeatCloudInputFile(input, sourceFile);
+        if (label === "audio") handleBeatAudioSelection();
+        if (label === "portada") handleBeatCoverSelection();
+        showNotice(`${source.name} seleccionado desde Cloud`);
+      },
+    });
+  });
+}
 function initializeAdminPanel() {
   if (!state.isAdmin || !adminPanel) return;
   if (adminFormSlot && adminForm && adminForm.parentElement !== adminFormSlot) adminFormSlot.append(adminForm);
@@ -1474,6 +1507,7 @@ function initializeAdminPanel() {
     adminStatus.insertAdjacentHTML('beforeend', ' <a data-review-queue-link class="secondary-button hr-btn" href="review.html">Bandeja de revisión</a>');
   }
   resetAdminForm();
+  setupBeatCloudPickers();
   resetBeatLicenseForm();
   renderAdminProducts();
   renderBeatLicenseAdmin();

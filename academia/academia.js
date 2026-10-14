@@ -1,3 +1,5 @@
+import { cloudSourceToFile, createCloudSourcePicker, joinCloudPath, walkCloudSource } from "../assets/js/cloud-source-picker.js";
+
 const state = {
   supabase: null,
   user: null,
@@ -14,6 +16,7 @@ const state = {
   tableEditorTable: "academy_courses",
   tableEditorSearch: "",
   view: new URLSearchParams(window.location.search).get("view") || "courses",
+  cloudPickers: [],
 };
 
 const hrAcademiaLifecycle = new AbortController();
@@ -424,18 +427,25 @@ function cloudDownloadRequestFromHref(href) {
   const url = new URL(href, window.location.href);
   const cloudRoot = new URL(CLOUD_HIDDENROOM_URL);
   if (url.origin !== cloudRoot.origin) return null;
+  const queryPath = url.searchParams.get("path");
+  const queryName = url.searchParams.get("name");
+  if (queryPath && queryName && (url.pathname.endsWith("/api/academy-folder") || url.pathname.endsWith("/api/academy-download"))) {
+    return { path: normalizeCloudPath(queryPath), name: queryName };
+  }
   let parts = decodeURIComponent(url.pathname).split("/").filter(Boolean);
   if (parts[0] === "files") parts = parts.slice(1);
   const name = parts.pop();
   if (!name) return null;
-  return { path: normalizeCloudPath(`/${parts.join("/")}`), name };
+  return { path: normalizeCloudPath("/" + parts.join("/")), name };
 }
-
 async function fetchAcademiaCloudBlob(link, accept = "application/octet-stream", mode = "view") {
   const request = cloudDownloadRequestFromHref(link?.href);
   if (!request) throw new Error("Ruta de archivo Cloud invalida.");
   const safeMode = mode === "download" ? "download" : "view";
-  const apiUrl = `${CLOUD_HIDDENROOM_URL.replace(/\/$/, "")}/api/academy-download?path=${encodeURIComponent(request.path)}&name=${encodeURIComponent(request.name)}&mode=${safeMode}`;
+  const isFolder = link?.dataset?.academiaCloudFolderDownload === "true";
+  const endpoint = isFolder ? "academy-folder" : "academy-download";
+  const modeQuery = isFolder ? "" : "&mode=" + safeMode;
+  const apiUrl = CLOUD_HIDDENROOM_URL.replace(/\/$/, "") + "/api/" + endpoint + "?path=" + encodeURIComponent(request.path) + "&name=" + encodeURIComponent(request.name) + modeQuery;
   const response = await cloudApiFetch(apiUrl, { headers: { Accept: accept } });
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
@@ -483,6 +493,27 @@ async function downloadAcademiaCloudFile(link) {
   }
 }
 
+function isAcademiaFolder(file) {
+  return String(file?.mime_type || '').toLowerCase() === 'inode/directory'
+    || String(file?.storage_path || '').includes('/api/academy-folder');
+}
+async function downloadAcademiaCloudFolder(link) {
+  link.setAttribute("aria-busy", "true");
+  try {
+    const { request, blob } = await fetchAcademiaCloudBlob(link, "application/zip", "download");
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = request.name + ".zip";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(objectUrl);
+    setStatus("Descarga de carpeta iniciada.");
+  } finally {
+    link.removeAttribute("aria-busy");
+  }
+}
 function isPdfFile(file) {
   return String(file?.mime_type || "").toLowerCase().includes("pdf") || String(file?.file_name || file?.storage_path || "").toLowerCase().endsWith(".pdf");
 }
@@ -495,10 +526,11 @@ function renderAcademiaFileActions(file) {
   if (!file?.storage_path) return "";
   const href = escapeHtml(file.storage_path);
   const canDownload = canDownloadContentFile(file);
+  const folder = isAcademiaFolder(file);
   return `
     <div class="academia-file-actions">
-      ${isPdfFile(file) ? `<a class="academia-button academia-download-action" href="${href}" data-academia-cloud-view="true" target="_blank" rel="noopener">Ver</a>` : ""}
-      ${canDownload ? `<a class="academia-button secondary academia-download-action" href="${href}" data-academia-cloud-download="true">Descargar</a>` : ""}
+      ${!folder && isPdfFile(file) ? `<a class="academia-button academia-download-action" href="${href}" data-academia-cloud-view="true" target="_blank" rel="noopener">Ver</a>` : ""}
+      ${canDownload ? `<a class="academia-button secondary academia-download-action" href="${href}" data-academia-cloud-${folder ? "folder-" : ""}download="true">Descargar</a>` : ""}
     </div>
   `;
 }
@@ -760,7 +792,49 @@ function renderAcademiaTableEditor() {
     </section>
   `;
 }
+function destroyAcademiaCloudPickers() {
+  state.cloudPickers.splice(0).forEach((picker) => picker.destroy());
+}
+
+async function createAcademiaCloudFolderAt(basePath, folderName) {
+  const response = await cloudApiFetch(`${CLOUD_FUNCTION_BASE}/cloud-folder`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: normalizeCloudPath(basePath), folderName: String(folderName || "").trim() }) });
+  if (!response.ok) throw new Error((await response.json().catch(() => ({})))?.error || "No se pudo crear la carpeta en Cloud.");
+  return response.json();
+}
+async function ensureAcademiaCloudFolderPath(path) {
+  const normalized = normalizeCloudPath(path); if (normalized === "/") return;
+  let current = "/";
+  for (const segment of normalized.slice(1).split("/").filter(Boolean)) { await createAcademiaCloudFolderAt(current, segment); current = joinCloudPath(current, segment); }
+}
+function buildAcademiaFolderDownloadUrl(parentPath, folderName) { return `${CLOUD_HIDDENROOM_URL.replace(/\/$/, "")}/api/academy-folder?path=${encodeURIComponent(normalizeCloudPath(parentPath))}&name=${encodeURIComponent(folderName)}`; }
+async function uploadAcademiaCloudFolder(source, targetBasePath) {
+  const targetFolderPath = joinCloudPath(targetBasePath, source.name);
+  await ensureAcademiaCloudFolderPath(targetFolderPath);
+  const files = await walkCloudSource(source, { supabase: state.supabase, cloudFunctionBase: CLOUD_FUNCTION_BASE });
+  let totalSize = 0;
+  for (const sourceFile of files) {
+    const file = await cloudSourceToFile(sourceFile, { supabase: state.supabase, cloudOrigin: CLOUD_HIDDENROOM_URL });
+    const relativeParent = sourceFile.relativePath.split("/").slice(0, -1).join("/");
+    await uploadAcademiaCloudFile(file, relativeParent ? joinCloudPath(targetFolderPath, relativeParent) : targetFolderPath);
+    totalSize += file.size;
+  }
+  return { fileName: source.name, cloudPath: targetFolderPath, mimeType: "inode/directory", fileSize: totalSize, url: buildAcademiaFolderDownloadUrl(targetBasePath, source.name) };
+}
+function bindAcademiaCloudPickers() {
+  destroyAcademiaCloudPickers();
+  document.querySelectorAll("form[data-admin-form=content] [data-content-cloud]").forEach((button) => {
+    const form = button.closest("form"); const input = form?.querySelector("[data-content-file]"); if (!form || !input) return;
+    const picker = createCloudSourcePicker({ button, supabase: state.supabase, cloudFunctionBase: CLOUD_FUNCTION_BASE, allowFolders: true, title: "Seleccionar contenido desde Cloud", rootPath: "/academia", onSelect: ({ sourceFile, source }) => {
+      form.__hrCloudSource = source; form.__hrCloudFile = sourceFile || null;
+      if (sourceFile) { const transfer = new DataTransfer(); transfer.items.add(sourceFile); input.files = transfer.files; } else input.value = "";
+      const label = form.querySelector("[data-content-source]"); if (label) label.textContent = `${source.kind === "folder" ? "Carpeta" : "Archivo"} seleccionado desde Cloud: ${source.name}`;
+      syncContentFileField(form);
+    }, onError: (error) => setStatus(error?.message || "No se pudo seleccionar el contenido de Cloud.", "error") });
+    if (picker) state.cloudPickers.push(picker);
+  });
+}
 function renderAdmin() {
+  destroyAcademiaCloudPickers();
   const showAdmin = currentView() === "admin";
   els.admin.hidden = !showAdmin || !state.isAdmin;
   if (showAdmin && !state.isAdmin) setStatus("Necesitas permisos admin para gestionar Academia.", "error");
@@ -795,7 +869,7 @@ function renderAdmin() {
         <label><span>Modulo</span><select name="module_id" data-content-module-select required>${optionList(courseModules(state.courses[0]?.id, courseCycles(state.courses[0]?.id)[0] || ""), (module) => module.title)}</select></label>
         <label><span>Titulo</span><input name="title" required /></label>
         <label><span>Tipo</span><select name="content_type" data-content-type-select><option value="text">Texto</option><option value="video">Video</option><option value="link">Link</option><option value="file">Archivo</option></select></label>
-        <label data-content-file-field hidden><span>Archivo</span><input name="content_file" type="file" data-content-file /><small class="academia-hint">Se guardara en Cloud como contenido general del curso.</small></label>
+        <label data-content-file-field hidden><span>Archivo</span><input name="content_file" type="file" data-content-file /><button class="academia-button secondary" type="button" data-content-cloud>Seleccionar desde Cloud</button><small data-content-source class="academia-hint">Se guardara en Cloud como contenido general del curso.</small></label>
         <div class="db-upload-progress" data-content-upload-progress hidden>
           <div class="db-upload-progress__head">
             <span data-content-upload-progress-label>Esperando archivo</span>
@@ -822,6 +896,7 @@ function renderAdmin() {
     </div>
     ${renderAcademiaTableEditor()}
   `;
+  bindAcademiaCloudPickers();
 }
 
 async function loadAcademia() {
@@ -910,9 +985,10 @@ async function handleAdminSubmit(form) {
   }
   if (kind === "content") {
     const contentType = data.content_type || "text";
-    const file = form.querySelector("[data-content-file]")?.files?.[0] || null;
+    const source = form.__hrCloudSource || null;
+    const file = form.querySelector("[data-content-file]")?.files?.[0] || form.__hrCloudFile || null;
     let contentRow = null;
-    if (contentType === "file" && !file) throw new Error("Selecciona un archivo para subir a Cloud.");
+    if (contentType === "file" && !file && !source) throw new Error("Selecciona un archivo o carpeta para subir a Cloud.");
     try {
       if (contentType === "file") {
         setFormPending(form, true, "Subiendo...");
@@ -922,12 +998,12 @@ async function handleAdminSubmit(form) {
       const { data: insertedContent, error } = await state.supabase.from("academy_module_contents").insert(payload).select("id,module_id,title").maybeSingle();
       if (error) throw error;
       contentRow = insertedContent;
-      if (contentType === "file" && file && contentRow?.id) {
+      if (contentType === "file" && (file || source) && contentRow?.id) {
         const module = state.modules.find((item) => item.id === data.module_id);
         const course = state.courses.find((item) => item.id === module?.course_id);
         setContentUploadProgress(form, 18, "Preparando Cloud");
-        setContentUploadProgress(form, 42, "Subiendo archivo");
-        const upload = await uploadAcademiaCloudFile(file, academyContentCloudPath(course, module));
+        setContentUploadProgress(form, 42, source?.kind === "folder" ? "Copiando carpeta" : "Subiendo archivo");
+        const upload = source?.kind === "folder" ? await uploadAcademiaCloudFolder(source, academyContentCloudPath(course, module)) : await uploadAcademiaCloudFile(file, academyContentCloudPath(course, module));
         setContentUploadProgress(form, 78, "Registrando archivo");
         const filePayload = {
           content_id: contentRow.id,
@@ -1056,7 +1132,7 @@ function syncContentFileField(form) {
   const field = form.querySelector("[data-content-file-field]");
   const input = form.querySelector("[data-content-file]");
   if (field) field.hidden = type !== "file";
-  if (input) input.required = type === "file";
+  if (input) input.required = type === "file" && !form.__hrCloudSource;
   if (type !== "file") resetContentUploadProgress(form);
 }
 function bindEvents() {
@@ -1078,6 +1154,13 @@ function bindEvents() {
     if (cloudView) {
       event.preventDefault();
       viewAcademiaCloudFile(cloudView).catch((error) => { console.error("Academia cloud view failed", error); setStatus(supabaseErrorMessage(error), "error"); });
+      return;
+    }
+
+    const cloudFolderDownload = event.target.closest("[data-academia-cloud-folder-download]");
+    if (cloudFolderDownload) {
+      event.preventDefault();
+      downloadAcademiaCloudFolder(cloudFolderDownload).catch((error) => { console.error("Academia cloud folder download failed", error); setStatus(supabaseErrorMessage(error), "error"); });
       return;
     }
 
@@ -1110,6 +1193,8 @@ function bindEvents() {
       syncContentFileField(contentType.closest("form"));
       return;
     }
+    const contentFile = event.target.closest("[data-content-file]");
+    if (contentFile) { contentFile.closest("form").__hrCloudSource = null; contentFile.closest("form").__hrCloudFile = null; syncContentFileField(contentFile.closest("form")); }
     const contentCourse = event.target.closest("[data-content-course-select], [data-content-cycle-select]");
     if (contentCourse) {
       syncContentModuleSelect(contentCourse.closest("form"));

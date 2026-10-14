@@ -1,7 +1,10 @@
+import { createCloudSourcePicker } from '../../assets/js/cloud-source-picker.js';
+
 const supabase = await window.HiddenRoomSupabase.getClient();
 const SUPABASE_URL = 'https://rpcunbkstadgngqrjafp.supabase.co';
 const ANALYZE_BEAT_AUDIO_ENDPOINT = `${SUPABASE_URL}/functions/v1/analyze-beat-audio`;
 const CLOUD_ORIGIN = 'https://cloud.hiddenroom.mx';
+const CLOUD_FUNCTION_BASE = `${SUPABASE_URL}/functions/v1`;
 const form = document.getElementById('beat-form');
 const errorElement = document.getElementById('form-error');
 const statusElement = document.getElementById('form-status');
@@ -36,6 +39,7 @@ async function init() {
   const [{ data: licenses, error: licenseError }] = await Promise.all([supabase.from('beat_licenses').select('id, name, min_price, max_price, description, format, is_active').eq('is_active', true).order('created_at')]);
   if (licenseError) throw new Error(licenseError.message); state.licenses = licenses || [];
   renderLicenses();
+  setupCloudPickers();
   const id = new URLSearchParams(location.search).get('id'); if (id) await loadProduct(id);
   form.addEventListener('submit', (event) => saveDraft(event, false)); reviewButton.addEventListener('click', () => saveDraft(null, true));
   form.addEventListener('click', handleAutodetectClick);
@@ -48,6 +52,36 @@ async function init() {
   form.elements.slug.addEventListener('input', (event) => { event.target.dataset.touched = 'true'; });
 }
 
+function setCloudInputFile(input, file) {
+  if (!input || !file) return;
+  const transfer = new DataTransfer();
+  transfer.items.add(file);
+  input.files = transfer.files;
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function setupCloudPickers() {
+  ["cover", "audio"].forEach((kind) => {
+    const button = form.querySelector(`[data-cloud-source="${kind}"]`);
+    const input = form.elements[kind];
+    if (!button || !input || button.dataset.cloudPickerReady === "true") return;
+    button.dataset.cloudPickerReady = "true";
+    createCloudSourcePicker({
+      button,
+      supabase,
+      cloudFunctionBase: CLOUD_FUNCTION_BASE,
+      allowFolders: false,
+      title: `Seleccionar ${kind === "cover" ? "portada" : "master"} desde Cloud`,
+      onSelect: ({ sourceFile, source }) => {
+        if (!sourceFile) throw new Error("Beat Store solo permite archivos individuales.");
+        setCloudInputFile(input, sourceFile);
+        const stateLabel = document.getElementById(`${kind}-state`);
+        if (stateLabel) stateLabel.textContent = `Seleccionado desde Cloud: ${source.name}`;
+      },
+      onError: (error) => showError(error?.message || "No se pudo seleccionar el archivo de Cloud."),
+    });
+  });
+}
 async function loadProduct(id) {
   const { data, error } = await supabase.from('store_products').select('id, name, slug, price, description, image_url, beat_genre, beat_bpm, beat_key, beat_bpm_autodetected, beat_key_autodetected, beat_preview_status, beat_original_path, beat_mp3_path, beat_stems_path, beat_cover_path, publication_status, review_comment').eq('id', id).eq('producer_user_id', state.session.user.id).maybeSingle();
   if (error || !data) throw new Error(error?.message || 'Beat no encontrado o no pertenece a tu cuenta.');

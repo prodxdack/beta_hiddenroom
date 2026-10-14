@@ -24,19 +24,27 @@ const PORT = Number(process.env.CLOUD_PORT || process.env.PORT || 3001);
 const MAX_UPLOAD_BYTES = Number(process.env.CLOUD_MAX_UPLOAD_BYTES || 100 * 1024 * 1024);
 const FFMPEG_PATH = process.env.FFMPEG_PATH || resolveFfmpegStaticPath() || 'ffmpeg';
 const BEAT_PREVIEW_MAX_UPLOAD_BYTES = Number(process.env.BEAT_PREVIEW_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES);
+const BEAT_MASTER_MP3_BITRATE = process.env.BEAT_MASTER_MP3_BITRATE || '192k';
+const BEAT_PREVIEW_MP3_BITRATE = process.env.BEAT_PREVIEW_MP3_BITRATE || '160k';
+const BEAT_STEMS_MAX_UPLOAD_BYTES = Number(process.env.BEAT_STEMS_MAX_UPLOAD_BYTES || 500 * 1024 * 1024);
 const BEAT_COVER_MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
 const BEAT_COVER_MAX_DIMENSION = 8000;
 const BEAT_COVER_MAIN_SIZE = 1200;
 const BEAT_COVER_THUMB_SIZE = 300;
+const PRODUCER_AVATAR_MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
+const PRODUCER_AVATAR_MAX_DIMENSION = 8000;
+const PRODUCER_AVATAR_SIZE = 640;
 const SERVER_STATUS_INTERVAL_MS = Number(process.env.SERVER_STATUS_INTERVAL_MS || 20_000);
 const SERVER_STATUS_HISTORY_LIMIT = Number(process.env.SERVER_STATUS_HISTORY_LIMIT || 50);
 const SERVER_STATUS_TABLE = process.env.SERVER_STATUS_TABLE || 'server_status_history';
 const SERVER_STATUS_DISK_PATH = process.env.SERVER_STATUS_DISK_PATH || CLOUD_ROOT || '/';
 const CLOUD_UPLOAD_PERMISSION = 'cloud.upload';
+const BEAT_UPLOAD_PERMISSION = 'beats.upload';
 const DOWNLOAD_TOKEN_TTL_MS = Number(process.env.CLOUD_DOWNLOAD_TOKEN_TTL_MS || 2 * 60 * 1000);
 const BEAT_PERMISSION_KEYS = ['beat.store', 'beats.store', 'store.beats', 'store.beat', 'beat_store', 'beats', 'Beat Store', 'module.beats', 'module.beat-store'];
 const BEAT_STORE_DIR = 'beats_store';
 const BEAT_AUDIO_EXTENSIONS = new Set(['.mp3', '.wav', '.m4a', '.ogg', '.flac', '.aac', '.aif', '.aiff']);
+const BEAT_UPLOAD_AUDIO_EXTENSIONS = new Set(['.wav']);
 const BEAT_PREVIEW_AUDIO_EXTENSIONS = new Set(['.mp3']);
 const BEAT_IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
 const BEAT_MIME_TYPES = {
@@ -56,7 +64,7 @@ const BEAT_MIME_TYPES = {
 const PUBLIC_CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, HEAD, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Authorization, Range, Content-Type, X-Beat-Product-Id, X-Beat-Slug, X-Beat-Crop, X-File-Name',
+  'Access-Control-Allow-Headers': 'Authorization, Range, Content-Type, X-Beat-Product-Id, X-Beat-Slug, X-Beat-Crop, X-Producer-Profile-Id, X-Producer-Avatar-Crop, X-File-Name',
   'Access-Control-Expose-Headers': 'Accept-Ranges, Content-Length, Content-Range, Content-Disposition',
 };
 const API_CORS_HEADERS = {
@@ -80,6 +88,48 @@ const MIME_TYPES = {
   '.jpeg': 'image/jpeg',
   '.webp': 'image/webp',
 };
+
+// Only these formats may be served inline to the browser. Downloads keep the
+// historical octet-stream/attachment contract, while previews use the real
+// MIME type so native browser players can request byte ranges.
+const CLOUD_PREVIEW_MIME_TYPES = {
+  '.avif': 'image/avif',
+  '.bmp': 'image/bmp',
+  '.gif': 'image/gif',
+  '.heic': 'image/heic',
+  '.heif': 'image/heif',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.webp': 'image/webp',
+  '.aac': 'audio/aac',
+  '.aif': 'audio/aiff',
+  '.aiff': 'audio/aiff',
+  '.flac': 'audio/flac',
+  '.m4a': 'audio/mp4',
+  '.mp3': 'audio/mpeg',
+  '.oga': 'audio/ogg',
+  '.ogg': 'audio/ogg',
+  '.opus': 'audio/ogg',
+  '.wav': 'audio/wav',
+  '.avi': 'video/x-msvideo',
+  '.m4v': 'video/mp4',
+  '.mkv': 'video/x-matroska',
+  '.mov': 'video/quicktime',
+  '.mp4': 'video/mp4',
+  '.ogv': 'video/ogg',
+  '.webm': 'video/webm',
+  '.pdf': 'application/pdf',
+  '.csv': 'text/csv; charset=utf-8',
+  '.log': 'text/plain; charset=utf-8',
+  '.md': 'text/markdown; charset=utf-8',
+  '.text': 'text/plain; charset=utf-8',
+  '.txt': 'text/plain; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.xml': 'application/xml; charset=utf-8',
+};
+
 
 if (!SUPABASE_URL || !SERVICE_ROLE_KEY || !CLOUD_ROOT) {
   console.error('Missing SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, or CLOUD_HIDDENROOM_ROOT/CLOUD_ROOT');
@@ -188,6 +238,10 @@ function streamFile(req, res, filePath, stats, headers = {}) {
   return pipeReadStream();
 }
 
+function cloudPreviewMimeType(name) {
+  return CLOUD_PREVIEW_MIME_TYPES[path.extname(String(name || '')).toLowerCase()] || null;
+}
+
 function normalizeCloudPath(input) {
   if (!input || input === '/') return '/';
   let normalized = String(input).replace(/\\/g, '/').replace(/\/+/g, '/');
@@ -291,6 +345,10 @@ async function requireCloudUser(req) {
   const roles = parseRoles(profile.roles);
   const permissions = await fetchPermissions(userId);
   const isAdmin = isAdminRole(roles);
+  const isAcademiaAdmin = permissionsInclude(permissions, ['academia.admin']);
+  const producerProfiles = await supabaseFetch(`/rest/v1/producer_profiles?select=id,approval_status,is_active&user_id=eq.${encodedUserId}&limit=1`, { headers: supabaseHeaders() }).catch(() => []);
+  const producerProfile = Array.isArray(producerProfiles) ? producerProfiles[0] : null;
+  const isApprovedProducer = Boolean(producerProfile?.is_active && producerProfile?.approval_status === 'approved');
   const hasBeatStore = isAdmin || permissionsInclude(permissions, BEAT_PERMISSION_KEYS) || await hasBeatStoreDownload(userId);
   const user = {
     id: userId,
@@ -298,7 +356,10 @@ async function requireCloudUser(req) {
     roles,
     permissions,
     isAdmin,
+    isAcademiaAdmin,
+    isApprovedProducer,
     canUpload: isAdmin || permissionsInclude(permissions, [CLOUD_UPLOAD_PERMISSION]),
+    canUploadBeats: isAdmin || permissionsInclude(permissions, [BEAT_UPLOAD_PERMISSION]),
     hasBeatStore,
   };
 
@@ -307,7 +368,12 @@ async function requireCloudUser(req) {
 }
 
 function getUserCloudRoot(user) {
-  const operationalUserId = user.profile?.user_id || user.id;
+  const operationalUserId = String(user.profile?.user_id || "").trim();
+  if (!operationalUserId) {
+    const err = new Error("El perfil no tiene user_id operativo; no se puede crear una ruta Cloud.");
+    err.status = 409;
+    throw err;
+  }
   const label = user.profile?.username || user.profile?.display_name || user.profile?.email || operationalUserId;
   const slug = slugifyUsername(label, 'user');
   return path.join(path.resolve(CLOUD_ROOT), 'users', `${operationalUserId}__${slug}`);
@@ -324,6 +390,78 @@ async function ensureUserCloudFolder(user) {
 
 function getCloudBaseRoot(user) {
   return user.isAdmin ? path.resolve(CLOUD_ROOT) : getUserCloudRoot(user);
+}
+
+function cloudStatePath(baseRoot) {
+  const resolvedRoot = path.resolve(baseRoot);
+  const statePath = path.resolve(resolvedRoot, CLOUD_STATE_FILE);
+  assertInsideRoot(resolvedRoot, statePath);
+  return statePath;
+}
+
+async function readCloudState(baseRoot) {
+  try {
+    const raw = await fsp.readFile(cloudStatePath(baseRoot), 'utf8');
+    const parsed = JSON.parse(raw);
+    return { favorites: Array.isArray(parsed?.favorites) ? parsed.favorites : [] };
+  } catch (err) {
+    if (err?.code === 'ENOENT' || err instanceof SyntaxError) return { favorites: [] };
+    throw err;
+  }
+}
+
+async function writeCloudState(baseRoot, state) {
+  const favorites = Array.isArray(state?.favorites) ? state.favorites : [];
+  await writeAtomicCloudFile(cloudStatePath(baseRoot), JSON.stringify({ version: 1, favorites }, null, 2));
+}
+
+function favoriteKey(requestedPath, name) {
+  return normalizeCloudPath(requestedPath) + '\u0000' + safeChildName(name);
+}
+
+function getTrashRoot(baseRoot) {
+  const resolvedRoot = path.resolve(baseRoot);
+  const trashRoot = path.resolve(resolvedRoot, CLOUD_TRASH_DIR);
+  assertInsideRoot(resolvedRoot, trashRoot);
+  return trashRoot;
+}
+
+function trashManifestPath(baseRoot) {
+  const root = path.resolve(baseRoot);
+  const manifest = path.resolve(getTrashRoot(root), CLOUD_TRASH_MANIFEST);
+  assertInsideRoot(root, manifest);
+  return manifest;
+}
+
+async function readTrashManifest(baseRoot) {
+  try {
+    const raw = await fsp.readFile(trashManifestPath(baseRoot), 'utf8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err) {
+    if (err?.code === 'ENOENT' || err instanceof SyntaxError) return [];
+    throw err;
+  }
+}
+
+async function writeTrashManifest(baseRoot, entries) {
+  const trashRoot = getTrashRoot(baseRoot);
+  await fsp.mkdir(trashRoot, { recursive: true });
+  await writeAtomicCloudFile(trashManifestPath(baseRoot), JSON.stringify(entries, null, 2));
+}
+
+function safeTrashId(raw) {
+  const id = String(raw || '').trim();
+  if (!/^[a-f0-9-]{16,80}$/i.test(id)) throw new Error('Elemento de papelera no permitido.');
+  return id;
+}
+
+function trashStoredPath(baseRoot, storedName) {
+  const name = safeChildName(storedName);
+  const root = path.resolve(baseRoot);
+  const candidate = path.resolve(getTrashRoot(root), name);
+  assertInsideRoot(root, candidate);
+  return candidate;
 }
 
 function getPublicPath(user, normalizedPath) {
@@ -406,6 +544,69 @@ function requireUploadPermission(user) {
   if (!user.canUpload) { const err = new Error('No tienes permiso cloud.upload.'); err.status = 403; throw err; }
 }
 
+function normalizeBackupRelativePath(raw) {
+  const value = String(raw || '').replace(/\\/g, '/').replace(/\/+/g, '/').trim();
+  const parts = value.split('/');
+  if (!value || value.startsWith('/') || parts.some((part) => !part || part === '..' || /[\u0000-\u001f\u007f]/.test(part))) {
+    throw new Error('Ruta de respaldo no permitida.');
+  }
+  return value === '.' ? '.' : parts.join('/');
+}
+
+function getBackupDeleteMarker(user, requestedPath, itemName, itemType) {
+  const normalizedPath = normalizeCloudPath(requestedPath);
+  const pathParts = normalizedPath === '/' ? [] : normalizedPath.slice(1).split('/');
+  const safeName = safeChildName(itemName);
+  let businessUserId = '';
+  let relativeParts = [];
+
+  if (!user.isAdmin) {
+    businessUserId = String(user.profile?.user_id || '').trim();
+    relativeParts = pathParts.concat(safeName);
+  } else if (pathParts[0] === 'users' && pathParts[1]) {
+    const match = String(pathParts[1]).match(/^(.+?)__(?:[^/]+)$/);
+    if (!match) return null;
+    businessUserId = match[1];
+    relativeParts = pathParts.slice(2).concat(safeName);
+  } else if (pathParts.length === 1 && pathParts[0] === 'users') {
+    const match = safeName.match(/^(.+?)__(?:[^/]+)$/);
+    if (!match) return null;
+    businessUserId = match[1];
+    relativeParts = [];
+  } else {
+    return null;
+  }
+
+  if (!businessUserId) return null;
+  return {
+    business_user_id: businessUserId,
+    relative_path: relativeParts.length ? normalizeBackupRelativePath(relativeParts.join('/')) : '.',
+    item_type: itemType,
+    created_by: user.id,
+  };
+}
+
+async function recordBackupTombstone(marker) {
+  await supabaseFetch('/rest/v1/cloud_backup_tombstones', {
+    method: 'POST',
+    headers: { ...supabaseHeaders(), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify(marker),
+  });
+}
+
+async function writeAtomicCloudFile(targetPath, buffer) {
+  const directory = path.dirname(targetPath);
+  await fsp.mkdir(directory, { recursive: true });
+  const temporaryPath = path.join(directory, '.' + path.basename(targetPath) + '.upload-' + crypto.randomBytes(10).toString('hex') + '.part');
+  try {
+    await fsp.writeFile(temporaryPath, buffer, { flag: 'wx' });
+    const handle = await fsp.open(temporaryPath, 'r');
+    try { await handle.sync(); } finally { await handle.close(); }
+    await fsp.rename(temporaryPath, targetPath);
+  } finally {
+    await fsp.unlink(temporaryPath).catch(() => undefined);
+  }
+}
 async function readJson(req) {
   const chunks = [];
   let size = 0;
@@ -486,6 +687,21 @@ function parseBeatCoverCrop(raw) {
   return { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)), size: Math.max(0.05, Math.min(1, size)) };
 }
 
+function producerProfileId(req, url) {
+  const raw = String(req.headers['x-producer-profile-id'] || url?.searchParams.get('profile_id') || '').trim();
+  if (!raw) {
+    const err = new Error('Perfil de productor requerido.');
+    err.status = 400;
+    throw err;
+  }
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(raw)) {
+    const err = new Error('Perfil de productor invalido.');
+    err.status = 400;
+    throw err;
+  }
+  return raw;
+}
+
 function beatCoverProductId(req) {
   const raw = String(req.headers['x-beat-product-id'] || '').trim();
   if (!raw) return '';
@@ -499,13 +715,17 @@ function beatCoverProductId(req) {
 
 async function fetchBeatProduct(productId) {
   if (!productId) return null;
-  const rows = await supabaseFetch(`/rest/v1/store_products?select=id,category,image_url,beat_cover_path,beat_thumb_path&id=eq.${encodeURIComponent(productId)}&limit=1`, { headers: supabaseHeaders() });
+  const rows = await supabaseFetch(`/rest/v1/store_products?select=id,category,producer_user_id,image_url,beat_cover_path,beat_thumb_path&id=eq.${encodeURIComponent(productId)}&limit=1`, { headers: supabaseHeaders() });
   return Array.isArray(rows) ? rows[0] : null;
 }
 
+function canManageBeatUploads(user) {
+  return Boolean(user?.isAdmin || user?.isApprovedProducer || user?.canUploadBeats);
+}
+
 async function assertCanMutateBeatCover(user, productId) {
-  if (!user.isAdmin) {
-    const err = new Error('Solo admin puede actualizar portadas de beats.');
+  if (!canManageBeatUploads(user)) {
+    const err = new Error('Se requiere beats.upload, productor aprobado o admin para actualizar portadas de beats.');
     err.status = 403;
     throw err;
   }
@@ -513,6 +733,11 @@ async function assertCanMutateBeatCover(user, productId) {
   if (productId && (!product || product.category !== 'beats')) {
     const err = new Error('Beat no encontrado.');
     err.status = 404;
+    throw err;
+  }
+  if (!user.isAdmin && (!productId || product.producer_user_id !== user.id)) {
+    const err = new Error('No puedes actualizar archivos de otro productor.');
+    err.status = 403;
     throw err;
   }
   return product;
@@ -621,6 +846,114 @@ async function uploadBeatCover(user, req, res) {
   }
 }
 
+function producerAvatarPathIsManaged(value) {
+  return /^users\/[a-z0-9._-]+\/profile\/avatar\.webp$/i.test(String(value || ''));
+}
+
+function producerAvatarPublicPath(relativeFile) {
+  return `/api/beat-store/producer-avatar?file=${encodeURIComponent(relativeFile)}`;
+}
+
+async function resolveProducerAvatarFile(rawFile) {
+  const relativeFile = String(rawFile || '').replace(/\\/g, '/').replace(/^\/+/, '');
+  if (!producerAvatarPathIsManaged(relativeFile)) throw new Error('Archivo de perfil no permitido.');
+  const root = await getRealRoot(CLOUD_ROOT);
+  const candidate = path.resolve(root, relativeFile);
+  assertInsideRoot(root, candidate);
+  const resolved = await fsp.realpath(candidate);
+  assertInsideRoot(root, resolved);
+  const stats = await fsp.stat(resolved);
+  if (!stats.isFile()) throw new Error('Foto de perfil no encontrada.');
+  return { relativeFile, resolved, stats };
+}
+
+async function fetchProducerProfileForAvatar(profileId, userId) {
+  const rows = await supabaseFetch(`/rest/v1/producer_profiles?select=id,user_id,avatar_url&id=eq.${encodeURIComponent(profileId)}&user_id=eq.${encodeURIComponent(userId)}&limit=1`, {
+    headers: supabaseHeaders(),
+  });
+  return Array.isArray(rows) ? rows[0] : null;
+}
+
+async function writeProducerAvatarImage(tempPath, crop, outputPath) {
+  let meta;
+  try {
+    meta = await sharp(tempPath, { animated: true, limitInputPixels: PRODUCER_AVATAR_MAX_DIMENSION * PRODUCER_AVATAR_MAX_DIMENSION }).metadata();
+  } catch {
+    throw sharpError('La foto de perfil debe ser una imagen valida');
+  }
+  if (!meta?.width || !meta?.height) throw sharpError('La foto de perfil debe ser una imagen valida');
+  if (meta.format === 'svg' || !['jpeg', 'png', 'webp'].includes(meta.format) || (meta.pages || 1) > 1) {
+    throw sharpError('Formato de imagen no permitido');
+  }
+  if (meta.width > PRODUCER_AVATAR_MAX_DIMENSION || meta.height > PRODUCER_AVATAR_MAX_DIMENSION) {
+    throw sharpError('La imagen tiene dimensiones demasiado grandes', 413);
+  }
+
+  const squareMax = Math.min(meta.width, meta.height);
+  const cropSize = crop ? Math.min(squareMax, Math.max(1, Math.round(crop.size * squareMax))) : squareMax;
+  const maxLeft = Math.max(0, meta.width - cropSize);
+  const maxTop = Math.max(0, meta.height - cropSize);
+  const left = crop ? Math.max(0, Math.min(maxLeft, Math.round(crop.x * maxLeft))) : Math.round((meta.width - cropSize) / 2);
+  const top = crop ? Math.max(0, Math.min(maxTop, Math.round(crop.y * maxTop))) : Math.round((meta.height - cropSize) / 2);
+
+  await sharp(tempPath, { limitInputPixels: PRODUCER_AVATAR_MAX_DIMENSION * PRODUCER_AVATAR_MAX_DIMENSION })
+    .rotate()
+    .extract({ left, top, width: cropSize, height: cropSize })
+    .resize(PRODUCER_AVATAR_SIZE, PRODUCER_AVATAR_SIZE, { fit: 'cover' })
+    .webp({ quality: 82, effort: 4 })
+    .toFile(outputPath);
+}
+
+async function uploadProducerAvatar(user, req, res, url) {
+  const profileId = producerProfileId(req, url);
+  const profile = await fetchProducerProfileForAvatar(profileId, user.id);
+  if (!profile) {
+    const err = new Error('Solo el propietario puede cambiar la foto de este productor.');
+    err.status = 403;
+    throw err;
+  }
+
+  const contentLength = Number(req.headers['content-length'] || 0);
+  if (contentLength > PRODUCER_AVATAR_MAX_UPLOAD_BYTES) throw sharpError('La imagen supera el limite de 12 MB', 413);
+  const crop = parseBeatCoverCrop(req.headers['x-producer-avatar-crop'] || url?.searchParams.get('crop'));
+  let temp;
+  let outputPath = '';
+  let tempOutput = '';
+  let outputWritten = false;
+  try {
+    temp = await readLimitedUploadToTemp(req, PRODUCER_AVATAR_MAX_UPLOAD_BYTES);
+    if (!temp.size) throw sharpError('Selecciona una imagen valida');
+
+    const userRoot = await getRealRoot(getUserCloudRoot(user));
+    const profileDir = path.resolve(userRoot, 'profile');
+    assertInsideRoot(userRoot, profileDir);
+    await fsp.mkdir(profileDir, { recursive: true });
+    outputPath = path.resolve(profileDir, 'avatar.webp');
+    assertInsideRoot(userRoot, outputPath);
+    const relativeFile = path.relative(await getRealRoot(CLOUD_ROOT), outputPath).replace(/\\/g, '/');
+    if (!producerAvatarPathIsManaged(relativeFile)) throw new Error('Ruta de foto de perfil no permitida.');
+
+    tempOutput = `${outputPath}.tmp-${process.pid}-${Date.now()}`;
+    await writeProducerAvatarImage(temp.tempPath, crop, tempOutput);
+    await fsp.rename(tempOutput, outputPath);
+    outputWritten = true;
+    const avatarUrl = producerAvatarPublicPath(relativeFile);
+    await supabaseFetch(`/rest/v1/producer_profiles?id=eq.${encodeURIComponent(profileId)}&user_id=eq.${encodeURIComponent(user.id)}`, {
+      method: 'PATCH',
+      headers: { ...supabaseHeaders(), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify({ avatar_url: avatarUrl }),
+    });
+    sendJson(res, 201, { success: true, avatar_url: avatarUrl });
+  } catch (err) {
+    if (outputWritten && outputPath) await fsp.rm(outputPath, { force: true }).catch(() => {});
+    if (tempOutput) await fsp.rm(tempOutput, { force: true }).catch(() => {});
+    if (err.message && /Input image exceeds pixel limit|unsupported image format|corrupt|invalid/i.test(err.message)) throw sharpError('No se pudo procesar la imagen');
+    throw err;
+  } finally {
+    if (temp?.tempDir) await fsp.rm(temp.tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 function safeBeatSlug(rawSlug, fallback) {
   const slug = String(rawSlug || fallback || '')
     .normalize('NFKD')
@@ -640,8 +973,8 @@ function safeBeatSlug(rawSlug, fallback) {
 function safeBeatUploadName(rawName) {
   const decoded = decodeURIComponent(String(rawName || 'beat').trim());
   const ext = path.extname(decoded).toLowerCase();
-  if (!BEAT_AUDIO_EXTENSIONS.has(ext)) {
-    const err = new Error('Formato de audio no permitido.');
+  if (!BEAT_UPLOAD_AUDIO_EXTENSIONS.has(ext)) {
+    const err = new Error('El master debe subirse como WAV sin comprimir (.wav).');
     err.status = 400;
     throw err;
   }
@@ -669,7 +1002,46 @@ async function moveUploadIntoPlace(fromPath, toPath) {
     await fsp.unlink(fromPath);
   }
 }
-async function convertBeatPreview(inputPath, outputPath) {
+async function inspectUncompressedWav(filePath) {
+  const handle = await fsp.open(filePath, 'r');
+  const buffer = Buffer.alloc(64 * 1024);
+  let bytesRead = 0;
+  try {
+    ({ bytesRead } = await handle.read(buffer, 0, buffer.length, 0));
+  } finally {
+    await handle.close().catch(() => {});
+  }
+  if (bytesRead < 12 || buffer.toString('ascii', 0, 4) !== 'RIFF' || buffer.toString('ascii', 8, 12) !== 'WAVE') {
+    const err = new Error('El master debe ser un WAV sin comprimir valido.');
+    err.status = 400;
+    throw err;
+  }
+
+  let offset = 12;
+  let formatCode = null;
+  let hasDataChunk = false;
+  while (offset + 8 <= bytesRead) {
+    const chunkId = buffer.toString('ascii', offset, offset + 4);
+    const chunkSize = buffer.readUInt32LE(offset + 4);
+    const chunkStart = offset + 8;
+    const chunkEnd = chunkStart + chunkSize;
+    if (chunkEnd > bytesRead) break;
+    if (chunkId === 'fmt ' && chunkSize >= 16) {
+      formatCode = buffer.readUInt16LE(chunkStart);
+      if (formatCode === 0xfffe && chunkSize >= 40) formatCode = buffer.readUInt16LE(chunkStart + 24);
+    }
+    if (chunkId === 'data') hasDataChunk = true;
+    offset = chunkEnd + (chunkSize % 2);
+  }
+  if (!hasDataChunk || ![1, 3].includes(formatCode)) {
+    const err = new Error('El master debe ser un WAV PCM sin compresion.');
+    err.status = 400;
+    throw err;
+  }
+  return { formatCode };
+}
+
+async function convertBeatPreview(inputPath, outputPath, bitrate = BEAT_PREVIEW_MP3_BITRATE) {
   await fsp.mkdir(path.dirname(outputPath), { recursive: true });
   const tempOutput = `${outputPath}.tmp-${process.pid}-${Date.now()}.mp3`;
   try {
@@ -680,7 +1052,7 @@ async function convertBeatPreview(inputPath, outputPath) {
         '-vn',
         '-ar', '44100',
         '-ac', '2',
-        '-b:a', '160k',
+        '-b:a', bitrate,
         '-map_metadata', '-1',
         tempOutput,
       ], { timeout: Number(process.env.BEAT_PREVIEW_FFMPEG_TIMEOUT_MS || 180000) }, (error, stdout, stderr) => {
@@ -708,12 +1080,23 @@ async function patchBeatProduct(productId, payload) {
 }
 
 async function uploadBeatAudio(user, req, res) {
-  if (!user.isAdmin) {
-    const err = new Error('Solo admin puede subir beats.');
+  if (!canManageBeatUploads(user)) {
+    const err = new Error('Se requiere beats.upload, productor aprobado o admin para subir beats.');
     err.status = 403;
     throw err;
   }
   const productId = beatCoverProductId(req);
+  const product = await fetchBeatProduct(productId);
+  if (!user.isAdmin && (!productId || !product || product.category !== 'beats' || product.producer_user_id !== user.id)) {
+    const err = new Error('El beat no pertenece al productor autenticado.');
+    err.status = 403;
+    throw err;
+  }
+  if (productId && (!product || product.category !== 'beats')) {
+    const err = new Error('Beat no encontrado.');
+    err.status = 404;
+    throw err;
+  }
   const sourceName = safeBeatUploadName(req.headers['x-file-name']);
   const beatSlug = safeBeatSlug(req.headers['x-beat-slug'], sourceName.base);
   const contentLength = Number(req.headers['content-length'] || 0);
@@ -724,28 +1107,38 @@ async function uploadBeatAudio(user, req, res) {
   }
 
   let temp;
+  let originalStored = false;
   const root = await getRealRoot(beatStoreRoot());
-  const originalRelative = beatManagedPath('originals', beatSlug, `${beatSlug}${sourceName.ext}`);
-  const previewRelative = beatManagedPath('previews', beatSlug, 'preview.mp3');
+  const storageKey = productId || beatSlug;
+  const managedKind = productId ? 'masters' : 'originals';
+  const originalRelative = beatManagedPath(managedKind, storageKey, 'master.wav');
+  const compressedRelative = beatManagedPath(managedKind, storageKey, 'master.mp3');
+  const previewRelative = beatManagedPath('previews', storageKey, 'preview.mp3');
   const originalPath = path.resolve(root, originalRelative);
+  const compressedPath = path.resolve(root, compressedRelative);
   const previewPath = path.resolve(root, previewRelative);
   assertInsideRoot(root, originalPath);
+  assertInsideRoot(root, compressedPath);
   assertInsideRoot(root, previewPath);
 
   try {
     temp = await readLimitedUploadToTempNamed(req, BEAT_PREVIEW_MAX_UPLOAD_BYTES, 'hr-beat-audio-');
     if (!temp.size) {
-      const err = new Error('Selecciona un archivo de audio valido.');
+      const err = new Error('Selecciona un archivo WAV sin comprimir.');
       err.status = 400;
       throw err;
     }
+    await inspectUncompressedWav(temp.tempPath);
     await fsp.mkdir(path.dirname(originalPath), { recursive: true });
     await moveUploadIntoPlace(temp.tempPath, originalPath);
     temp.tempPath = '';
-    await convertBeatPreview(originalPath, previewPath);
+    originalStored = true;
+    await convertBeatPreview(originalPath, compressedPath, BEAT_MASTER_MP3_BITRATE);
+    await convertBeatPreview(originalPath, previewPath, BEAT_PREVIEW_MP3_BITRATE);
     await patchBeatProduct(productId, {
       file_url: `/${BEAT_STORE_DIR}/${originalRelative}`,
       beat_original_path: originalRelative,
+      beat_mp3_path: compressedRelative,
       beat_preview_path: previewRelative,
       beat_preview_status: 'ready',
       beat_preview_error: null,
@@ -754,6 +1147,7 @@ async function uploadBeatAudio(user, req, res) {
       success: true,
       file_url: `/${BEAT_STORE_DIR}/${originalRelative}`,
       beat_original_path: originalRelative,
+      beat_mp3_path: compressedRelative,
       beat_preview_path: previewRelative,
       beat_preview_status: 'ready',
       preview_url: beatPublicPath(previewRelative),
@@ -765,22 +1159,73 @@ async function uploadBeatAudio(user, req, res) {
       message: err.message || String(err),
       stderr: err.ffmpegStderr || '',
     });
-    if (!err.status || err.status === 422) err.message = 'No se pudo generar el preview MP3. El original se conservo, pero el beat no se publico.';
-    await patchBeatProduct(productId, {
-      file_url: `/${BEAT_STORE_DIR}/${originalRelative}`,
-      beat_original_path: originalRelative,
-      beat_preview_path: null,
-      beat_preview_status: 'error',
-      beat_preview_error: 'No se pudo generar el preview MP3.',
-      is_active: false,
-    }).catch((patchErr) => console.error('Beat preview status patch failed:', patchErr.message || patchErr));
+    if (!err.status || err.status === 422) err.message = 'No se pudo generar el MP3 del WAV. El original se conservo, pero el beat no se publico.';
+    if (originalStored) {
+      await patchBeatProduct(productId, {
+        file_url: `/${BEAT_STORE_DIR}/${originalRelative}`,
+        beat_original_path: originalRelative,
+        beat_mp3_path: null,
+        beat_preview_path: null,
+        beat_preview_status: 'error',
+        beat_preview_error: 'No se pudo generar el preview MP3.',
+        is_active: false,
+      }).catch((patchErr) => console.error('Beat preview status patch failed:', patchErr.message || patchErr));
+    }
     err.status = err.status || 422;
-    err.original_file_url = `/${BEAT_STORE_DIR}/${originalRelative}`;
-    err.original_path = originalRelative;
+    if (originalStored) {
+      err.original_file_url = `/${BEAT_STORE_DIR}/${originalRelative}`;
+      err.original_path = originalRelative;
+    }
     throw err;
   } finally {
     if (temp?.tempPath) await fsp.rm(temp.tempPath, { force: true }).catch(() => {});
     if (temp?.tempDir) await fsp.rm(temp.tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+async function uploadBeatStems(user, req, res) {
+  if (!canManageBeatUploads(user)) {
+    const err = new Error('Se requiere beats.upload, productor aprobado o admin para subir stems.');
+    err.status = 403;
+    throw err;
+  }
+  const productId = beatCoverProductId(req);
+  const product = await fetchBeatProduct(productId);
+  if (!productId || !product || product.category !== 'beats' || (!user.isAdmin && product.producer_user_id !== user.id)) {
+    const err = new Error('El beat no pertenece al productor autenticado.');
+    err.status = 403;
+    throw err;
+  }
+  const fileName = decodeURIComponent(String(req.headers['x-file-name'] || 'stems.zip').trim());
+  if (path.extname(fileName).toLowerCase() !== '.zip') {
+    const err = new Error('Los stems deben subirse como un archivo ZIP.');
+    err.status = 400;
+    throw err;
+  }
+  const contentLength = Number(req.headers['content-length'] || 0);
+  if (contentLength > BEAT_STEMS_MAX_UPLOAD_BYTES) {
+    const err = new Error('El ZIP de stems supera el límite permitido.');
+    err.status = 413;
+    throw err;
+  }
+  const temp = await readLimitedUploadToTempNamed(req, BEAT_STEMS_MAX_UPLOAD_BYTES, 'hr-beat-stems-');
+  if (!temp.size) {
+    await fsp.rm(temp.tempPath, { force: true }).catch(() => {});
+    const err = new Error('El archivo de stems está vacío.');
+    err.status = 400;
+    throw err;
+  }
+  const root = await getRealRoot(beatStoreRoot());
+  const relativePath = beatManagedPath('stems', productId, 'stems.zip');
+  const target = path.resolve(root, relativePath);
+  assertInsideRoot(root, target);
+  try {
+    await fsp.mkdir(path.dirname(target), { recursive: true });
+    await moveUploadIntoPlace(temp.tempPath, target);
+    await patchBeatProduct(productId, { beat_stems_path: relativePath });
+    sendJson(res, 201, { success: true, beat_stems_path: relativePath });
+  } finally {
+    if (temp.tempPath) await fsp.rm(temp.tempPath, { force: true }).catch(() => {});
   }
 }
 function downloadTokenUser(payload) {
@@ -791,6 +1236,7 @@ function downloadTokenUser(payload) {
     permissions: [],
     isAdmin: Boolean(payload.isAdmin),
     canUpload: false,
+    canUploadBeats: false,
     hasBeatStore: false,
   };
 }
@@ -806,6 +1252,7 @@ function sessionPayload(user) {
     },
     isAdmin: user.isAdmin,
     canUpload: user.canUpload,
+    canUploadBeats: user.canUploadBeats,
     hasBeatStore: user.hasBeatStore,
     rootLabel: user.isAdmin ? 'Raíz Cloud' : 'Mi Cloud',
     homePath: '/',
@@ -815,6 +1262,10 @@ function sessionPayload(user) {
 async function listFiles(user, res, url) {
   const baseRoot = getCloudBaseRoot(user);
   const { normalized, resolved } = await resolveSafePath(baseRoot, url.searchParams.get('path'), { mustExist: true });
+  const cloudState = await readCloudState(baseRoot);
+  const favorites = new Set((cloudState.favorites || []).map((entry) => {
+    try { return favoriteKey(entry.path, entry.name); } catch { return ''; }
+  }).filter(Boolean));
   const entries = await fsp.readdir(resolved, { withFileTypes: true });
   const folders = [];
   const files = [];
@@ -834,11 +1285,81 @@ async function listFiles(user, res, url) {
       continue;
     }
     if (!stats.isFile()) continue;
-    files.push({ name: entry.name, size: stats.size, modified: stats.mtime.toISOString() });
+    files.push({ name: entry.name, size: stats.size, modified: stats.mtime.toISOString(), favorite: favorites.has(favoriteKey(normalized, entry.name)) });
   }
   folders.sort((a, b) => a.name.localeCompare(b.name));
   files.sort((a, b) => a.name.localeCompare(b.name));
   sendJson(res, 200, { success: true, path: getPublicPath(user, normalized), folders, files, meta: sessionPayload(user) });
+}
+
+async function listFavorites(user, res) {
+  const baseRoot = getCloudBaseRoot(user);
+  const state = await readCloudState(baseRoot);
+  const files = [];
+  for (const favorite of state.favorites || []) {
+    try {
+      const parentPath = normalizeCloudPath(favorite.path);
+      const name = safeChildName(favorite.name);
+      const { child } = await resolveSafeChild(baseRoot, parentPath, name, { mustExist: true });
+      const stats = await fsp.stat(child);
+      if (!stats.isFile()) continue;
+      files.push({ name, path: parentPath, size: stats.size, modified: stats.mtime.toISOString(), favorite: true });
+    } catch {
+      // Stale favorites are hidden until the target is restored or recreated.
+    }
+  }
+  files.sort((a, b) => a.name.localeCompare(b.name));
+  sendJson(res, 200, { success: true, path: '/', folders: [], files, meta: sessionPayload(user), view: 'favorites' });
+}
+
+async function toggleFavorite(user, req, res) {
+  const body = await readJson(req);
+  const parentPath = normalizeCloudPath(body.path);
+  const name = safeChildName(body.name);
+  if (String(body.type || 'file').toLowerCase() !== 'file') throw new Error('Solo los archivos pueden ser favoritos.');
+  const baseRoot = getCloudBaseRoot(user);
+  const { child } = await resolveSafeChild(baseRoot, parentPath, name, { mustExist: true });
+  const stats = await fsp.stat(child);
+  if (!stats.isFile()) throw new Error('Solo los archivos pueden ser favoritos.');
+  const state = await readCloudState(baseRoot);
+  const key = favoriteKey(parentPath, name);
+  const favorites = (state.favorites || []).filter((entry) => {
+    try { return favoriteKey(entry.path, entry.name) !== key; } catch { return false; }
+  });
+  const favorite = body.favorite !== false;
+  if (favorite) favorites.push({ path: parentPath, name, type: 'file', addedAt: new Date().toISOString() });
+  await writeCloudState(baseRoot, { favorites });
+  sendJson(res, 200, { success: true, favorite, path: parentPath, name });
+}
+
+async function listTrash(user, res) {
+  const baseRoot = getCloudBaseRoot(user);
+  const manifest = await readTrashManifest(baseRoot);
+  const files = [];
+  const folders = [];
+  const valid = [];
+  for (const entry of manifest) {
+    try {
+      const storedPath = trashStoredPath(baseRoot, entry.storedName);
+      const stats = await fsp.stat(storedPath);
+      const item = {
+        id: safeTrashId(entry.id),
+        name: safeChildName(entry.name),
+        path: normalizeCloudPath(entry.path),
+        type: entry.type === 'folder' ? 'folder' : 'file',
+        size: stats.isFile() ? stats.size : 0,
+        modified: stats.mtime.toISOString(),
+        deletedAt: entry.deletedAt || stats.mtime.toISOString(),
+      };
+      valid.push(entry);
+      (item.type === 'folder' ? folders : files).push(item);
+    } catch {
+      // A missing trash payload is ignored and cleaned on the next mutation.
+    }
+  }
+  files.sort((a, b) => new Date(b.deletedAt) - new Date(a.deletedAt));
+  folders.sort((a, b) => new Date(b.deletedAt) - new Date(a.deletedAt));
+  sendJson(res, 200, { success: true, path: '/', folders, files, meta: sessionPayload(user), view: 'trash' });
 }
 
 async function createFolder(user, req, res) {
@@ -873,6 +1394,15 @@ async function renameItem(user, req, res) {
   if (itemType === 'file' && !stats.isFile()) throw new Error('El origen no es archivo.');
   await fsp.access(toInfo.child).then(() => { throw new Error('Ya existe un elemento con ese nombre.'); }).catch((err) => { if (err && err.code !== 'ENOENT') throw err; });
   await fsp.rename(fromInfo.child, toInfo.child);
+  const state = await readCloudState(baseRoot);
+  const oldKey = favoriteKey(body.path, fromInfo.name);
+  const favorites = (state.favorites || []).map((entry) => {
+    try {
+      if (favoriteKey(entry.path, entry.name) !== oldKey) return entry;
+      return { ...entry, path: normalizeCloudPath(body.path), name: toInfo.name };
+    } catch { return entry; }
+  });
+  await writeCloudState(baseRoot, { favorites });
   sendJson(res, 200, { success: true, name: fromInfo.name, newName: toInfo.name });
 }
 
@@ -884,14 +1414,75 @@ async function deleteItem(user, res, url) {
   const stats = await fsp.stat(child);
   if (itemType === 'folder') {
     if (!stats.isDirectory()) throw new Error('El elemento no es carpeta.');
-    await fsp.rm(child, { recursive: true, force: false });
+
   } else if (itemType === 'file') {
     if (!stats.isFile()) throw new Error('El elemento no es archivo.');
-    await fsp.rm(child, { force: false });
+
   } else {
     throw new Error('Tipo no permitido.');
   }
-  sendJson(res, 200, { success: true, type: itemType, name });
+  const backupMarker = getBackupDeleteMarker(user, url.searchParams.get('path'), name, itemType);
+  if (backupMarker) await recordBackupTombstone(backupMarker);
+  const normalizedPath = normalizeCloudPath(url.searchParams.get('path'));
+  const id = Date.now().toString(16) + '-' + crypto.randomBytes(8).toString('hex');
+  const storedName = id + '-' + name;
+  const trashTarget = trashStoredPath(baseRoot, storedName);
+  await fsp.mkdir(getTrashRoot(baseRoot), { recursive: true });
+  await fsp.rename(child, trashTarget);
+  const manifest = await readTrashManifest(baseRoot);
+  manifest.push({
+    id,
+    storedName,
+    path: normalizedPath,
+    name,
+    type: itemType,
+    deletedAt: new Date().toISOString(),
+  });
+  await writeTrashManifest(baseRoot, manifest);
+  const state = await readCloudState(baseRoot);
+  const favorites = (state.favorites || []).filter((entry) => {
+    try {
+      const entryPath = normalizeCloudPath(entry.path);
+      const sameItem = entryPath === normalizedPath && safeChildName(entry.name) === name;
+      const insideFolder = itemType === 'folder' && (entryPath === normalizedPath || entryPath.startsWith(normalizedPath + '/'));
+      return !sameItem && !insideFolder;
+    } catch { return false; }
+  });
+  await writeCloudState(baseRoot, { favorites });
+  sendJson(res, 200, { success: true, type: itemType, name, trashed: true });
+}
+
+async function restoreTrashItem(user, req, res) {
+  requireUploadPermission(user);
+  const body = await readJson(req);
+  const baseRoot = getCloudBaseRoot(user);
+  const id = safeTrashId(body.id);
+  const manifest = await readTrashManifest(baseRoot);
+  const index = manifest.findIndex((entry) => String(entry.id) === id);
+  if (index < 0) { const err = new Error('Elemento de papelera no encontrado.'); err.status = 404; throw err; }
+  const entry = manifest[index];
+  const parentPath = normalizeCloudPath(entry.path);
+  const name = safeChildName(entry.name);
+  const { child } = await resolveSafeChild(baseRoot, parentPath, name, { mustExist: false });
+  await fsp.access(child).then(() => { throw new Error('Ya existe un elemento con ese nombre en su ubicacion original.'); }).catch((err) => { if (err && err.code !== 'ENOENT') throw err; });
+  const storedPath = trashStoredPath(baseRoot, entry.storedName);
+  await fsp.rename(storedPath, child);
+  manifest.splice(index, 1);
+  await writeTrashManifest(baseRoot, manifest);
+  sendJson(res, 200, { success: true, name, path: parentPath });
+}
+
+async function deleteTrashItem(user, res, url) {
+  requireUploadPermission(user);
+  const baseRoot = getCloudBaseRoot(user);
+  const id = safeTrashId(url.searchParams.get('id'));
+  const manifest = await readTrashManifest(baseRoot);
+  const index = manifest.findIndex((entry) => String(entry.id) === id);
+  if (index < 0) { const err = new Error('Elemento de papelera no encontrado.'); err.status = 404; throw err; }
+  await fsp.rm(trashStoredPath(baseRoot, manifest[index].storedName), { recursive: manifest[index].type === 'folder', force: false });
+  manifest.splice(index, 1);
+  await writeTrashManifest(baseRoot, manifest);
+  sendJson(res, 200, { success: true, deleted: true });
 }
 
 
@@ -965,11 +1556,11 @@ async function authorizedStoreBeatDownload(downloadId, userId) {
   const order = Array.isArray(orders) ? orders[0] : null;
   if (!order || !['approved', 'paid', 'authorized'].includes(String(order.status || '').toLowerCase())) throw storeDownloadNotFound();
 
-  const products = await supabaseFetch(`/rest/v1/store_products?select=id,category,beat_original_path,file_url,name&id=eq.${encodeURIComponent(download.product_id)}&limit=1`, { headers: supabaseHeaders() });
+  const products = await supabaseFetch(`/rest/v1/store_products?select=id,category,beat_original_path,beat_mp3_path,file_url,name&id=eq.${encodeURIComponent(download.product_id)}&limit=1`, { headers: supabaseHeaders() });
   const product = Array.isArray(products) ? products[0] : null;
   if (!product || product.category !== 'beats') throw storeDownloadNotFound();
 
-  let relativeFile = String(product.beat_original_path || '').trim().replace(/^\/+/, '').replace(new RegExp(`^${BEAT_STORE_DIR}/`, 'i'), '');
+  let relativeFile = String(download.file_url || product.beat_original_path || '').trim().replace(/^\/+/, '').replace(new RegExp(`^${BEAT_STORE_DIR}/`, 'i'), '');
   if (!relativeFile) {
     const legacyPath = String(product.file_url || '').trim();
     const prefix = `/${BEAT_STORE_DIR}/`;
@@ -1022,7 +1613,7 @@ async function downloadStorePublic(req, res, url) {
   });
 }
 
-async function walkBeatFiles(currentDir, rootDir, depth = 0) {
+async function walkBeatFiles(currentDir, rootDir, depth = 0, options = {}) {
   if (depth > 4) return [];
   const entries = await fsp.readdir(currentDir, { withFileTypes: true });
   const files = [];
@@ -1031,8 +1622,8 @@ async function walkBeatFiles(currentDir, rootDir, depth = 0) {
     const fullPath = path.join(currentDir, entry.name);
     const relativeEntry = path.relative(rootDir, fullPath).replace(/\\/g, '/');
     if (entry.isDirectory()) {
-      if (depth === 0 && ['originals', 'covers'].includes(entry.name)) continue;
-      files.push(...await walkBeatFiles(fullPath, rootDir, depth + 1));
+      if (depth === 0 && ['originals', 'masters', 'stems', 'admin', 'covers'].includes(entry.name) && !options.includeManaged) continue;
+      files.push(...await walkBeatFiles(fullPath, rootDir, depth + 1, options));
       continue;
     }
     if (!entry.isFile()) continue;
@@ -1061,33 +1652,65 @@ async function backfillBeatPreviews(user, res) {
     throw err;
   }
   const root = await getRealRoot(beatStoreRoot());
-  const candidates = (await walkBeatFiles(root, root))
-    .map((beat) => beat.file)
-    .filter((file) => !file.toLowerCase().startsWith('previews/'));
+  const products = await supabaseFetch('/rest/v1/store_products?select=id,file_url,beat_original_path,beat_preview_path,beat_mp3_path&category=eq.beats&limit=1000', { headers: supabaseHeaders() });
+  const candidates = [];
+  const seen = new Set();
+  for (const product of Array.isArray(products) ? products : []) {
+    const storedPath = String(product.beat_original_path || product.file_url || '').trim();
+    const relativeFile = storedPath.replace(/^\/+/, '').replace(new RegExp(`^${BEAT_STORE_DIR}/`, 'i'), '');
+    if (!relativeFile || relativeFile.toLowerCase().startsWith('previews/') || relativeFile.toLowerCase().startsWith('stems/')) continue;
+    if (seen.has(relativeFile)) continue;
+    seen.add(relativeFile);
+    candidates.push({ relativeFile, product });
+  }
+  for (const beat of await walkBeatFiles(root, root)) {
+    if (beat.file.toLowerCase().startsWith('previews/') || beat.file.toLowerCase().startsWith('stems/') || seen.has(beat.file)) continue;
+    seen.add(beat.file);
+    candidates.push({ relativeFile: beat.file, product: null });
+  }
   const results = [];
-  for (const relativeFile of candidates) {
+  for (const candidate of candidates) {
+    const { relativeFile, product } = candidate;
     try {
       const source = await resolveBeatFile(relativeFile);
-      const id = crypto.createHash('sha1').update(relativeFile).digest('hex').slice(0, 16);
-      const previewRelative = beatManagedPath('previews', id, 'preview.mp3');
+      const id = product?.id || crypto.createHash('sha1').update(relativeFile).digest('hex').slice(0, 16);
+      const previewRelative = product?.beat_preview_path || beatManagedPath('previews', id, 'preview.mp3');
       const previewPath = path.resolve(root, previewRelative);
       assertInsideRoot(root, previewPath);
       const previewStats = await fsp.stat(previewPath).catch(() => null);
       if (!previewStats?.isFile()) await convertBeatPreview(source.resolved, previewPath);
-      const variants = [relativeFile, `/${BEAT_STORE_DIR}/${relativeFile}`];
-      for (const original of variants) {
-        await supabaseFetch(`/rest/v1/store_products?category=eq.beats&file_url=eq.${encodeURIComponent(original)}`, {
+      const isWavMaster = path.extname(relativeFile).toLowerCase() === '.wav';
+      const compressedRelative = isWavMaster ? (product?.beat_mp3_path || `${path.posix.dirname(relativeFile)}/master.mp3`) : null;
+      if (compressedRelative) {
+        const compressedPath = path.resolve(root, compressedRelative);
+        assertInsideRoot(root, compressedPath);
+        const compressedStats = await fsp.stat(compressedPath).catch(() => null);
+        if (!compressedStats?.isFile()) await convertBeatPreview(source.resolved, compressedPath, BEAT_MASTER_MP3_BITRATE);
+      }
+      const updates = {
+        beat_original_path: relativeFile,
+        ...(compressedRelative ? { beat_mp3_path: compressedRelative } : {}),
+        beat_preview_path: previewRelative,
+        beat_preview_status: 'ready',
+        beat_preview_error: null,
+      };
+      if (product?.id) {
+        await supabaseFetch(`/rest/v1/store_products?id=eq.${encodeURIComponent(product.id)}`, {
           method: 'PATCH',
           headers: { ...supabaseHeaders(), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-          body: JSON.stringify({
-            beat_original_path: relativeFile,
-            beat_preview_path: previewRelative,
-            beat_preview_status: 'ready',
-            beat_preview_error: null,
-          }),
-        }).catch(() => {});
+          body: JSON.stringify(updates),
+        });
+      } else {
+        const variants = [relativeFile, `/${BEAT_STORE_DIR}/${relativeFile}`];
+        for (const original of variants) {
+          await supabaseFetch(`/rest/v1/store_products?category=eq.beats&file_url=eq.${encodeURIComponent(original)}`, {
+            method: 'PATCH',
+            headers: { ...supabaseHeaders(), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+            body: JSON.stringify(updates),
+          }).catch(() => {});
+        }
       }
-      results.push({ file: relativeFile, preview: previewRelative, status: 'ready' });
+      results.push({ file: relativeFile, preview: previewRelative, mp3: compressedRelative, status: 'ready' });
     } catch (err) {
       results.push({ file: relativeFile, status: 'error', error: err.message || 'No se pudo convertir.' });
     }
@@ -1109,6 +1732,12 @@ async function listBeatStore(res) {
 
 async function streamBeatFile(req, res, url) {
   const { relativeFile, resolved, stats } = await resolveBeatFile(url.searchParams.get('file'));
+  const publicPath = /^(?:previews\/[^/]+\/[^/]+\.mp3|covers\/[^/]+\/(?:cover|thumb)\.(?:webp|jpg|jpeg|png))$/i.test(relativeFile);
+  if (!publicPath) {
+    const err = new Error('Ese archivo sólo está disponible mediante una descarga autorizada.');
+    err.status = 404;
+    throw err;
+  }
   const ext = path.extname(relativeFile).toLowerCase();
   const range = req.headers.range;
   const baseHeaders = {
@@ -1139,6 +1768,19 @@ async function streamBeatFile(req, res, url) {
   }
 
   res.writeHead(200, { ...baseHeaders, 'Content-Length': stats.size });
+  if (req.method === 'HEAD') return res.end();
+  return fs.createReadStream(resolved).pipe(res);
+}
+
+async function streamProducerAvatarFile(req, res, url) {
+  const { resolved, stats } = await resolveProducerAvatarFile(url.searchParams.get('file'));
+  const headers = {
+    ...PUBLIC_CORS_HEADERS,
+    'Content-Type': 'image/webp',
+    'Cache-Control': 'public, max-age=300',
+    'X-Content-Type-Options': 'nosniff',
+  };
+  res.writeHead(200, { ...headers, 'Content-Length': stats.size });
   if (req.method === 'HEAD') return res.end();
   return fs.createReadStream(resolved).pipe(res);
 }
@@ -1399,6 +2041,7 @@ async function createDownloadLink(user, res, url) {
   const requestedPath = normalizeCloudPath(url.searchParams.get('path'));
   const name = safeChildName(url.searchParams.get('name'));
   const baseRoot = getCloudBaseRoot(user);
+  const mode = url.searchParams.get('mode') === 'view' ? 'view' : 'download';
   await resolveDownloadChild(user, baseRoot, requestedPath, name);
   const token = signDownloadPayload({
     uid: user.id,
@@ -1406,13 +2049,14 @@ async function createDownloadLink(user, res, url) {
     roles: user.roles,
     profile: {
       id: user.profile?.id || user.id,
-      user_id: user.profile?.user_id || user.id,
+      user_id: user.profile?.user_id || null,
       username: user.profile?.username || null,
       display_name: user.profile?.display_name || null,
       email: user.profile?.email || null,
     },
     path: requestedPath,
     name,
+    mode,
     exp: Date.now() + DOWNLOAD_TOKEN_TTL_MS,
   });
   sendJson(res, 200, { success: true, url: `/api/download-public?token=${encodeURIComponent(token)}`, expiresInMs: DOWNLOAD_TOKEN_TTL_MS });
@@ -1421,7 +2065,7 @@ async function createDownloadLink(user, res, url) {
 async function downloadPublic(req, res, url) {
   const payload = verifyDownloadToken(url.searchParams.get('token'));
   const user = downloadTokenUser(payload);
-  const tokenUrl = new URL(`/api/download?path=${encodeURIComponent(payload.path)}&name=${encodeURIComponent(payload.name)}`, `http://${req.headers.host || 'localhost'}`);
+  const tokenUrl = new URL(`/api/download?path=${encodeURIComponent(payload.path)}&name=${encodeURIComponent(payload.name)}&mode=${encodeURIComponent(payload.mode === 'view' ? 'view' : 'download')}`, `http://${req.headers.host || 'localhost'}`);
   return downloadFile(user, req, res, tokenUrl);
 }
 
@@ -1500,20 +2144,33 @@ async function downloadAcademiaFile(user, req, res, url) {
     'X-Content-Type-Options': 'nosniff',
   });
 }
-async function downloadFile(user, req, res, url) {
-  const baseRoot = getCloudBaseRoot(user);
-  const { name, child } = await resolveDownloadChild(user, baseRoot, url.searchParams.get('path'), url.searchParams.get('name'));
+async function streamCloudDownloadFile(req, res, name, child, url) {
+  const mode = url.searchParams.get('mode') === 'view' ? 'view' : 'download';
+  const contentType = mode === 'view' ? cloudPreviewMimeType(name) : null;
+  const isInline = mode === 'view' && Boolean(contentType);
   const stats = await fsp.stat(child);
   if (!stats.isFile()) throw new Error('El elemento no es archivo.');
   const encoded = encodeURIComponent(name).replace(/['()]/g, escape).replace(/\*/g, '%2A');
-  const safeName = name.replace(/[\"\r\n]/g, '_');
+  const safeName = name.replace(/["\r\n]/g, '_');
   return streamFile(req, res, child, stats, {
     ...API_CORS_HEADERS,
-    'Content-Type': 'application/octet-stream',
-    'Content-Disposition': `attachment; filename="${safeName}"; filename*=UTF-8''${encoded}`,
+    'Content-Type': contentType || 'application/octet-stream',
+    'Content-Disposition': (isInline ? 'inline' : 'attachment') + '; filename="' + safeName + '"; filename*=UTF-8\'\'' + encoded,
     'Cache-Control': 'private, no-store',
     'X-Content-Type-Options': 'nosniff',
   });
+}
+async function downloadFile(user, req, res, url) {
+  const requestedPath = normalizeCloudPath(url.searchParams.get('path'));
+  const isAcademiaPath = requestedPath === '/academia' || requestedPath.startsWith('/academia/');
+  if (user.isAcademiaAdmin && isAcademiaPath) {
+    const baseRoot = path.resolve(CLOUD_ROOT);
+    const { name, child } = await resolveDownloadChild(user, baseRoot, requestedPath, url.searchParams.get('name'));
+    return streamCloudDownloadFile(req, res, name, child, url);
+  }
+  const baseRoot = getCloudBaseRoot(user);
+  const { name, child } = await resolveDownloadChild(user, baseRoot, requestedPath, url.searchParams.get('name'));
+  return streamCloudDownloadFile(req, res, name, child, url);
 }
 async function serveStatic(req, res, url) {
   let pathname = decodeURIComponent(url.pathname);
@@ -1544,9 +2201,12 @@ async function route(req, res) {
     if (url.pathname.startsWith('/api/beat-store')) {
       if (req.method === 'OPTIONS') return send(res, 204, '', PUBLIC_CORS_HEADERS);
       if (req.method === 'POST' && url.pathname === '/api/beat-store/cover') return await uploadBeatCover(await requireCloudUser(req), req, res);
+      if (req.method === 'POST' && url.pathname === '/api/beat-store/producer-avatar') return await uploadProducerAvatar(await requireCloudUser(req), req, res, url);
       if (req.method === 'POST' && url.pathname === '/api/beat-store/upload-audio') return await uploadBeatAudio(await requireCloudUser(req), req, res);
+      if (req.method === 'POST' && url.pathname === '/api/beat-store/upload-stems') return await uploadBeatStems(await requireCloudUser(req), req, res);
       if (req.method === 'POST' && url.pathname === '/api/beat-store/previews/backfill') return await backfillBeatPreviews(await requireCloudUser(req), res);
       if ((req.method === 'GET' || req.method === 'HEAD') && url.pathname === '/api/beat-store') return await listBeatStore(res);
+      if ((req.method === 'GET' || req.method === 'HEAD') && url.pathname === '/api/beat-store/producer-avatar') return await streamProducerAvatarFile(req, res, url);
       if ((req.method === 'GET' || req.method === 'HEAD') && url.pathname === '/api/beat-store/stream') return await streamBeatFile(req, res, url);
       return failPublic(res, 404, 'Ruta Beat Store no encontrada.');
     }
@@ -1563,12 +2223,19 @@ async function route(req, res) {
       if (req.method === 'GET' && url.pathname === '/api/session') return sendJson(res, 200, sessionPayload(user));
       if (req.method === 'GET' && url.pathname === '/api/server-status') return await serverStatus(user, res);
       if (req.method === 'GET' && url.pathname === '/api/files') return await listFiles(user, res, url);
+      if (req.method === 'GET' && url.pathname === '/api/favorites') return await listFavorites(user, res);
+      if (req.method === 'POST' && url.pathname === '/api/favorites') return await toggleFavorite(user, req, res);
+      if (req.method === 'GET' && url.pathname === '/api/trash') return await listTrash(user, res);
+      if (req.method === 'POST' && url.pathname === '/api/trash/restore') return await restoreTrashItem(user, req, res);
+      if (req.method === 'DELETE' && url.pathname === '/api/trash/item') return await deleteTrashItem(user, res, url);
       if (req.method === 'POST' && url.pathname === '/api/folders') return await createFolder(user, req, res);
       if (req.method === 'POST' && url.pathname === '/api/upload') return await uploadFile(user, req, res, url);
       if (req.method === 'POST' && url.pathname === '/api/rename') return await renameItem(user, req, res);
       if (req.method === 'DELETE' && url.pathname === '/api/item') return await deleteItem(user, res, url);
       if (req.method === 'GET' && url.pathname === '/api/download-link') return await createDownloadLink(user, res, url);
       if ((req.method === 'GET' || req.method === 'HEAD') && url.pathname === '/api/academy-download') return await downloadAcademiaFile(user, req, res, url);
+      if ((req.method === 'GET' || req.method === 'HEAD') && url.pathname === '/api/academy-folder') return await downloadAcademiaFolder(user, req, res, url);
+      if ((req.method === 'GET' || req.method === 'HEAD') && url.pathname === '/api/download-folder') return await downloadFolder(user, req, res, url);
       if ((req.method === 'GET' || req.method === 'HEAD') && url.pathname === '/api/download') return await downloadFile(user, req, res, url);
       return fail(res, 404, 'Ruta API no encontrada.');
     }

@@ -16,6 +16,8 @@
  * ================================================================
  */
 
+import { cloudSourceToFile, createCloudSourcePicker, joinCloudPath, walkCloudSource } from "../assets/js/cloud-source-picker.js";
+
 'use strict';
 
 
@@ -345,6 +347,10 @@ function buildCloudFileFallbackUrl(path, fileName) {
   return `${CLOUD_HIDDENROOM_URL.replace(/\/$/, '')}${fullPath.split('/').map(encodeURIComponent).join('/')}`;
 }
 
+function buildCloudFolderDownloadUrl(path, folderName) {
+  const safePath = normalizeCloudPath(path);
+  return CLOUD_HIDDENROOM_URL.replace(/\/$/, '') + '/api/download-folder?path=' + encodeURIComponent(safePath) + '&name=' + encodeURIComponent(String(folderName || '').trim());
+}
 function buildCloudDownloadUrl(path, fileName) {
   const safePath = normalizeCloudPath(path);
   const safeName = String(fileName || '').trim();
@@ -1142,10 +1148,10 @@ const TABLE_EDITOR_CONFIG = {
   events: {
     label: 'Eventos',
     primaryKey: 'id',
-    select: 'id, event_key, name, event_date, venue, city, status, visibility, notes',
+    select: 'id, event_key, name, event_date, venue, city, status, notes',
     defaultSort: { field: 'event_date', direction: 'desc' },
     lockedFields: ['id'],
-    editableFields: ['event_key', 'name', 'event_date', 'venue', 'city', 'status', 'visibility', 'notes'],
+    editableFields: ['event_key', 'name', 'event_date', 'venue', 'city', 'status', 'notes'],
     hiddenColumns: ['id'],
   },
   event_participations: {
@@ -2879,16 +2885,17 @@ function downloadReleaseLabel(item = {}) {
 function renderDownloadAction(item) {
   const href = String(item?.storage_path || '').trim();
   if (!href) return '-';
-  const isCloudFile = isCloudDownloadUrl(href) || isCloudStoragePath(href);
-  const label = isCloudFile ? 'Descarga directa' : 'Descargar';
-  return `
-    <a class="btn-primary db-download-action${isCloudFile ? ' db-download-action--cloud' : ''}" href="${escapeAttr(href)}" ${isCloudFile ? `data-direct-cloud-download="true" data-cloud-reference="${escapeAttr(href)}"` : 'target="_blank" rel="noopener noreferrer"'} aria-label="${escapeAttr(label)}">
-      <svg class="db-download-action__icon" aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M5 21h14"></path></svg>
-      <span>${escapeHTML(label)}</span>
-    </a>
-  `;
+  const isCloudFolder = String(item?.type || '').toLowerCase() === 'folder' || href.includes('/api/download-folder');
+  const isCloudFile = !isCloudFolder && (isCloudDownloadUrl(href) || isCloudStoragePath(href));
+  const isCloud = isCloudFolder || isCloudFile;
+  const label = isCloudFolder ? 'Descargar carpeta' : (isCloudFile ? 'Descarga directa' : 'Descargar');
+  const dataAttrs = isCloudFolder
+    ? 'data-cloud-folder-download data-cloud-reference="' + escapeAttr(href) + '"'
+    : (isCloudFile ? 'data-direct-cloud-download="true" data-cloud-reference="' + escapeAttr(href) + '"' : 'target="_blank" rel="noopener noreferrer"');
+  return '<a class="btn-primary db-download-action' + (isCloud ? ' db-download-action--cloud' : '') + '" href="' + escapeAttr(href) + '" ' + dataAttrs + ' aria-label="' + escapeAttr(label) + '">' +
+    '<svg class="db-download-action__icon" aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M5 21h14"></path></svg>' +
+    '<span>' + escapeHTML(label) + '</span></a>';
 }
-
 function cloudDownloadRequestFromHref(href) {
   const raw = String(href || '').trim();
   if (!raw) return null;
@@ -2926,6 +2933,38 @@ function cloudDownloadRequestFromHref(href) {
   };
 }
 
+async function downloadCloudFolderFromPortal(link) {
+  const request = cloudDownloadRequestFromHref(link?.dataset?.cloudReference || link?.href);
+  if (!request) return false;
+  const apiUrl = buildCloudFolderDownloadUrl(request.path, request.name);
+  link.setAttribute('aria-busy', 'true');
+  link.classList.add('is-loading');
+  try {
+    const response = await cloudApiFetch(apiUrl, { headers: { Accept: 'application/zip' } });
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '');
+      throw new Error(detail || 'No se pudo descargar la carpeta (' + response.status + ')');
+    }
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = request.name + '.zip';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(objectUrl);
+    showToast('Descarga de carpeta iniciada.', 'success');
+    return true;
+  } catch (err) {
+    console.error('[HR] direct cloud folder download:', err);
+    showToast(err.message || 'No se pudo descargar la carpeta desde Cloud.', 'error');
+    return false;
+  } finally {
+    link.removeAttribute('aria-busy');
+    link.classList.remove('is-loading');
+  }
+}
 async function downloadCloudFileFromPortal(link) {
   const request = cloudDownloadRequestFromHref(link?.dataset?.cloudReference || link?.href);
   if (!request) return false;
@@ -5943,9 +5982,6 @@ async function renderErpOps() {
             <label class="db-field"><span>Status</span><select name="status">${EVENT_STATUS_OPTIONS.map((status) => optionHTML(status, status, 'closed')).join('')}</select></label>
           </div>
           <div class="db-form__row">
-            <label class="db-field"><span>Visibilidad</span><select name="visibility"><option value="private" selected>Privado</option><option value="public">Público</option></select></label>
-          </div>
-          <div class="db-form__row">
             <label class="db-field"><span>Venue</span><input name="venue" /></label>
             <label class="db-field"><span>Ciudad</span><input name="city" /></label>
           </div>
@@ -6181,7 +6217,8 @@ function renderDownloadOpsForm(memberships = []) {
       <label class="db-field" data-download-file-field hidden>
         <span>Archivo</span>
         <input name="download_file" type="file" data-download-file />
-        <small class="db-field__hint">Se guardara en la carpeta downloads del usuario seleccionado.</small>
+        <button type="button" class="db-btn-secondary" data-download-cloud>Seleccionar desde Cloud</button>
+        <small class="db-field__hint" data-download-source>Se guardara en la carpeta downloads del usuario seleccionado.</small>
       </label>
       <label class="db-field"><span>Notas</span><textarea name="notes" rows="3"></textarea></label>
       <div class="db-upload-progress" data-download-upload-progress hidden>
@@ -6283,7 +6320,7 @@ function renderBeatSaleOpsForm() {
         <label class="db-field"><span>Precio MXN</span><input name="price" type="number" min="0" step="0.01" required /></label>
         <label class="db-field"><span>Stock</span><input name="stock" type="number" min="0" step="1" placeholder="vacio = ilimitado" /></label>
       </div>
-      <label class="db-field"><span>Archivo de audio</span><input name="beat_file" type="file" accept="${escapeAttr(BEAT_AUDIO_ACCEPT)}" required /></label>
+      <label class="db-field"><span>Archivo de audio</span><input name="beat_file" type="file" accept="${escapeAttr(BEAT_AUDIO_ACCEPT)}" required /><button type="button" class="db-btn-secondary" data-beat-sale-cloud>Seleccionar desde Cloud</button><small class="db-field__hint" data-beat-sale-source>Selecciona un archivo de audio.</small></label>
       <label class="db-field"><span>Descripcion</span><textarea name="description" rows="3" placeholder="Licencia, mood, BPM o notas"></textarea></label>
       <div class="db-form__row">
         <label class="db-check"><input name="featured" type="checkbox" /> <span>Featured</span></label>
@@ -8187,6 +8224,82 @@ function updateTransactionConceptFields(form) {
   }
 }
 
+const downloadCloudPickerRecords = new Set();
+
+function getDownloadCloudPicker(form) {
+  if (!form) return null;
+  for (const record of [...downloadCloudPickerRecords]) {
+    if (!document.body.contains(record.form)) {
+      record.picker.destroy();
+      downloadCloudPickerRecords.delete(record);
+    }
+    if (record.form === form) return record.picker;
+  }
+  const button = form.querySelector('[data-download-cloud]');
+  if (!button) return null;
+  const picker = createCloudSourcePicker({
+    button,
+    supabase,
+    cloudFunctionBase: CLOUD_FUNCTION_BASE,
+    allowFolders: true,
+    title: 'Seleccionar entrega desde Cloud',
+    onSelect: ({ sourceFile, source }) => {
+      form.__hrCloudSource = source;
+      form.__hrCloudFile = sourceFile || null;
+      const input = form.querySelector('[data-download-file]');
+      if (sourceFile && input) {
+        const transfer = new DataTransfer();
+        transfer.items.add(sourceFile);
+        input.files = transfer.files;
+      } else if (input) {
+        input.value = '';
+      }
+      const label = form.querySelector('[data-download-source]');
+      if (label) label.textContent = (source.kind === 'folder' ? 'Carpeta' : 'Archivo') + ' seleccionado desde Cloud: ' + source.name;
+      updateDownloadMembershipFields(form);
+    },
+    onError: (error) => showToast(error?.message || 'No se pudo seleccionar contenido de Cloud.', 'error'),
+  });
+  if (picker) downloadCloudPickerRecords.add({ form, picker });
+  return picker;
+}
+const beatSaleCloudPickerRecords = new Set();
+
+function getBeatSaleCloudPicker(form) {
+  if (!form) return null;
+  for (const record of [...beatSaleCloudPickerRecords]) {
+    if (!document.body.contains(record.form)) {
+      record.picker.destroy();
+      beatSaleCloudPickerRecords.delete(record);
+    }
+    if (record.form === form) return record.picker;
+  }
+  const button = form.querySelector('[data-beat-sale-cloud]');
+  if (!button) return null;
+  const picker = createCloudSourcePicker({
+    button,
+    supabase,
+    cloudFunctionBase: CLOUD_FUNCTION_BASE,
+    allowFolders: false,
+    title: 'Seleccionar beat desde Cloud',
+    onSelect: ({ sourceFile, source }) => {
+      if (!sourceFile) throw new Error('Beat Store solo permite archivos individuales.');
+      form.__hrCloudSource = source;
+      form.__hrCloudFile = sourceFile;
+      const input = form.querySelector('[name="beat_file"]');
+      if (input) {
+        const transfer = new DataTransfer();
+        transfer.items.add(sourceFile);
+        input.files = transfer.files;
+      }
+      const label = form.querySelector('[data-beat-sale-source]');
+      if (label) label.textContent = 'Seleccionado desde Cloud: ' + source.name;
+    },
+    onError: (error) => showToast(error?.message || 'No se pudo seleccionar el beat desde Cloud.', 'error'),
+  });
+  if (picker) beatSaleCloudPickerRecords.add({ form, picker });
+  return picker;
+}
 function updateDownloadMembershipFields(form) {
   if (!form || form.dataset.form !== 'download-create') return;
   const releaseMode = form.querySelector('[data-download-release-mode]')?.value || 'immediate';
@@ -8207,7 +8320,7 @@ function updateDownloadMembershipFields(form) {
     storageInput.required = !fileMode;
     if (fileMode) storageInput.value = '';
   }
-  if (fileInput) fileInput.required = fileMode;
+  if (fileInput) fileInput.required = fileMode && !form.__hrCloudSource;
 
   if (membershipFields) membershipFields.hidden = !linked;
   if (membershipInput) {
@@ -8226,17 +8339,20 @@ function updateDownloadMembershipFields(form) {
 }
 
 function resolveOperationalUserId(value) {
-  const raw = String(value ?? '').trim();
-  if (!raw) return '';
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
   const user = (state.data.users ?? []).find((item) => (
-    String(item.user_id ?? '') === raw
-    || String(item.id ?? '') === raw
+    String(item.user_id ?? "") === raw
+    || String(item.id ?? "") === raw
   ));
-  return String(user?.user_id ?? raw).trim();
+  if (user) return String(user.user_id ?? "").trim();
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(raw)) return "";
+  return raw;
 }
 
 function getUserDownloadCloudPath(userId) {
   const operationalUserId = resolveOperationalUserId(userId);
+  if (!operationalUserId) return "";
   const user = (state.data.users ?? []).find((item) => String(item.user_id) === operationalUserId);
   const slugSource = user?.username || user?.display_name || user?.email || operationalUserId;
   return `/users/${sanitizeCloudSegment(operationalUserId)}__${sanitizeCloudSegment(slugSource)}/downloads`;
@@ -8365,7 +8481,7 @@ async function insertBeatStoreProductWithUniqueSlug(payload) {
 async function handleBeatSaleCreate(form, values) {
   const submitButton = form.querySelector('button[type="submit"]');
   const originalButtonText = submitButton?.textContent ?? '';
-  const file = form.querySelector('input[name="beat_file"]')?.files?.[0];
+  const file = form.querySelector('input[name="beat_file"]')?.files?.[0] || form.__hrCloudFile || null;
   if (!file) {
     showToast('Selecciona un archivo de audio.', 'error');
     return;
@@ -8414,6 +8530,8 @@ async function handleBeatSaleCreate(form, values) {
     if (result.ok) {
       setBeatUploadProgress(form, 100, 'Publicado');
       form.reset();
+      form.__hrCloudSource = null;
+      form.__hrCloudFile = null;
       setTimeout(() => resetBeatUploadProgress(form), 1200);
     }
   } catch (err) {
@@ -9838,12 +9956,13 @@ async function prepareDownloadValues(form, values) {
   }
 
   if (sourceType === 'file') {
-    const file = form.querySelector('[data-download-file]')?.files?.[0];
-    if (!file) {
-      showToast('Selecciona un archivo para subir a Cloud.', 'error');
+    const source = form.__hrCloudSource || null;
+    const file = form.querySelector('[data-download-file]')?.files?.[0] || form.__hrCloudFile || null;
+    if (!file && !source) {
+      showToast('Selecciona un archivo o carpeta para subir a Cloud.', 'error');
       return false;
     }
-    if (!Number.isFinite(file.size) || file.size <= 0) {
+    if (file && (!Number.isFinite(file.size) || file.size <= 0)) {
       showToast('El archivo esta vacio. Vuelve a exportarlo o elige otro archivo.', 'error');
       return false;
     }
@@ -9853,17 +9972,36 @@ async function prepareDownloadValues(form, values) {
       return false;
     }
     const targetRoot = getUserDownloadCloudPath(userId);
-    setDownloadUploadProgress(form, 8, 'Validando archivo');
-    setDownloadUploadProgress(form, 24, 'Preparando carpeta');
-    await ensureCloudFolderPath(targetRoot);
-    setDownloadUploadProgress(form, 48, 'Subiendo archivo');
-    await uploadCloudFileToPath(file, targetRoot);
+    if (!targetRoot) {
+      showToast("El usuario no tiene user_id operativo asignado.", "error");
+      return false;
+    }
+    setDownloadUploadProgress(form, 8, 'Validando fuente');
+    if (source?.kind === 'folder') {
+      const targetFolderPath = joinCloudPath(targetRoot, source.name);
+      await ensureCloudFolderPath(targetFolderPath);
+      setDownloadUploadProgress(form, 24, 'Preparando carpeta');
+      const sourceFiles = await walkCloudSource(source, { supabase, cloudFunctionBase: CLOUD_FUNCTION_BASE });
+      for (let index = 0; index < sourceFiles.length; index += 1) {
+        const sourceFile = sourceFiles[index];
+        const localFile = await cloudSourceToFile(sourceFile, { supabase, cloudOrigin: CLOUD_HIDDENROOM_URL });
+        const relativeParent = sourceFile.relativePath.split('/').slice(0, -1).join('/');
+        const destination = relativeParent ? joinCloudPath(targetFolderPath, relativeParent) : targetFolderPath;
+        await ensureCloudFolderPath(destination);
+        await uploadCloudFileToPath(localFile, destination);
+        setDownloadUploadProgress(form, 24 + Math.round(((index + 1) / Math.max(sourceFiles.length, 1)) * 54), 'Copiando carpeta');
+      }
+      values.type = 'folder';
+      values.storage_path = buildCloudFolderDownloadUrl(targetRoot, source.name);
+    } else {
+      setDownloadUploadProgress(form, 24, 'Preparando carpeta');
+      await ensureCloudFolderPath(targetRoot);
+      setDownloadUploadProgress(form, 48, 'Subiendo archivo');
+      await uploadCloudFileToPath(file, targetRoot);
+      values.storage_path = buildCloudDownloadUrl(targetRoot, file.name);
+    }
     setDownloadUploadProgress(form, 78, 'Registrando descarga');
-    // Persist the authenticated API route instead of the agent's legacy public
-    // path (/files/...); both legacy forms are still accepted when downloading.
-    values.storage_path = buildCloudDownloadUrl(targetRoot, file.name);
   }
-
   return true;
 }
 async function handleErpForm(form) {
@@ -10073,6 +10211,8 @@ async function handleErpForm(form) {
     }
     form.reset();
     if (type === 'download-create') {
+      form.__hrCloudSource = null;
+      form.__hrCloudFile = null;
       updateDownloadMembershipFields(form);
       setOperationFormPending(form, false);
       setTimeout(() => resetDownloadUploadProgress(form), 1200);
@@ -12193,10 +12333,35 @@ function attachMainDelegation() {
   const main = document.getElementById('js-main');
 
   main?.addEventListener('click', (e) => {
+    const cloudFolderDownload = e.target.closest("[data-cloud-folder-download]");
+    if (cloudFolderDownload) {
+      e.preventDefault();
+      downloadCloudFolderFromPortal(cloudFolderDownload);
+      return;
+    }
+
     const directCloudDownload = e.target.closest('[data-direct-cloud-download="true"]');
     if (directCloudDownload) {
       e.preventDefault();
       downloadCloudFileFromPortal(directCloudDownload);
+      return;
+    }
+
+    const beatSaleCloudButton = e.target.closest("[data-beat-sale-cloud]");
+    if (beatSaleCloudButton) {
+      const form = beatSaleCloudButton.closest("form");
+      const existing = [...beatSaleCloudPickerRecords].find((record) => record.form === form);
+      const picker = getBeatSaleCloudPicker(form);
+      if (!existing) picker?.open();
+      return;
+    }
+
+    const downloadCloudButton = e.target.closest("[data-download-cloud]");
+    if (downloadCloudButton) {
+      const form = downloadCloudButton.closest("form");
+      const existing = [...downloadCloudPickerRecords].find((record) => record.form === form);
+      const picker = getDownloadCloudPicker(form);
+      if (!existing) picker?.open();
       return;
     }
 
@@ -12476,6 +12641,25 @@ function attachMainDelegation() {
         .catch((err) => showToast(err.message || 'No se pudo subir el archivo.', 'error'))
         .finally(() => { if (cloudFileInput) cloudFileInput.value = ''; });
       return;
+    }
+
+    const beatSaleInput = e.target.closest('input[name="beat_file"]');
+    if (beatSaleInput) {
+      const form = beatSaleInput.closest("form");
+      form.__hrCloudSource = null;
+      form.__hrCloudFile = null;
+      const label = form.querySelector("[data-beat-sale-source]");
+      if (label) label.textContent = "Selecciona un archivo de audio.";
+    }
+
+    const downloadFileInput = e.target.closest("[data-download-file]");
+    if (downloadFileInput) {
+      const form = downloadFileInput.closest("form");
+      form.__hrCloudSource = null;
+      form.__hrCloudFile = null;
+      const label = form.querySelector("[data-download-source]");
+      if (label) label.textContent = "Se guardara en la carpeta downloads del usuario seleccionado.";
+      updateDownloadMembershipFields(form);
     }
 
     const statusSelect = e.target.closest('select[data-action="task-status"]');
