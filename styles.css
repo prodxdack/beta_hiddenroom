@@ -17837,10 +17837,22 @@ body.hr-beat-player-fullscreen-open .hr-global-drawer {
   display: inline-flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
+}
+
+.hr-view-as-banner__content > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .hr-view-as-banner.is-collapsed {
   padding: 6px;
+  width: 28px;
+  min-width: 28px;
+  max-width: 28px;
+  gap: 0;
 }
 
 .hr-view-as-banner.is-collapsed .hr-view-as-banner__content {
@@ -17897,10 +17909,10 @@ body.hr-beat-player-fullscreen-open .hr-global-drawer {
   .hr-view-as-banner {
     top: calc(var(--hr-nav-height-mobile, 64px) + 10px);
     right: 12px;
-    left: 12px;
-    width: auto;
-    max-width: none;
-    justify-content: space-between;
+    left: auto;
+    width: max-content;
+    max-width: calc(100vw - 24px);
+    justify-content: flex-start;
   }
 }
 
