@@ -943,7 +943,6 @@ const PORTAL_NAV_GROUPS = [
       { label: 'Operaciones', section: 'erp-ops', icon: 'settings' },
       { label: 'Subir CSV', section: 'erp-csv-upload', icon: 'doc' },
       { label: 'Permisos', section: 'erp-permissions', icon: 'users' },
-      { label: 'Ver como', section: 'view-as', icon: 'users' },
       { label: 'Auth / Registros', section: 'erp-auth-audit', icon: 'activity' },
       { label: 'Servidor Mysauth', section: 'erp-infrastructure', icon: 'server' },
       { label: 'Cloud Hidden Room', section: 'erp-cloud', icon: 'cloud' },
@@ -952,6 +951,14 @@ const PORTAL_NAV_GROUPS = [
       { label: 'Instagram Comments Scraper', section: 'erp-instagram-scraper', icon: 'activity' },
       { label: 'Boletera', href: '../tickets/', icon: 'ticket' },
       { label: 'BB.DD', section: 'admin-table-editor', icon: 'settings' },
+    ],
+  },
+  {
+    key: 'administration',
+    title: 'Administración',
+    role: 'admin',
+    items: [
+      { label: 'Ver como', section: 'view-as', icon: 'users' },
     ],
   },
   {
