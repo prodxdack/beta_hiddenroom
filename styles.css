@@ -17833,6 +17833,20 @@ body.hr-beat-player-fullscreen-open .hr-global-drawer {
   line-height: 1.2;
 }
 
+.hr-view-as-banner__content {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.hr-view-as-banner.is-collapsed {
+  padding: 6px;
+}
+
+.hr-view-as-banner.is-collapsed .hr-view-as-banner__content {
+  display: none;
+}
+
 .hr-view-as-banner strong { color: #fff; }
 
 .hr-view-as-banner button {
@@ -17847,6 +17861,37 @@ body.hr-beat-player-fullscreen-open .hr-global-drawer {
 }
 
 .hr-view-as-banner button:hover { background: rgba(66, 190, 226, .28); }
+
+.hr-view-as-banner__toggle,
+.hr-copy-editor__visibility {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  display: inline-grid;
+  place-items: center;
+  padding: 5px;
+  border: 1px solid rgba(66, 190, 226, .7);
+  border-radius: 50%;
+  background: rgba(66, 190, 226, .14);
+  color: #d7f5ff;
+  cursor: pointer;
+}
+
+.hr-view-as-banner__toggle:hover,
+.hr-view-as-banner__toggle:focus-visible,
+.hr-copy-editor__visibility:hover,
+.hr-copy-editor__visibility:focus-visible { background: rgba(66, 190, 226, .28); }
+
+.hr-view-as-banner__toggle svg,
+.hr-copy-editor__visibility svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
 
 @media (max-width: 900px) {
   .hr-view-as-banner {
@@ -17917,6 +17962,13 @@ body.hr-beat-player-fullscreen-open .hr-global-drawer {
   font-family: var(--hr-font-mono, monospace);
 }
 .hr-copy-editor[hidden] { display: none; }
+.hr-copy-editor__topbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.hr-copy-editor.is-collapsed .hr-copy-editor__mode { display: none; }
 .hr-copy-editor__mode {
   display: flex;
   align-items: center;
@@ -18077,6 +18129,13 @@ body span[data-hr-copy-segment] {
   .hr-copy-editor__mode-thumb { width: 64px; }
   .hr-copy-editor__toggle[data-mode="editor"] .hr-copy-editor__mode-thumb { transform: translateX(60px); }
   .hr-copy-editor__quick-save:not([hidden]) { display: inline-flex; align-items: center; }
+}
+
+@media (max-width: 900px) {
+  body.db-body .hr-view-as-banner,
+  body.db-body .hr-copy-editor {
+    top: calc(var(--hr-nav-height-mobile, 64px) + 12px) !important;
+  }
 }
 
 /* Safari/WebKit keeps the volume thumb interactive when the track has its own hit area. */

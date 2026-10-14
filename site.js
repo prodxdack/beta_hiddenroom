@@ -18,12 +18,36 @@ const ECOSYSTEM_LINKS = [
 const MORE_NAV_KEYS = new Set(["media", "kairen", "tickets", "orbit"]);
 const HR_VIEW_AS_STORAGE_KEY = "hr_view_as_user";
 const HR_VIEW_AS_RETURN_KEY = "hr_view_as_return";
+const HR_VIEW_AS_BANNER_VISIBLE_KEY = "hr_view_as_banner_visible";
+const HR_COPY_EDITOR_VISIBLE_KEY = "hr_copy_editor_visible";
 
 let hrViewAsContext = null;
 let resolveHrViewAsReady;
 const hrViewAsReady = new Promise((resolve) => {
   resolveHrViewAsReady = resolve;
 });
+
+function readUiVisibility(key) {
+  try {
+    return sessionStorage.getItem(key) !== "hidden";
+  } catch (error) {
+    return true;
+  }
+}
+
+function persistUiVisibility(key, visible) {
+  try {
+    sessionStorage.setItem(key, visible ? "visible" : "hidden");
+  } catch (error) {
+    console.info("[HR] No fue posible guardar el estado visual:", error?.message || error);
+  }
+}
+
+function visibilityToggleIcon(hidden) {
+  return hidden
+    ? '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m3 3 18 18M10.6 6.2A10.7 10.7 0 0 1 12 6c6 0 10 6 10 6a18.6 18.6 0 0 1-3.1 3.9M6.2 6.2C3.6 8.1 2 12 2 12s3.5 6 10 6a10.7 10.7 0 0 0 3.7-.7M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>'
+    : '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>';
+}
 
 function readViewAsSelection() {
   try {
@@ -219,6 +243,22 @@ function syncViewAsNavigation(context = hrViewAsContext) {
   });
 }
 
+function applyViewAsBannerVisibility(visible) {
+  const banner = document.getElementById("hr-view-as-banner");
+  const toggle = banner?.querySelector("[data-view-as-banner-toggle]");
+  if (!banner || !toggle) return;
+  banner.classList.toggle("is-collapsed", !visible);
+  toggle.setAttribute("aria-expanded", String(visible));
+  toggle.setAttribute("aria-label", visible ? "Ocultar vista como" : "Mostrar vista como");
+  toggle.title = visible ? "Ocultar vista como" : "Mostrar vista como";
+  toggle.innerHTML = visibilityToggleIcon(!visible);
+}
+
+function setViewAsBannerVisibility(visible) {
+  persistUiVisibility(HR_VIEW_AS_BANNER_VISIBLE_KEY, visible);
+  applyViewAsBannerVisibility(visible);
+}
+
 function renderViewAsBanner(context = hrViewAsContext) {
   document.getElementById("hr-view-as-banner")?.remove();
   if (!context?.active) return;
@@ -227,10 +267,14 @@ function renderViewAsBanner(context = hrViewAsContext) {
   banner.className = "hr-view-as-banner";
   banner.setAttribute("role", "status");
   banner.innerHTML = `
-    <span>Vista como <strong>${escapeNavText(viewAsDisplayName(context.profile))}</strong></span>
-    <button type="button" data-view-as-action="clear">Volver a mi vista</button>
+    <div class="hr-view-as-banner__content">
+      <span>Vista como <strong>${escapeNavText(viewAsDisplayName(context.profile))}</strong></span>
+      <button type="button" data-view-as-action="clear">Volver a mi vista</button>
+    </div>
+    <button class="hr-view-as-banner__toggle" type="button" data-view-as-banner-toggle aria-expanded="true" aria-label="Ocultar vista como" title="Ocultar vista como"></button>
   `;
   document.body.append(banner);
+  applyViewAsBannerVisibility(readUiVisibility(HR_VIEW_AS_BANNER_VISIBLE_KEY));
 }
 
 window.HiddenRoomViewAs = window.HiddenRoomViewAs || {
@@ -287,6 +331,8 @@ const hrCopyEditorState = {
   root: null,
   toggle: null,
   quickSave: null,
+  visibilityToggle: null,
+  visible: true,
   canEdit: false,
   active: false,
   pagePath: "",
@@ -388,6 +434,18 @@ function setCopyEditorStatus(message, type = "") {
   save.textContent = type === "error" ? "Reintentar" : message || "Guardar cambios";
   save.dataset.state = type;
   save.title = type === "error" ? message : "";
+}
+
+function setCopyEditorVisibility(visible, persist = true) {
+  hrCopyEditorState.visible = Boolean(visible);
+  if (persist) persistUiVisibility(HR_COPY_EDITOR_VISIBLE_KEY, hrCopyEditorState.visible);
+  hrCopyEditorState.root?.classList.toggle("is-collapsed", !hrCopyEditorState.visible);
+  const toggle = hrCopyEditorState.visibilityToggle;
+  if (!toggle) return;
+  toggle.setAttribute("aria-expanded", String(hrCopyEditorState.visible));
+  toggle.setAttribute("aria-label", hrCopyEditorState.visible ? "Ocultar editor de textos" : "Mostrar editor de textos");
+  toggle.title = hrCopyEditorState.visible ? "Ocultar editor de textos" : "Mostrar editor de textos";
+  toggle.innerHTML = visibilityToggleIcon(!hrCopyEditorState.visible);
 }
 
 function applyGlobalCopyEditorState() {
@@ -521,20 +579,25 @@ function initGlobalCopyEditor() {
   root.dataset.hrCopyIgnore = "";
   root.hidden = true;
   root.innerHTML = `
-    <div class="hr-copy-editor__mode" aria-label="Modo de edición">
-      <span class="hr-copy-editor__mode-title">Modo</span>
-      <button class="hr-copy-editor__toggle" type="button" role="switch" aria-checked="false" aria-label="Cambiar a modo editor" data-mode="espectador">
-        <span class="hr-copy-editor__mode-option hr-copy-editor__mode-option--viewer">Espectador</span>
-        <span class="hr-copy-editor__mode-option hr-copy-editor__mode-option--editor">Editor</span>
-        <span class="hr-copy-editor__mode-thumb" aria-hidden="true"></span>
-      </button>
-      <button class="hr-copy-editor__quick-save" type="button" hidden>Guardar cambios</button>
+    <div class="hr-copy-editor__topbar">
+      <div class="hr-copy-editor__mode" aria-label="Modo de edición">
+        <span class="hr-copy-editor__mode-title">Modo</span>
+        <button class="hr-copy-editor__toggle" type="button" role="switch" aria-checked="false" aria-label="Cambiar a modo editor" data-mode="espectador">
+          <span class="hr-copy-editor__mode-option hr-copy-editor__mode-option--viewer">Espectador</span>
+          <span class="hr-copy-editor__mode-option hr-copy-editor__mode-option--editor">Editor</span>
+          <span class="hr-copy-editor__mode-thumb" aria-hidden="true"></span>
+        </button>
+        <button class="hr-copy-editor__quick-save" type="button" hidden>Guardar cambios</button>
+      </div>
+      <button class="hr-copy-editor__visibility" type="button" data-copy-editor-visibility-toggle aria-expanded="true" aria-label="Ocultar editor de textos" title="Ocultar editor de textos"></button>
     </div>
   `;
   document.body.append(root);
   hrCopyEditorState.root = root;
   hrCopyEditorState.toggle = root.querySelector(".hr-copy-editor__toggle");
   hrCopyEditorState.quickSave = root.querySelector(".hr-copy-editor__quick-save");
+  hrCopyEditorState.visibilityToggle = root.querySelector("[data-copy-editor-visibility-toggle]");
+  setCopyEditorVisibility(readUiVisibility(HR_COPY_EDITOR_VISIBLE_KEY), false);
   hrCopyEditorState.toggle.addEventListener("click", () => {
     hrCopyEditorState.active = !hrCopyEditorState.active;
     if (hrCopyEditorState.active) {
@@ -543,6 +606,9 @@ function initGlobalCopyEditor() {
     applyGlobalCopyEditorState();
   });
   hrCopyEditorState.quickSave.addEventListener("click", saveGlobalCopyEditor);
+  hrCopyEditorState.visibilityToggle.addEventListener("click", () => {
+    setCopyEditorVisibility(!hrCopyEditorState.visible);
+  });
   document.addEventListener("click", (event) => {
     if (!hrCopyEditorState.active) return;
     const target = event.target.closest("[data-hr-copy-runtime-key]");
@@ -2945,6 +3011,13 @@ function initGlobalFooter() {
 }
 
 document.addEventListener("click", (event) => {
+  const bannerToggle = event.target.closest("[data-view-as-banner-toggle]");
+  if (bannerToggle) {
+    event.preventDefault();
+    event.stopPropagation();
+    setViewAsBannerVisibility(bannerToggle.getAttribute("aria-expanded") !== "true");
+    return;
+  }
   const control = event.target.closest("[data-view-as-action]");
   if (!control) return;
   event.preventDefault();

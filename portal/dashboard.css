@@ -2707,6 +2707,13 @@
   }
 }
 
+@media (max-width: 900px) {
+  body.db-body .hr-view-as-banner,
+  body.db-body .hr-copy-editor {
+    top: calc(var(--hr-nav-height-mobile, 64px) + 12px) !important;
+  }
+}
+
 /* ================================================================
    20. PORTAL INTERNAL VIEWS / HR DESIGN SYSTEM BRIDGE
    CSS-only adoption for dashboard.js-rendered views.
