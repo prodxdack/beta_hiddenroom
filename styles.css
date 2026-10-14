@@ -17764,6 +17764,58 @@ body.hr-beat-player-fullscreen-open .hr-global-drawer {
   color: var(--hr-nav-active);
 }
 
+.hr-nav__more-links__action,
+.hr-global-drawer__more-links__action {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--hr-border, rgba(255, 255, 255, .12));
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hr-nav__more-links__action:hover,
+.hr-global-drawer__more-links__action:hover {
+  color: var(--hr-nav-active, #e60000);
+}
+
+.hr-view-as-banner {
+  position: fixed;
+  top: max(12px, env(safe-area-inset-top));
+  right: 16px;
+  z-index: calc(var(--hr-z-toast, 10004) + 5);
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(92vw, 420px);
+  padding: 9px 12px;
+  border: 1px solid rgba(66, 190, 226, .7);
+  border-radius: 999px;
+  background: rgba(6, 13, 17, .94);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
+  color: #d7f5ff;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.hr-view-as-banner strong { color: #fff; }
+
+.hr-view-as-banner button {
+  border: 1px solid rgba(66, 190, 226, .7);
+  border-radius: 999px;
+  padding: 6px 9px;
+  background: rgba(66, 190, 226, .14);
+  color: #d7f5ff;
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.hr-view-as-banner button:hover { background: rgba(66, 190, 226, .28); }
+
 @media (max-width: 900px) {
   .hr-nav__more {
     display: none;
@@ -17833,7 +17885,8 @@ body.hr-beat-player-fullscreen-open .hr-global-drawer {
 }
 .hr-copy-editor__mode-title { white-space: nowrap; }
 .hr-copy-editor__toggle,
-.hr-copy-editor__save {
+.hr-copy-editor__save,
+.hr-copy-editor__quick-save {
   border: 1px solid rgba(124, 208, 233, .62);
   border-radius: 999px;
   background: rgba(4, 12, 18, .94);
@@ -17853,6 +17906,7 @@ body.hr-beat-player-fullscreen-open .hr-global-drawer {
   padding: 6px 9px;
   overflow: hidden;
 }
+.hr-copy-editor__quick-save { display: none; padding: 7px 10px; border-radius: 4px; background: linear-gradient(135deg, rgba(0, 178, 204, .38), rgba(0, 57, 76, .84)); }
 .hr-copy-editor__mode-option {
   position: relative;
   z-index: 1;

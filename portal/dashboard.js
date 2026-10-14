@@ -397,6 +397,12 @@ const state = {
   /** @type {Object|null} Full public.users profile merged with auth user */
   user: null,
 
+  /** @type {Object|null} Authenticated administrator kept separate during view-as */
+  actualUser: null,
+
+  /** @type {Object|null} Effective view-as context resolved from Supabase */
+  viewAs: null,
+
   /**
    * @type {string[]}
    * Cumulative expanded roles, e.g. ['client','pr','collaborator']
@@ -663,6 +669,37 @@ function applyRoleGates() {
    a Promise<string>. renderSection() awaits it either way.
 ================================================================ */
 
+async function renderViewAs() {
+  if (!hasRole('admin') || state.viewAs?.active) {
+    return sectionShell('Administración', 'Ver como', 'title-view-as', `
+      <p class="db-empty db-empty--error">Esta herramienta sólo está disponible en la vista propia del administrador.</p>
+    `);
+  }
+
+  const users = await ensureUsersLoaded();
+  const selectedId = window.HiddenRoomViewAs?.getSelection?.()?.userId || '';
+  return sectionShell('Administración', 'Ver como', 'title-view-as', `
+    <div class="db-card db-card--view-as">
+      <div class="db-card__inner">
+        <p class="db-section__summary">Selecciona un usuario para cargar el sitio con su perfil, roles y permisos reales.</p>
+        <p class="db-note">La vista se mantiene en esta sesión del navegador. Las acciones de escritura quedan bloqueadas mientras observas otra cuenta.</p>
+        <form data-form="view-as" class="db-inline-form">
+          ${renderUserPicker('view_as_user_id', 'Usuario', selectedId, {
+            users,
+            limit: USER_PICKER_RENDER_LIMIT,
+            placeholder: 'Buscar por nombre, usuario o correo',
+            emptyLabel: 'No se encontraron usuarios.',
+          })}
+          <div class="db-form__actions">
+            <button class="btn-primary" type="submit">Cargar vista</button>
+            <button class="db-btn-secondary" type="button" data-action="view-as-cancel">Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `);
+}
+
 const SECTIONS = {
 
   /* -- CORE -------------------------------------------- */
@@ -796,6 +833,11 @@ const SECTIONS = {
     roleRequired: 'admin',
     render: renderErpPermissions,
   },
+  'view-as': {
+    label: 'Ver como',
+    roleRequired: 'admin',
+    render: renderViewAs,
+  },
   'erp-auth-audit': {
     label: 'Auth / Registros',
     roleRequired: 'admin',
@@ -901,6 +943,7 @@ const PORTAL_NAV_GROUPS = [
       { label: 'Operaciones', section: 'erp-ops', icon: 'settings' },
       { label: 'Subir CSV', section: 'erp-csv-upload', icon: 'doc' },
       { label: 'Permisos', section: 'erp-permissions', icon: 'users' },
+      { label: 'Ver como', section: 'view-as', icon: 'users' },
       { label: 'Auth / Registros', section: 'erp-auth-audit', icon: 'activity' },
       { label: 'Servidor Mysauth', section: 'erp-infrastructure', icon: 'server' },
       { label: 'Cloud Hidden Room', section: 'erp-cloud', icon: 'cloud' },
@@ -1743,6 +1786,7 @@ async function ensureCurrentUserOperationalId(authUser, profile = null) {
 }
 
 async function syncLocalStorageRecords() {
+  if (state.viewAs?.active) return;
   if (!state.user?.user_id) {
     const profile = await ensureCurrentUserOperationalId(state.user, state.user);
     if (profile?.user_id) {
@@ -1847,17 +1891,28 @@ async function bootstrapSession() {
     const resolvedProfile = await ensureCurrentUserOperationalId(authUser, profile);
 
     // Merge auth user as fallback so email/id are always available
-    const mergedUser = resolvedProfile ? { ...authUser, ...resolvedProfile } : authUser;
+    const actualUser = resolvedProfile ? { ...authUser, ...resolvedProfile } : authUser;
+    const viewAsContext = await window.HiddenRoomViewAs?.resolveForAdmin?.(
+      supabase,
+      authUser,
+      resolvedProfile,
+    );
+    const effectiveProfile = viewAsContext?.active ? viewAsContext.profile : resolvedProfile;
+    const mergedUser = viewAsContext?.active
+      ? { ...viewAsContext.user, ...effectiveProfile }
+      : actualUser;
 
     // Expand roles cumulatively from public.users.roles field
     const roles = expandRoles(mergedUser.roles);
 
     // Fetch granular permissions from user_permissions
     // user_permissions.user_id references auth.users.id (same as public.users.id)
-    const { data: permRows, error: permError } = await supabase
-      .from('user_permissions')
-      .select('permission_key')
-      .eq('user_id', authUser.id);
+    const { data: permRows, error: permError } = viewAsContext?.active
+      ? { data: (viewAsContext.permissions || []).map((permission_key) => ({ permission_key })), error: null }
+      : await supabase
+        .from('user_permissions')
+        .select('permission_key')
+        .eq('user_id', authUser.id);
 
     if (permError) {
       console.error('[HR] bootstrapSession: could not fetch permissions', permError);
@@ -1865,7 +1920,13 @@ async function bootstrapSession() {
 
     const permissions = (permRows ?? []).map((r) => r.permission_key);
 
-    return { user: mergedUser, roles, permissions };
+    return {
+      user: mergedUser,
+      actualUser,
+      viewAs: viewAsContext || null,
+      roles,
+      permissions,
+    };
 
   } catch (err) {
     console.error('[HR] bootstrapSession: unexpected error', err);
@@ -2012,6 +2073,8 @@ async function handleRefreshSession() {
 
     setState({
       user: session.user,
+      actualUser: session.actualUser || session.user,
+      viewAs: session.viewAs || null,
       roles: session.roles,
       permissions: session.permissions,
       data: {},
@@ -8117,6 +8180,44 @@ async function ensureUsersLoaded() {
   }
 }
 
+async function handleViewAsSubmit(form) {
+  if (state.viewAs?.active || !hasRole('admin')) {
+    showToast('Regresa a tu vista de administrador para cambiar de usuario.', 'error');
+    return;
+  }
+
+  const userId = form.querySelector('input[type="hidden"][name="view_as_user_id"]')?.value || '';
+  if (!userId) {
+    showToast('Selecciona un usuario.', 'error');
+    return;
+  }
+
+  const submit = form.querySelector('button[type="submit"]');
+  if (submit) {
+    submit.disabled = true;
+    submit.textContent = 'Cargando vista...';
+  }
+
+  try {
+    await window.HiddenRoomViewAs?.activate?.(userId);
+    let destination = '/portal/dashboard.html#overview';
+    try {
+      destination = sessionStorage.getItem('hr_view_as_return') || destination;
+      sessionStorage.removeItem('hr_view_as_return');
+    } catch (error) {
+      console.info('[HR] view-as return path unavailable:', error?.message || error);
+    }
+    window.location.href = destination;
+  } catch (error) {
+    console.error('[HR] view-as activate:', error);
+    if (submit) {
+      submit.disabled = false;
+      submit.textContent = 'Cargar vista';
+    }
+    showToast(error?.message || 'No se pudo cargar la vista del usuario.', 'error');
+  }
+}
+
 function parseBooleanField(value) {
   if (typeof value === 'boolean') return value;
   const normalized = String(value ?? '').trim().toLowerCase();
@@ -12412,6 +12513,11 @@ function attachMainDelegation() {
     const taskCard = e.target.closest('.db-task-card[data-task-id]');
     const action = e.target.closest('[data-action]')?.dataset.action;
 
+    if (action === 'view-as-cancel') {
+      window.HiddenRoomViewAs?.cancelSelector?.();
+      return;
+    }
+
     if (taskCard && action === 'task-edit') {
       const task = (state.data.tasks ?? []).find((item) => String(item.id) === String(taskCard.dataset.taskId));
       const holder = document.querySelector('.db-admin-grid .db-card__inner');
@@ -12826,6 +12932,16 @@ function attachMainDelegation() {
     e.preventDefault();
     form.dataset.operationAction = e.submitter?.dataset.operationAction || 'create';
 
+    if (form.dataset.form === 'view-as') {
+      handleViewAsSubmit(form);
+      return;
+    }
+
+    if (state.viewAs?.active) {
+      showToast('La vista como usuario es de solo lectura.', 'error');
+      return;
+    }
+
     if (form.dataset.form === 'task-create') handleTaskCreate(form);
     if (form.dataset.form === 'task-update') handleTaskUpdate(form);
     if (form.dataset.form === 'account-update') handleAccountUpdate(form);
@@ -13065,9 +13181,13 @@ async function init() {
 
   setState({
     user:        session.user,
+    actualUser:  session.actualUser || session.user,
+    viewAs:      session.viewAs || null,
     roles:       session.roles,
     permissions: session.permissions,
   });
+  window.HiddenRoomViewAs?.refreshNavigation?.(state.viewAs);
+  window.HiddenRoomViewAs?.refreshBanner?.(state.viewAs);
 
   renderPortalNavigation();
   hydrateTopbar();

@@ -9,7 +9,6 @@ const ECOSYSTEM_LINKS = [
   ["games", "/minijuegos/", "Minijuegos"],
   ["media", "/media/", "Media"],
   ["store", "/store/", "Store"],
-  ["events", "/eventos/", "Eventos"],
   ["studio", "/studio/", "Studio"],
   ["beat-store", "/store/beat_store/", "Beat Store"],
   ["kairen", "/kairen/", "Kairen AI"],
@@ -17,6 +16,234 @@ const ECOSYSTEM_LINKS = [
   ["orbit", "/mysauth_orbit/", "ORBIT", true],
 ];
 const MORE_NAV_KEYS = new Set(["media", "kairen", "tickets", "orbit"]);
+const HR_VIEW_AS_STORAGE_KEY = "hr_view_as_user";
+const HR_VIEW_AS_RETURN_KEY = "hr_view_as_return";
+
+let hrViewAsContext = null;
+let resolveHrViewAsReady;
+const hrViewAsReady = new Promise((resolve) => {
+  resolveHrViewAsReady = resolve;
+});
+
+function readViewAsSelection() {
+  try {
+    const raw = sessionStorage.getItem(HR_VIEW_AS_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const userId = String(parsed?.userId || "").trim();
+    return userId ? { userId } : null;
+  } catch (error) {
+    console.info("[HR] No fue posible leer la vista como:", error?.message || error);
+    return null;
+  }
+}
+
+function persistViewAsSelection(userId) {
+  const normalized = String(userId || "").trim();
+  if (!normalized) return false;
+  try {
+    sessionStorage.setItem(HR_VIEW_AS_STORAGE_KEY, JSON.stringify({ userId: normalized }));
+    return true;
+  } catch (error) {
+    console.info("[HR] No fue posible guardar la vista como:", error?.message || error);
+    return false;
+  }
+}
+
+function clearViewAsSelection() {
+  try {
+    sessionStorage.removeItem(HR_VIEW_AS_STORAGE_KEY);
+    sessionStorage.removeItem(HR_VIEW_AS_RETURN_KEY);
+  } catch (error) {
+    console.info("[HR] No fue posible limpiar la vista como:", error?.message || error);
+  }
+  hrViewAsContext = null;
+}
+
+function viewAsDisplayName(profile) {
+  return profile?.display_name || profile?.username || profile?.email || "Usuario";
+}
+
+function resolveEffectivePermissions(profile, permissionRows) {
+  return {
+    roles: String(profile?.roles || "")
+      .split(",")
+      .map((role) => role.trim().toLowerCase())
+      .filter(Boolean),
+    permissions: (permissionRows || [])
+      .map((row) => String(row?.permission_key || "").trim().toLowerCase())
+      .filter(Boolean),
+  };
+}
+
+async function resolveViewAsContext(supabase, actualUser, actualProfile, selection = readViewAsSelection()) {
+  const actualIsAdmin = roleListIncludesAdmin(actualProfile?.roles);
+  const userId = String(selection?.userId || "").trim();
+
+  if (!actualUser?.id || !actualIsAdmin || !userId) {
+    const context = {
+      active: false,
+      actualUser,
+      actualProfile,
+      user: actualUser,
+      profile: actualProfile,
+      roles: resolveEffectivePermissions(actualProfile, []).roles,
+      permissions: [],
+    };
+    hrViewAsContext = context;
+    resolveHrViewAsReady?.(context);
+    return context;
+  }
+
+  try {
+    const [{ data: targetProfile, error: profileError }, { data: permissionRows, error: permissionsError }] = await Promise.all([
+      supabase
+        .from("users")
+        .select("id,user_id,display_name,username,email,avatar_url,roles,ig_username")
+        .eq("id", userId)
+        .maybeSingle(),
+      supabase
+        .from("user_permissions")
+        .select("permission_key")
+        .eq("user_id", userId),
+    ]);
+
+    if (profileError) throw profileError;
+    if (permissionsError) throw permissionsError;
+    if (!targetProfile) throw new Error("El usuario seleccionado ya no existe.");
+
+    const access = resolveEffectivePermissions(targetProfile, permissionRows);
+    const targetUser = {
+      ...actualUser,
+      id: targetProfile.id || userId,
+      user_id: targetProfile.user_id || null,
+      email: targetProfile.email || "",
+      user_metadata: {
+        ...(actualUser.user_metadata || {}),
+        display_name: targetProfile.display_name,
+        username: targetProfile.username,
+      },
+    };
+    const context = {
+      active: String(targetProfile.id || userId) !== String(actualUser.id),
+      actualUser,
+      actualProfile,
+      user: targetUser,
+      profile: targetProfile,
+      roles: access.roles,
+      permissions: access.permissions,
+    };
+    hrViewAsContext = context;
+    resolveHrViewAsReady?.(context);
+    document.body?.classList.toggle("hr-view-as-active", context.active);
+    if (document.body) document.body.dataset.hrViewAsUser = context.active ? String(targetProfile.id || userId) : "";
+    return context;
+  } catch (error) {
+    console.info("[HR] No fue posible resolver la vista como:", error?.message || error);
+    clearViewAsSelection();
+    const context = {
+      active: false,
+      actualUser,
+      actualProfile,
+      user: actualUser,
+      profile: actualProfile,
+      roles: resolveEffectivePermissions(actualProfile, []).roles,
+      permissions: [],
+      error,
+    };
+    hrViewAsContext = context;
+    resolveHrViewAsReady?.(context);
+    return context;
+  }
+}
+
+async function activateViewAs(userId) {
+  const normalized = String(userId || "").trim();
+  if (!normalized) throw new Error("Selecciona un usuario.");
+  const supabase = await getHiddenRoomSupabaseClient();
+  const { data: { user: actualUser } } = await supabase.auth.getUser();
+  if (!actualUser) throw new Error("La sesión de administrador ya no está disponible.");
+  const { data: actualProfile, error } = await supabase
+    .from("users")
+    .select("id,user_id,display_name,username,email,avatar_url,roles,ig_username")
+    .eq("id", actualUser.id)
+    .maybeSingle();
+  if (error) throw error;
+  if (!roleListIncludesAdmin(actualProfile?.roles)) throw new Error("Sólo un administrador puede usar esta vista.");
+  const context = await resolveViewAsContext(supabase, actualUser, actualProfile, { userId: normalized });
+  if (!context.active) throw new Error("No se pudo activar la vista del usuario seleccionado.");
+  persistViewAsSelection(normalized);
+  return context;
+}
+
+function viewAsReturnPath() {
+  return `${window.location.pathname}${window.location.search}${window.location.hash}`;
+}
+
+function openViewAsSelector() {
+  try {
+    sessionStorage.setItem(HR_VIEW_AS_RETURN_KEY, viewAsReturnPath());
+  } catch (error) {
+    console.info("[HR] No fue posible guardar la ruta de retorno:", error?.message || error);
+  }
+  window.location.href = "/portal/dashboard.html#view-as";
+}
+
+function returnFromViewAs() {
+  clearViewAsSelection();
+  window.location.reload();
+}
+
+function cancelViewAsSelector() {
+  let destination = "/portal/dashboard.html#overview";
+  try {
+    destination = sessionStorage.getItem(HR_VIEW_AS_RETURN_KEY) || destination;
+    sessionStorage.removeItem(HR_VIEW_AS_RETURN_KEY);
+  } catch (error) {
+    console.info("[HR] No fue posible recuperar la ruta de retorno:", error?.message || error);
+  }
+  window.location.href = destination;
+}
+
+function syncViewAsNavigation(context = hrViewAsContext) {
+  const actualIsAdmin = roleListIncludesAdmin(context?.actualProfile?.roles);
+  document.querySelectorAll("[data-view-as-admin-action]").forEach((control) => {
+    control.hidden = !actualIsAdmin;
+    const active = Boolean(context?.active);
+    control.dataset.viewAsAction = active ? "clear" : "open";
+    control.textContent = active
+      ? `Volver a mi vista${context?.profile ? ` · ${viewAsDisplayName(context.profile)}` : ""}`
+      : "Ver como";
+  });
+}
+
+function renderViewAsBanner(context = hrViewAsContext) {
+  document.getElementById("hr-view-as-banner")?.remove();
+  if (!context?.active) return;
+  const banner = document.createElement("div");
+  banner.id = "hr-view-as-banner";
+  banner.className = "hr-view-as-banner";
+  banner.setAttribute("role", "status");
+  banner.innerHTML = `
+    <span>Vista como <strong>${escapeNavText(viewAsDisplayName(context.profile))}</strong></span>
+    <button type="button" data-view-as-action="clear">Volver a mi vista</button>
+  `;
+  document.body.append(banner);
+}
+
+window.HiddenRoomViewAs = window.HiddenRoomViewAs || {
+  ready: () => hrViewAsReady,
+  getContext: () => hrViewAsContext,
+  getSelection: readViewAsSelection,
+  isActive: () => Boolean(hrViewAsContext?.active || readViewAsSelection()),
+  resolveForAdmin: resolveViewAsContext,
+  activate: activateViewAs,
+  openSelector: openViewAsSelector,
+  cancelSelector: cancelViewAsSelector,
+  refreshNavigation: syncViewAsNavigation,
+  refreshBanner: renderViewAsBanner,
+  clear: returnFromViewAs,
+};
 
 function isBeatStorePath(path) {
   return path.startsWith("/store/beat_store/");
@@ -44,6 +271,7 @@ function renderMoreNav(activeModule, navPath, drawer = false) {
       <summary class="${summaryClass}">MÁS <span class="hr-nav__more-chevron" aria-hidden="true"></span></summary>
       <div class="${linksClass}">
         ${moreLinks.map((item) => renderGlobalNavLink(item, activeModule, navPath, drawer)).join("")}
+        <button class="${linksClass}__action" type="button" data-view-as-admin-action hidden>Ver como</button>
       </div>
     </details>
   `;
@@ -52,25 +280,16 @@ function renderMoreNav(activeModule, navPath, drawer = false) {
 let globalSessionSnapshot = null;
 
 const HR_COPY_EDITOR_CANDIDATE_SELECTOR = "h1,h2,h3,h4,h5,h6,p,a,button,li,dt,dd,blockquote,figcaption,legend,summary,span,small";
-const HR_COPY_EDITOR_IGNORE_SELECTOR = "#hr-global-nav,#hr-beat-player,#hr-beat-player-fullscreen,#posts-grid,#editorial-grid,#featured-grid,#post-content,#related-grid,#product-grid,#beat-grid,#product-detail,#cart-items,#cart-summary,#orders-list,#tickets-list,#ticket-result,#studio-request-result,#studio-price,#events-grid,#events-status,script,style,noscript,svg,canvas,video,audio,iframe,input,textarea,select,option,[aria-hidden=\"true\"],[data-hr-copy-ignore],[data-hr-session],[data-hr-drawer-session],.site-status,.site-version,#cursor,#cursorRing";
+const HR_COPY_EDITOR_IGNORE_SELECTOR = "#hr-global-nav,#hr-beat-player,#hr-beat-player-fullscreen,#posts-grid,#editorial-grid,#featured-grid,#post-content,#related-grid,#product-grid,#beat-grid,#product-detail,#cart-items,#cart-summary,#orders-list,#tickets-list,#ticket-result,#studio-request-result,#studio-price,script,style,noscript,svg,canvas,video,audio,iframe,input,textarea,select,option,[aria-hidden=\"true\"],[data-hr-copy-ignore],[data-hr-session],[data-hr-drawer-session],.site-status,.site-version,#cursor,#cursorRing";
 const hrCopyEditorState = {
   root: null,
   toggle: null,
-  quickActions: null,
   quickSave: null,
-  quickCancel: null,
-  panel: null,
-  fields: null,
-  status: null,
-  save: null,
-  cancel: null,
   canEdit: false,
   active: false,
   pagePath: "",
   entries: [],
   refreshId: 0,
-  refreshTimer: 0,
-  observer: null,
 };
 
 function copyEditorPagePath(url = window.location.href) {
@@ -132,17 +351,12 @@ function collectGlobalCopyEntries() {
       const key = copyEditorKey(element);
       if (!key || seenKeys.has(key)) return null;
       seenKeys.add(key);
-      const existingEntry = element.__hrCopyEditorEntry;
-      if (existingEntry) return existingEntry;
       const defaultText = copyEditorText(element.textContent);
       element.dataset.hrCopyRuntimeKey = key;
-      const entry = { key, defaultText, value: defaultText, element, editing: false, lastTapAt: 0, savedValue: defaultText };
-      element.__hrCopyEditorEntry = entry;
+      const entry = { key, defaultText, value: defaultText, element, editing: false, lastTapAt: 0 };
       element.addEventListener("input", () => {
         if (!hrCopyEditorState.active) return;
         entry.value = copyEditorText(element.textContent);
-        const field = hrCopyEditorState.fields?.querySelector(`[data-hr-copy-editor-field="${CSS.escape(entry.key)}"]`);
-        if (field && document.activeElement !== field) field.value = entry.value;
         element.classList.toggle("hr-copy-editor-target--changed", entry.value !== entry.defaultText);
       });
       element.addEventListener("dblclick", (event) => beginGlobalCopyInlineEdit(entry, event));
@@ -167,9 +381,11 @@ function collectGlobalCopyEntries() {
 }
 
 function setCopyEditorStatus(message, type = "") {
-  if (!hrCopyEditorState.status) return;
-  hrCopyEditorState.status.textContent = message;
-  hrCopyEditorState.status.dataset.state = type;
+  const save = hrCopyEditorState.quickSave;
+  if (!save) return;
+  save.textContent = type === "error" ? "Reintentar" : message || "Guardar cambios";
+  save.dataset.state = type;
+  save.title = type === "error" ? message : "";
 }
 
 function applyGlobalCopyEditorState() {
@@ -194,8 +410,10 @@ function applyGlobalCopyEditorState() {
     }
   });
   hrCopyEditorState.root?.classList.toggle("is-active", active);
-  hrCopyEditorState.quickActions?.toggleAttribute("hidden", !active);
-  hrCopyEditorState.panel?.toggleAttribute("hidden", !active);
+  hrCopyEditorState.quickSave?.toggleAttribute("hidden", !active);
+  if (hrCopyEditorState.quickSave) {
+    hrCopyEditorState.quickSave.style.display = active ? "inline-flex" : "none";
+  }
   if (hrCopyEditorState.toggle) {
     hrCopyEditorState.toggle.setAttribute("aria-checked", String(active));
     hrCopyEditorState.toggle.dataset.mode = active ? "editor" : "espectador";
@@ -226,39 +444,6 @@ function beginGlobalCopyInlineEdit(entry, event) {
   placeGlobalCopyCaret(entry.element);
 }
 
-function renderGlobalCopyEditorFields() {
-  const fields = hrCopyEditorState.fields;
-  if (!fields) return;
-  fields.replaceChildren();
-  if (!hrCopyEditorState.entries.length) {
-    const empty = document.createElement("p");
-    empty.className = "hr-copy-editor__empty";
-    empty.textContent = "Esta página no tiene textos estáticos editables.";
-    fields.append(empty);
-    return;
-  }
-
-  hrCopyEditorState.entries.forEach((entry, index) => {
-    const label = document.createElement("label");
-    label.className = "hr-copy-editor__field";
-    const heading = document.createElement("span");
-    heading.className = "hr-copy-editor__field-label";
-    heading.textContent = `${entry.element.tagName.toLowerCase()} · ${index + 1}`;
-    const textarea = document.createElement("textarea");
-    textarea.rows = Math.min(5, Math.max(2, Math.ceil(entry.value.length / 48)));
-    textarea.value = entry.value;
-    textarea.dataset.hrCopyEditorField = entry.key;
-    textarea.setAttribute("aria-label", `Texto ${index + 1}`);
-    textarea.addEventListener("input", () => {
-      entry.value = textarea.value.trim();
-      entry.element.textContent = entry.value;
-      entry.element.classList.toggle("hr-copy-editor-target--changed", entry.value !== entry.defaultText);
-    });
-    label.append(heading, textarea);
-    fields.append(label);
-  });
-}
-
 async function loadGlobalCopyOverrides(entries, pagePath) {
   try {
     const supabase = await getHiddenRoomSupabaseClient();
@@ -270,50 +455,11 @@ async function loadGlobalCopyOverrides(entries, pagePath) {
     if (error) return;
     const overrides = new Map((data || []).map((row) => [String(row.content_key || ""), row.override_text ?? ""]));
     entries.forEach((entry) => {
-      const value = overrides.has(entry.key) ? String(overrides.get(entry.key)) : entry.defaultText;
-      entry.savedValue = value;
-      entry.value = value;
-      entry.element.textContent = value;
+      if (!overrides.has(entry.key)) return;
+      entry.value = String(overrides.get(entry.key));
+      entry.element.textContent = entry.value;
     });
   } catch {}
-}
-
-function isRelevantGlobalCopyEditorMutation(record) {
-  const target = record.target?.nodeType === Node.ELEMENT_NODE
-    ? record.target
-    : record.target?.parentElement;
-  if (!target
-    || target.closest(HR_COPY_EDITOR_IGNORE_SELECTOR)
-    || target.closest("#hr-copy-editor")
-    || target.closest("[data-hr-copy-runtime-key]")) {
-    return false;
-  }
-
-  return [...record.addedNodes, ...record.removedNodes].some((node) => {
-    if (node.nodeType !== Node.ELEMENT_NODE) return false;
-    const element = node;
-    return !element.matches(HR_COPY_EDITOR_IGNORE_SELECTOR)
-      && !element.closest(HR_COPY_EDITOR_IGNORE_SELECTOR)
-      && !element.closest("#hr-copy-editor")
-      && !element.closest("[data-hr-copy-runtime-key]");
-  });
-}
-
-function scheduleGlobalCopyEditorRefresh() {
-  if (hrCopyEditorState.refreshTimer) window.clearTimeout(hrCopyEditorState.refreshTimer);
-  hrCopyEditorState.refreshTimer = window.setTimeout(() => {
-    hrCopyEditorState.refreshTimer = 0;
-    refreshGlobalCopyEditorPage();
-  }, 180);
-}
-
-function observeGlobalCopyEditorContent() {
-  if (!document.body || typeof MutationObserver === "undefined") return;
-  hrCopyEditorState.observer?.disconnect();
-  hrCopyEditorState.observer = new MutationObserver((records) => {
-    if (records.some(isRelevantGlobalCopyEditorMutation)) scheduleGlobalCopyEditorRefresh();
-  });
-  hrCopyEditorState.observer.observe(document.body, { childList: true, subtree: true });
 }
 
 async function refreshGlobalCopyEditorPage() {
@@ -322,7 +468,6 @@ async function refreshGlobalCopyEditorPage() {
   hrCopyEditorState.entries = collectGlobalCopyEntries();
   await loadGlobalCopyOverrides(hrCopyEditorState.entries, hrCopyEditorState.pagePath);
   if (refreshId !== hrCopyEditorState.refreshId) return;
-  if (hrCopyEditorState.active) renderGlobalCopyEditorFields();
   applyGlobalCopyEditorState();
 }
 
@@ -338,7 +483,7 @@ function setGlobalCopyEditorAccess(visible) {
 
 async function saveGlobalCopyEditor() {
   if (!hrCopyEditorState.canEdit || !hrCopyEditorState.entries.length) return;
-  if (hrCopyEditorState.save) hrCopyEditorState.save.disabled = true;
+  if (hrCopyEditorState.quickSave) hrCopyEditorState.quickSave.disabled = true;
   setCopyEditorStatus("Guardando…");
   try {
     const supabase = await getHiddenRoomSupabaseClient();
@@ -357,29 +502,13 @@ async function saveGlobalCopyEditor() {
       .from("site_text_overrides")
       .upsert(rows, { onConflict: "page_path,content_key" });
     if (error) throw error;
-    hrCopyEditorState.entries.forEach((entry) => {
-      entry.savedValue = entry.value.trim();
-    });
     setCopyEditorStatus("Cambios guardados", "success");
     applyGlobalCopyEditorState();
   } catch (error) {
     setCopyEditorStatus(error?.message || "No se pudieron guardar los cambios.", "error");
   } finally {
-    if (hrCopyEditorState.save) hrCopyEditorState.save.disabled = false;
+    if (hrCopyEditorState.quickSave) hrCopyEditorState.quickSave.disabled = false;
   }
-}
-
-function cancelGlobalCopyEditor() {
-  if (!hrCopyEditorState.canEdit || !hrCopyEditorState.entries.length) return;
-  hrCopyEditorState.entries.forEach((entry) => {
-    entry.value = entry.savedValue ?? entry.defaultText;
-    entry.element.textContent = entry.value;
-    entry.editing = false;
-    entry.lastTapAt = 0;
-  });
-  if (hrCopyEditorState.active) renderGlobalCopyEditorFields();
-  setCopyEditorStatus("Cambios cancelados", "success");
-  applyGlobalCopyEditorState();
 }
 
 function initGlobalCopyEditor() {
@@ -397,42 +526,21 @@ function initGlobalCopyEditor() {
         <span class="hr-copy-editor__mode-option hr-copy-editor__mode-option--editor">Editor</span>
         <span class="hr-copy-editor__mode-thumb" aria-hidden="true"></span>
       </button>
+      <button class="hr-copy-editor__quick-save" type="button" hidden>Guardar cambios</button>
     </div>
-    <div class="hr-copy-editor__quick-actions" hidden>
-      <button class="hr-copy-editor__save hr-copy-editor__quick-save" type="button">Guardar</button>
-      <button class="hr-copy-editor__cancel hr-copy-editor__quick-cancel" type="button">Cancelar</button>
-    </div>
-    <aside class="hr-copy-editor__panel" aria-label="Editor de textos" hidden>
-      <div class="hr-copy-editor__header"><strong>Editar textos</strong><span>Solo contenido estático</span></div>
-      <p class="hr-copy-editor__help">Activa el modo Editor y toca dos veces cualquier texto resaltado para editarlo directamente. Los campos que vienen de la base de datos quedan fuera.</p>
-      <div class="hr-copy-editor__fields"></div>
-      <div class="hr-copy-editor__actions"><button class="hr-copy-editor__cancel" type="button">Cancelar</button><button class="hr-copy-editor__save" type="button">Guardar cambios</button><span class="hr-copy-editor__status" role="status" aria-live="polite"></span></div>
-    </aside>
   `;
   document.body.append(root);
-  root.querySelector(".hr-copy-editor__panel")?.remove();
   hrCopyEditorState.root = root;
   hrCopyEditorState.toggle = root.querySelector(".hr-copy-editor__toggle");
-  hrCopyEditorState.quickActions = root.querySelector(".hr-copy-editor__quick-actions");
   hrCopyEditorState.quickSave = root.querySelector(".hr-copy-editor__quick-save");
-  hrCopyEditorState.quickCancel = root.querySelector(".hr-copy-editor__quick-cancel");
-  hrCopyEditorState.panel = root.querySelector(".hr-copy-editor__panel");
-  hrCopyEditorState.fields = root.querySelector(".hr-copy-editor__fields");
-  hrCopyEditorState.status = root.querySelector(".hr-copy-editor__status");
-  hrCopyEditorState.save = root.querySelector(".hr-copy-editor__panel .hr-copy-editor__save");
-  hrCopyEditorState.cancel = root.querySelector(".hr-copy-editor__panel .hr-copy-editor__cancel");
   hrCopyEditorState.toggle.addEventListener("click", () => {
     hrCopyEditorState.active = !hrCopyEditorState.active;
     if (hrCopyEditorState.active) {
-      renderGlobalCopyEditorFields();
       setCopyEditorStatus("");
     }
     applyGlobalCopyEditorState();
   });
-  if (hrCopyEditorState.quickSave) hrCopyEditorState.quickSave.addEventListener("click", saveGlobalCopyEditor);
-  if (hrCopyEditorState.quickCancel) hrCopyEditorState.quickCancel.addEventListener("click", cancelGlobalCopyEditor);
-  if (hrCopyEditorState.save) hrCopyEditorState.save.addEventListener("click", saveGlobalCopyEditor);
-  if (hrCopyEditorState.cancel) hrCopyEditorState.cancel.addEventListener("click", cancelGlobalCopyEditor);
+  hrCopyEditorState.quickSave.addEventListener("click", saveGlobalCopyEditor);
   document.addEventListener("click", (event) => {
     if (!hrCopyEditorState.active) return;
     const target = event.target.closest("[data-hr-copy-runtime-key]");
@@ -441,7 +549,6 @@ function initGlobalCopyEditor() {
     target.focus();
   }, true);
   window.addEventListener("hr:spa-content-updated", refreshGlobalCopyEditorPage);
-  observeGlobalCopyEditorContent();
   refreshGlobalCopyEditorPage();
 }
 
@@ -602,14 +709,6 @@ function renderSubNav(module) {
     return "";
   }
 
-  if (module === "events") {
-    const isAdminPage = path.endsWith("/admin.html");
-    return [
-      item("/eventos/", "Cartelera", !isAdminPage),
-      item("/eventos/admin.html", "Administrar", isAdminPage, " data-admin-nav-link hidden"),
-    ].join("");
-  }
-
   if (module === "tickets") {
     return [
       item("/tickets/", "Eventos", path.endsWith("/tickets/") || path.endsWith("/tickets/index.html")),
@@ -621,13 +720,8 @@ function renderSubNav(module) {
   return "";
 }
 
-function isPortalDashboardPage() {
-  return document.body.classList.contains("db-body")
-    && !document.body.classList.contains("events-admin-page");
-}
-
 function renderNavActions(module) {
-  if (isPortalDashboardPage()) {
+  if (document.body.classList.contains("db-body")) {
     return `
       <button class="hr-nav__notifications" id="js-notifications-toggle" aria-label="Notificaciones"
         aria-expanded="false" aria-controls="js-notifications-panel">
@@ -686,7 +780,7 @@ function globalAuthLoadingMarkup(drawer = false) {
 }
 
 function renderGlobalDrawer(activeModule) {
-  const isPortalDashboard = isPortalDashboardPage();
+  const isPortalDashboard = document.body.classList.contains("db-body");
   const navPath = window.location.pathname;
   const drawerSessionMarkup = isPortalDashboard
     ? `
@@ -1013,7 +1107,7 @@ window.HiddenRoomNavigation = window.HiddenRoomNavigation || {
 };
 
 async function hydrateGlobalSession() {
-  if (isPortalDashboardPage()) return;
+  if (document.body.classList.contains("db-body")) return;
   const sessionTargets = document.querySelectorAll("[data-hr-session]");
   const drawerTargets = document.querySelectorAll("[data-hr-drawer-session]");
   if (!sessionTargets.length && !drawerTargets.length) return;
@@ -1025,6 +1119,9 @@ async function hydrateGlobalSession() {
     const { data: { session } } = await supabase.auth.getSession();
     const user = session?.user || null;
     if (!user) {
+      clearViewAsSelection();
+      syncViewAsNavigation(null);
+      renderViewAsBanner(null);
       sessionTargets.forEach((target) => {
         target.innerHTML = guestHeaderMarkup();
       });
@@ -1047,7 +1144,15 @@ async function hydrateGlobalSession() {
       .eq("id", user.id)
       .maybeSingle();
 
-    const permissionResult = await supabase.rpc("has_beats_upload_permission");
+    const viewAs = await resolveViewAsContext(supabase, user, profile);
+    const effectiveProfile = viewAs.active ? viewAs.profile : profile;
+    const effectiveUser = viewAs.active ? viewAs.user : user;
+    const effectiveRoles = viewAs.roles || resolveEffectivePermissions(effectiveProfile, []).roles;
+    const effectivePermissions = viewAs.permissions || [];
+
+    const permissionResult = viewAs.active
+      ? { data: effectivePermissions.includes("beats.upload"), error: null }
+      : await supabase.rpc("has_beats_upload_permission");
     let hasBeatUploadPermission = permissionResult.data;
     if (permissionResult.error) {
       const { data: permissionRows } = await supabase
@@ -1060,10 +1165,10 @@ async function hydrateGlobalSession() {
     }
     setPermissionNavigationVisibility(
       "beats.upload",
-      roleListIncludesAdmin(profile?.roles) || Boolean(hasBeatUploadPermission),
+      roleListIncludesAdmin(effectiveProfile?.roles) || Boolean(hasBeatUploadPermission),
     );
 
-    const notificationTargets = [user.id, profile?.user_id].filter(Boolean).map(String);
+    const notificationTargets = [effectiveUser?.id, effectiveProfile?.user_id].filter(Boolean).map(String);
     let notifications = [];
     if (notificationTargets.length) {
       const { data } = await supabase
@@ -1075,25 +1180,32 @@ async function hydrateGlobalSession() {
       notifications = data || [];
     }
     const unread = notifications.filter((item) => !item.read).length;
-    let canSeeAdminNav = roleListIncludesAdmin(profile?.roles);
+    let canSeeAdminNav = roleListIncludesAdmin(effectiveProfile?.roles);
     if (!canSeeAdminNav) {
-      const { data: academiaPermissionRows } = await supabase
-        .from("user_permissions")
-        .select("permission_key")
-        .eq("user_id", user.id);
-      canSeeAdminNav = (academiaPermissionRows || [])
-        .map((row) => String(row.permission_key || "").trim().toLowerCase())
-        .includes("academia.admin");
+      canSeeAdminNav = viewAs.active
+        ? effectivePermissions.includes("academia.admin")
+        : false;
+      if (!viewAs.active) {
+        const { data: academiaPermissionRows } = await supabase
+          .from("user_permissions")
+          .select("permission_key")
+          .eq("user_id", user.id);
+        canSeeAdminNav = (academiaPermissionRows || [])
+          .map((row) => String(row.permission_key || "").trim().toLowerCase())
+          .includes("academia.admin");
+      }
     }
     setAdminNavigationVisibility(canSeeAdminNav);
-    setGlobalCopyEditorAccess(roleListIncludesAdmin(profile?.roles));
-    globalSessionSnapshot = { profile, user, notifications, unread };
+    setGlobalCopyEditorAccess(roleListIncludesAdmin(profile?.roles) && !viewAs.active);
+    globalSessionSnapshot = { profile: effectiveProfile, user: effectiveUser, notifications, unread };
+    syncViewAsNavigation(viewAs);
+    renderViewAsBanner(viewAs);
 
     sessionTargets.forEach((target) => {
-      target.innerHTML = authenticatedHeaderMarkup(profile, user, unread);
+      target.innerHTML = authenticatedHeaderMarkup(effectiveProfile, effectiveUser, unread);
     });
     drawerTargets.forEach((target) => {
-      target.innerHTML = authenticatedHeaderMarkup(profile, user, unread, true);
+      target.innerHTML = authenticatedHeaderMarkup(effectiveProfile, effectiveUser, unread, true);
     });
     sessionTargets.forEach((target) => { target.hidden = false; });
     drawerTargets.forEach((target) => { target.hidden = false; });
@@ -1101,6 +1213,8 @@ async function hydrateGlobalSession() {
     renderGlobalNotifications(notifications);
     showGlobalInstagramUsernamePrompt(profile, user, supabase);
   } catch (error) {
+    syncViewAsNavigation(null);
+    renderViewAsBanner(null);
     setAdminNavigationVisibility(false);
     setGlobalCopyEditorAccess(false);
     setPermissionNavigationVisibility("beats.upload", false);
@@ -2827,6 +2941,17 @@ function initGlobalFooter() {
 
   if (!existingFooter) body.append(footer);
 }
+
+document.addEventListener("click", (event) => {
+  const control = event.target.closest("[data-view-as-action]");
+  if (!control) return;
+  event.preventDefault();
+  if (control.dataset.viewAsAction === "clear") {
+    returnFromViewAs();
+    return;
+  }
+  openViewAsSelector();
+});
 
 renderGlobalNav();
 attachGlobalNotificationListeners();
