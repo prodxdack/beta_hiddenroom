@@ -19,6 +19,7 @@ const MORE_NAV_KEYS = new Set(["media", "kairen", "tickets", "orbit"]);
 const HR_VIEW_AS_STORAGE_KEY = "hr_view_as_user";
 const HR_VIEW_AS_RETURN_KEY = "hr_view_as_return";
 const HR_VIEW_AS_BANNER_VISIBLE_KEY = "hr_view_as_banner_visible";
+const HR_VIEW_AS_BANNER_POSITION_KEY = "hr_view_as_banner_position";
 const HR_COPY_EDITOR_VISIBLE_KEY = "hr_copy_editor_visible";
 
 let hrViewAsContext = null;
@@ -41,6 +42,89 @@ function persistUiVisibility(key, visible) {
   } catch (error) {
     console.info("[HR] No fue posible guardar el estado visual:", error?.message || error);
   }
+}
+
+function readUiPosition(key) {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(key) || "null");
+    return {
+      x: Number.isFinite(Number(parsed?.x)) ? Number(parsed.x) : 0,
+      y: Number.isFinite(Number(parsed?.y)) ? Number(parsed.y) : 0,
+    };
+  } catch (error) {
+    return { x: 0, y: 0 };
+  }
+}
+
+function persistUiPosition(key, position) {
+  try {
+    sessionStorage.setItem(key, JSON.stringify({ x: position.x, y: position.y }));
+  } catch (error) {
+    console.info("[HR] No fue posible guardar la posición visual:", error?.message || error);
+  }
+}
+
+function applyUiPosition(root, position) {
+  const x = Number(position?.x) || 0;
+  const y = Number(position?.y) || 0;
+  root.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+}
+
+function enableLongPressDrag(root, storageKey) {
+  if (!root) return;
+  const initialPosition = readUiPosition(storageKey);
+  applyUiPosition(root, initialPosition);
+  let gesture = null;
+
+  root.addEventListener("pointerdown", (event) => {
+    const isCollapsed = root.classList.contains("is-collapsed");
+    if (event.target.closest("a,input,textarea,select") || (event.target.closest("button") && !isCollapsed)) return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+
+    const start = { x: event.clientX, y: event.clientY };
+    const position = readUiPosition(storageKey);
+    const finish = (save) => {
+      if (!gesture) return;
+      window.clearTimeout(gesture.timer);
+      document.removeEventListener("pointermove", gesture.move);
+      document.removeEventListener("pointerup", gesture.end);
+      document.removeEventListener("pointercancel", gesture.end);
+      if (save) {
+        persistUiPosition(storageKey, gesture.position);
+        root.dataset.hrSuppressClick = "true";
+        window.setTimeout(() => delete root.dataset.hrSuppressClick, 0);
+      }
+      root.classList.remove("is-dragging");
+      gesture = null;
+    };
+    const move = (moveEvent) => {
+      if (!gesture || moveEvent.pointerId !== event.pointerId) return;
+      const deltaX = moveEvent.clientX - start.x;
+      const deltaY = moveEvent.clientY - start.y;
+      if (!gesture.dragging) {
+        if (Math.hypot(deltaX, deltaY) > 8) finish(false);
+        return;
+      }
+      moveEvent.preventDefault();
+      gesture.position = { x: position.x + deltaX, y: position.y + deltaY };
+      applyUiPosition(root, gesture.position);
+    };
+    const end = () => finish(Boolean(gesture?.dragging));
+    gesture = {
+      dragging: false,
+      position,
+      move,
+      end,
+      timer: window.setTimeout(() => {
+        if (!gesture) return;
+        gesture.dragging = true;
+        root.classList.add("is-dragging");
+      }, 420),
+    };
+    document.addEventListener("pointermove", move, { passive: false });
+    document.addEventListener("pointerup", end, { once: true });
+    document.addEventListener("pointercancel", end, { once: true });
+  });
 }
 
 function visibilityToggleIcon(hidden) {
@@ -274,6 +358,7 @@ function renderViewAsBanner(context = hrViewAsContext) {
     <button class="hr-view-as-banner__toggle" type="button" data-view-as-banner-toggle aria-expanded="true" aria-label="Ocultar vista como" title="Ocultar vista como"></button>
   `;
   document.body.append(banner);
+  enableLongPressDrag(banner, HR_VIEW_AS_BANNER_POSITION_KEY);
   applyViewAsBannerVisibility(readUiVisibility(HR_VIEW_AS_BANNER_VISIBLE_KEY));
 }
 
@@ -3011,6 +3096,13 @@ function initGlobalFooter() {
 }
 
 document.addEventListener("click", (event) => {
+  const banner = event.target.closest("#hr-view-as-banner");
+  if (banner?.dataset.hrSuppressClick === "true") {
+    event.preventDefault();
+    event.stopPropagation();
+    delete banner.dataset.hrSuppressClick;
+    return;
+  }
   const bannerToggle = event.target.closest("[data-view-as-banner-toggle]");
   if (bannerToggle) {
     event.preventDefault();

@@ -14864,6 +14864,13 @@ body.hr-beat-player-fullscreen-open .hr-global-drawer {
   color: #d7f5ff;
   font-size: 12px;
   line-height: 1.2;
+  box-sizing: border-box;
+  cursor: grab;
+  user-select: none;
+}
+
+.hr-view-as-banner.is-dragging {
+  cursor: grabbing;
 }
 
 .hr-view-as-banner__content {
@@ -14882,9 +14889,10 @@ body.hr-beat-player-fullscreen-open .hr-global-drawer {
 
 .hr-view-as-banner.is-collapsed {
   padding: 6px;
-  width: 28px;
-  min-width: 28px;
-  max-width: 28px;
+  width: 40px;
+  min-width: 40px;
+  max-width: 40px;
+  height: 40px;
   gap: 0;
 }
 
@@ -14920,6 +14928,7 @@ body.hr-beat-player-fullscreen-open .hr-global-drawer {
   background: rgba(66, 190, 226, .14);
   color: #d7f5ff;
   cursor: pointer;
+  box-sizing: border-box;
 }
 
 .hr-view-as-banner__toggle:hover,
