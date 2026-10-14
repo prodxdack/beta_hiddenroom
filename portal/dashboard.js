@@ -8208,14 +8208,18 @@ async function handleViewAsSubmit(form) {
 
   try {
     await window.HiddenRoomViewAs?.activate?.(userId);
-    let destination = '/portal/dashboard.html#overview';
+    if (submit) {
+      submit.textContent = 'Vista cargada';
+      submit.dataset.state = 'success';
+      submit.setAttribute('aria-live', 'polite');
+    }
     try {
-      destination = sessionStorage.getItem('hr_view_as_return') || destination;
       sessionStorage.removeItem('hr_view_as_return');
     } catch (error) {
       console.info('[HR] view-as return path unavailable:', error?.message || error);
     }
-    window.location.href = destination;
+    await new Promise((resolve) => window.setTimeout(resolve, 500));
+    window.location.href = '/';
   } catch (error) {
     console.error('[HR] view-as activate:', error);
     if (submit) {
