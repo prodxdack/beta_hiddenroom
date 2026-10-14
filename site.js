@@ -171,6 +171,7 @@ async function activateViewAs(userId) {
   if (error) throw error;
   if (!roleListIncludesAdmin(actualProfile?.roles)) throw new Error("Sólo un administrador puede usar esta vista.");
   const context = await resolveViewAsContext(supabase, actualUser, actualProfile, { userId: normalized });
+  if (context.error) throw context.error;
   if (!context.active) throw new Error("No se pudo activar la vista del usuario seleccionado.");
   persistViewAsSelection(normalized);
   return context;

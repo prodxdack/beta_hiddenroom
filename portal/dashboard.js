@@ -685,6 +685,7 @@ async function renderViewAs() {
         <p class="db-note">La vista se mantiene en esta sesión del navegador. Las acciones de escritura quedan bloqueadas mientras observas otra cuenta.</p>
         <form data-form="view-as" class="db-inline-form">
           ${renderUserPicker('view_as_user_id', 'Usuario', selectedId, {
+            valueField: 'id',
             users,
             limit: USER_PICKER_RENDER_LIMIT,
             placeholder: 'Buscar por nombre, usuario o correo',
