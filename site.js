@@ -96,21 +96,22 @@ async function resolveViewAsContext(supabase, actualUser, actualProfile, selecti
   }
 
   try {
-    const [{ data: targetProfile, error: profileError }, { data: permissionRows, error: permissionsError }] = await Promise.all([
-      supabase
-        .from("users")
-        .select("id,user_id,display_name,username,email,avatar_url,roles,ig_username")
-        .eq("id", userId)
-        .maybeSingle(),
-      supabase
-        .from("user_permissions")
-        .select("permission_key")
-        .eq("user_id", userId),
-    ]);
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userId);
+    const profileIdColumn = isUuid ? "id" : "user_id";
+    const { data: targetProfile, error: profileError } = await supabase
+      .from("users")
+      .select("id,user_id,display_name,username,email,avatar_url,roles,ig_username")
+      .eq(profileIdColumn, userId)
+      .maybeSingle();
 
     if (profileError) throw profileError;
-    if (permissionsError) throw permissionsError;
     if (!targetProfile) throw new Error("El usuario seleccionado ya no existe.");
+
+    const { data: permissionRows, error: permissionsError } = await supabase
+      .from("user_permissions")
+      .select("permission_key")
+      .eq("user_id", targetProfile.id);
+    if (permissionsError) throw permissionsError;
 
     const access = resolveEffectivePermissions(targetProfile, permissionRows);
     const targetUser = {
@@ -724,8 +725,6 @@ function renderSubNav(module) {
 function renderNavActions(module) {
   if (document.body.classList.contains("db-body")) {
     return `
-      <button class="hr-nav__action hr-nav__action--view-as" type="button"
-        data-view-as-admin-action hidden>Ver como</button>
       <button class="hr-nav__notifications" id="js-notifications-toggle" aria-label="Notificaciones"
         aria-expanded="false" aria-controls="js-notifications-panel">
         <svg class="hr-nav__notification-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
