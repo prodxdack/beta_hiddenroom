@@ -2171,8 +2171,7 @@ function hydrateGlobalBeatPlayer() {
       window.location.assign("/store/beat_store/");
       return;
     }
-    if (fallbackAudio.paused) fallbackAudio.play().catch(() => {});
-    else fallbackAudio.pause();
+    toggleGlobalBeatPlayerPlayback();
   }));
   buyButtons.forEach((button) => button.addEventListener("click", () => {
     const event = new CustomEvent("hr:beat-player-buy", {
@@ -2222,8 +2221,7 @@ function hydrateGlobalBeatPlayer() {
   player.querySelector("[data-beat-player-fullscreen]")?.addEventListener("click", openFullscreen);
   fullscreenToggles.forEach((fullscreenToggle) => fullscreenToggle.addEventListener("click", () => {
     if (!fallbackAudio.src) return;
-    if (fallbackAudio.paused) fallbackAudio.play().catch(() => {});
-    else fallbackAudio.pause();
+    toggleGlobalBeatPlayerPlayback();
   }));
   fullscreenClose.forEach((control) => control.addEventListener("click", closeFullscreen));
   fullscreenTheme?.addEventListener("change", () => {
@@ -2814,8 +2812,25 @@ function getBeatPlayerDuration() {
 }
 
 function isBeatPlayerPlaying() {
+  if (hrWaveSurfer && hrWaveSurferReady) return Boolean(hrWaveSurfer.isPlaying());
   const audio = document.getElementById("beat-audio");
   return Boolean(audio?.src && !audio.paused && !audio.ended);
+}
+
+function setGlobalBeatPlayerPlayback(shouldPlay) {
+  if (hrWaveSurfer && hrWaveSurferReady) {
+    if (shouldPlay) Promise.resolve(hrWaveSurfer.play()).catch(() => {});
+    else hrWaveSurfer.pause();
+    return;
+  }
+  const audio = document.getElementById("beat-audio");
+  if (!audio) return;
+  if (shouldPlay) audio.play().catch(() => {});
+  else audio.pause();
+}
+
+function toggleGlobalBeatPlayerPlayback() {
+  setGlobalBeatPlayerPlayback(!isBeatPlayerPlaying());
 }
 
 function getBeatPlayerMuted() {
@@ -2879,11 +2894,10 @@ window.addEventListener("hr:beat-player-next", (event) => {
 });
 window.addEventListener("hr:beat-preview-toggle", (event) => {
   const action = event.detail?.action;
-  const audio = document.getElementById("beat-audio");
-  if (audio?.src) {
-    if (action === "pause") audio.pause();
-    else audio.play().catch(() => {});
-  }
+  if (!getBeatPlayerSrc()) return;
+  if (action === "pause") setGlobalBeatPlayerPlayback(false);
+  else if (action === "play") setGlobalBeatPlayerPlayback(true);
+  else toggleGlobalBeatPlayerPlayback();
   emitGlobalBeatPlayerState();
 });
 
