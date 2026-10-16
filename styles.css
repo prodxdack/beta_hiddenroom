@@ -4067,6 +4067,11 @@ body.hr-has-beat-player {
   transition: color .16s ease, background .16s ease, transform .16s ease;
 }
 
+.hr-beat-player__art-icon,
+.hr-beat-player__art-icon * {
+  pointer-events: none;
+}
+
 .hr-beat-player__art:hover .hr-beat-player__art-icon,
 .hr-beat-player__art:focus-visible .hr-beat-player__art-icon {
   color: #fff;
