@@ -519,9 +519,15 @@ async function initializeCheckout() {
   const paymentPanel = document.getElementById("payment-panel");
   const paymentStatus = document.getElementById("payment-status");
   const paymentBack = document.getElementById("payment-back");
+  const viewAs = await Promise.resolve(window.HiddenRoomViewAs?.ready?.());
 
   let items = [];
   let paymentForm = null;
+  if (viewAs?.active) {
+    button.disabled = true;
+    errorElement.textContent = "El checkout esta bloqueado durante Ver como. Vuelve a tu vista para comprar.";
+    return;
+  }
   trackStoreEvent("begin_checkout");
 
   const showCheckoutForm = () => {
@@ -632,6 +638,8 @@ async function initializeCheckout() {
 
 
 export async function createMercadoPagoOrder(customerData, cartItems, cardData) {
+  const viewAs = await Promise.resolve(window.HiddenRoomViewAs?.ready?.());
+  if (viewAs?.active) throw new Error("El checkout esta bloqueado durante Ver como.");
   const { data } = await supabase.auth.getSession();
   const accessToken = data.session?.access_token ?? SUPABASE_ANON_KEY;
   const response = await fetch(`${SUPABASE_URL}/functions/v1/create-order`, {
@@ -654,6 +662,8 @@ export async function createMercadoPagoOrder(customerData, cartItems, cardData) 
   return result;
 }
 export async function createStripeCheckout(customerData, cartItems) {
+  const viewAs = await Promise.resolve(window.HiddenRoomViewAs?.ready?.());
+  if (viewAs?.active) throw new Error("El checkout esta bloqueado durante Ver como.");
   const { data } = await supabase.auth.getSession();
   const accessToken = data.session?.access_token ?? SUPABASE_ANON_KEY;
   const response = await fetch(`${SUPABASE_URL}/functions/v1/create-checkout-session`, {

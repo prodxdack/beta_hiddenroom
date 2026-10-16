@@ -6,7 +6,7 @@ import {
   sanitizeContent,
   setMeta,
   supabase,
-} from "./config.js?v=20260804-shared-client";
+} from "./config.js?v=20261015-view-as-readonly-v1";
 
 const slug = new URLSearchParams(window.location.search).get("slug")?.trim();
 const article = document.getElementById("post-article");

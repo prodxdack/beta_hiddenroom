@@ -6,10 +6,14 @@ const listElement = document.getElementById("orders-list");
 const isBeatOrders = window.location.pathname.startsWith("/store/beat_store/") || new URLSearchParams(window.location.search).get("scope") === "beats";
 const ordersReturnPath = isBeatOrders ? "/store/beat_store/orders.html" : "/store/orders.html";
 const emptyOrdersHref = isBeatOrders ? "/store/beat_store/" : "/store/";
+let viewAsActive = false;
 
 initializeOrders();
 
 async function initializeOrders() {
+  const viewAs = await Promise.resolve(window.HiddenRoomViewAs?.ready?.());
+  viewAsActive = Boolean(viewAs?.active);
+  const targetUserId = viewAs?.user?.id || viewAs?.profile?.id || null;
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) {
     sessionStorage.setItem("hr_return_after_login", ordersReturnPath);
@@ -17,39 +21,66 @@ async function initializeOrders() {
     return;
   }
 
-  const orderItemsRelation = `store_order_items${isBeatOrders ? "!inner" : ""}(id, product_id, product_name, quantity, unit_price, total, beat_id, license_id, producer_name, license_name, license_snapshot)`;
-  let ordersQuery = supabase
-    .from("store_orders")
-    .select(`id, status, subtotal, total, currency, created_at, paid_at, ${orderItemsRelation}`)
-    .order("created_at", { ascending: false });
-  let downloadsQuery = supabase
-    .from("store_downloads")
-    .select("id, order_id, product_id, beat_id, license_id, license_name, file_url, available, download_count, created_at");
-  if (isBeatOrders) {
-    ordersQuery = ordersQuery.not("store_order_items.beat_id", "is", null);
-    downloadsQuery = downloadsQuery.not("beat_id", "is", null);
+  let orders = [];
+  let downloads = [];
+  let ordersError = null;
+  let downloadsError = null;
+
+  if (viewAsActive) {
+    if (!targetUserId) {
+      statusElement.textContent = "No fue posible resolver la cuenta observada.";
+      return;
+    }
+
+    const { data, error } = await supabase.rpc("get_view_as_store_orders", {
+      p_target_user_id: targetUserId,
+      p_beats_only: isBeatOrders,
+    });
+    ordersError = error;
+    orders = Array.isArray(data?.orders) ? data.orders : [];
+    downloads = Array.isArray(data?.downloads) ? data.downloads : [];
+  } else {
+    const orderItemsRelation = `store_order_items${isBeatOrders ? "!inner" : ""}(id, product_id, product_name, quantity, unit_price, total, beat_id, license_id, producer_name, license_name, license_snapshot)`;
+    let ordersQuery = supabase
+      .from("store_orders")
+      .select(`id, status, subtotal, total, currency, created_at, paid_at, ${orderItemsRelation}`)
+      .order("created_at", { ascending: false });
+    let downloadsQuery = supabase
+      .from("store_downloads")
+      .select("id, order_id, product_id, beat_id, license_id, license_name, file_url, available, download_count, created_at");
+    if (isBeatOrders) {
+      ordersQuery = ordersQuery.not("store_order_items.beat_id", "is", null);
+      downloadsQuery = downloadsQuery.not("beat_id", "is", null);
+    }
+    const results = await Promise.all([ordersQuery, downloadsQuery]);
+    orders = results[0].data || [];
+    ordersError = results[0].error;
+    downloads = results[1].data || [];
+    downloadsError = results[1].error;
   }
-  const [{ data: orders, error: ordersError }, { data: downloads, error: downloadsError }] = await Promise.all([ordersQuery, downloadsQuery]);
 
   if (ordersError || downloadsError) {
-    statusElement.textContent = `No se pudieron cargar tus compras: ${(ordersError || downloadsError).message}`;
+    statusElement.textContent = `No se pudieron cargar ${viewAsActive ? "las compras de la cuenta observada" : "tus compras"}: ${(ordersError || downloadsError).message}`;
     return;
   }
 
-  if (!orders?.length) {
-    statusElement.textContent = "Todavía no tienes compras ligadas a esta cuenta.";
+  if (!orders.length) {
+    statusElement.textContent = viewAsActive
+      ? "Todavia no hay compras ligadas a la cuenta observada."
+      : "Todavia no tienes compras ligadas a esta cuenta.";
     listElement.innerHTML = `<a class="primary-button" href="${emptyOrdersHref}">${isBeatOrders ? "Explorar beats" : "Explorar tienda"}</a>`;
     return;
   }
 
-  statusElement.textContent = `${orders.length} compra${orders.length === 1 ? "" : "s"} encontrada${orders.length === 1 ? "" : "s"}.`;
+  statusElement.textContent = viewAsActive
+    ? `Vista como: ${orders.length} compra${orders.length === 1 ? "" : "s"} encontrada${orders.length === 1 ? "" : "s"}.`
+    : `${orders.length} compra${orders.length === 1 ? "" : "s"} encontrada${orders.length === 1 ? "" : "s"}.`;
   listElement.innerHTML = orders.map((order) => orderMarkup(
     order,
-    (downloads ?? []).filter((download) => download.order_id === order.id),
+    downloads.filter((download) => download.order_id === order.id),
   )).join("");
   listElement.addEventListener("click", handleDownloadClick);
 }
-
 function orderMarkup(order, downloads) {
   return `
     <article class="order-card">
@@ -80,6 +111,7 @@ function orderMarkup(order, downloads) {
 }
 
 function downloadMarkup(order, download) {
+  if (viewAsActive) return "<span>Descargas deshabilitadas durante Ver como.</span>";
   if (!download.available) return "<span>Descarga no disponible</span>";
   const orderItem = (order.store_order_items ?? []).find((item) => item.product_id === download.product_id && (item.license_id === download.license_id || item.beat_id));
   const isBeatDownload = Boolean(download.beat_id || download.license_id || orderItem?.beat_id || orderItem?.license_id);
@@ -92,6 +124,7 @@ function downloadMarkup(order, download) {
 }
 
 async function handleDownloadClick(event) {
+  if (viewAsActive) return;
   const button = event.target.closest("[data-store-download]");
   if (!button) return;
   const originalLabel = button.textContent;

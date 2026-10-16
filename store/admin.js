@@ -14,6 +14,12 @@ let adminProducts = [];
 initializeAdmin();
 
 async function initializeAdmin() {
+  const viewAs = await Promise.resolve(window.HiddenRoomViewAs?.ready?.());
+  if (viewAs?.active) {
+    deniedMessage.textContent = "La administracion de Store esta bloqueada durante Ver como. Vuelve a tu vista para administrarla.";
+    return;
+  }
+
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) {
     sessionStorage.setItem("hr_return_after_login", "../store/admin.html");

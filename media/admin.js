@@ -5,7 +5,7 @@ import {
   sanitizeContent,
   slugify,
   supabase,
-} from "./config.js?v=20260804-shared-client";
+} from "./config.js?v=20261015-view-as-readonly-v1";
 
 const state = {
   user: null,
@@ -61,6 +61,12 @@ function isAdmin(roles) {
 }
 
 async function authorize() {
+  const viewAs = await Promise.resolve(window.HiddenRoomViewAs?.ready?.());
+  if (viewAs?.active) {
+    statusBox.textContent = "El CMS esta bloqueado durante Ver como. Vuelve a tu vista para administrarlo.";
+    return false;
+  }
+
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
     sessionStorage.setItem("hr_return_after_login", "../media/admin.html");

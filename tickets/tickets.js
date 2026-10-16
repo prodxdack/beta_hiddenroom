@@ -42,6 +42,12 @@ const els = {
 init();
 
 async function init() {
+  const viewAs = await Promise.resolve(window.HiddenRoomViewAs?.ready?.());
+  if (viewAs?.active) {
+    showMessage("La administracion de Tickets esta bloqueada durante Ver como. Vuelve a tu vista para administrarla.", "error");
+    return;
+  }
+
   const sessionData = await requireSession();
   if (!sessionData) return;
 

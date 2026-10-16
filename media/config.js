@@ -4,6 +4,12 @@ export async function revealMediaAdminLink() {
   const link = document.querySelector("[data-media-admin-link]");
   if (!link) return;
 
+  const viewAs = await Promise.resolve(window.HiddenRoomViewAs?.ready?.());
+  if (viewAs?.active) {
+    link.hidden = true;
+    return;
+  }
+
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return;
 

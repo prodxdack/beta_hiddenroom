@@ -782,7 +782,7 @@ function renderSubNav(module) {
         "/media/admin.html",
         "CMS",
         path.includes("/admin"),
-        ` data-media-admin-link${path.includes("/admin") ? "" : " hidden"}`,
+        ` data-media-admin-link data-admin-nav-link hidden`,
       ),
     ].join("");
   }
@@ -866,7 +866,7 @@ function renderSubNav(module) {
     return [
       item("/tickets/", "Eventos", path.endsWith("/tickets/") || path.endsWith("/tickets/index.html")),
       item("/tickets/validate.html", "Validar", path.endsWith("/validate.html")),
-      item("/tickets/generate.html", "Admin", path.endsWith("/generate.html") || path.endsWith("/view.html")),
+      item("/tickets/generate.html", "Admin", path.endsWith("/generate.html") || path.endsWith("/view.html"), " data-admin-nav-link hidden"),
     ].join("");
   }
 
@@ -1288,6 +1288,17 @@ async function hydrateGlobalSession() {
       setPermissionNavigationVisibility("beats.upload", false);
       renderGlobalNotifications([]);
       toggleGlobalNotifications(false);
+      const inactiveViewAsContext = {
+        active: false,
+        actualUser: null,
+        actualProfile: null,
+        user: null,
+        profile: null,
+        roles: [],
+        permissions: [],
+      };
+      hrViewAsContext = inactiveViewAsContext;
+      resolveHrViewAsReady?.(inactiveViewAsContext);
       return;
     }
 
@@ -1318,7 +1329,7 @@ async function hydrateGlobalSession() {
     }
     setPermissionNavigationVisibility(
       "beats.upload",
-      roleListIncludesAdmin(effectiveProfile?.roles) || Boolean(hasBeatUploadPermission),
+      !viewAs.active && (roleListIncludesAdmin(effectiveProfile?.roles) || Boolean(hasBeatUploadPermission)),
     );
 
     const notificationTargets = [effectiveUser?.id, effectiveProfile?.user_id].filter(Boolean).map(String);
@@ -1333,20 +1344,15 @@ async function hydrateGlobalSession() {
       notifications = data || [];
     }
     const unread = notifications.filter((item) => !item.read).length;
-    let canSeeAdminNav = roleListIncludesAdmin(effectiveProfile?.roles);
-    if (!canSeeAdminNav) {
-      canSeeAdminNav = viewAs.active
-        ? effectivePermissions.includes("academia.admin")
-        : false;
-      if (!viewAs.active) {
-        const { data: academiaPermissionRows } = await supabase
-          .from("user_permissions")
-          .select("permission_key")
-          .eq("user_id", user.id);
-        canSeeAdminNav = (academiaPermissionRows || [])
-          .map((row) => String(row.permission_key || "").trim().toLowerCase())
-          .includes("academia.admin");
-      }
+    let canSeeAdminNav = !viewAs.active && roleListIncludesAdmin(effectiveProfile?.roles);
+    if (!viewAs.active && !canSeeAdminNav) {
+      const { data: academiaPermissionRows } = await supabase
+        .from("user_permissions")
+        .select("permission_key")
+        .eq("user_id", user.id);
+      canSeeAdminNav = (academiaPermissionRows || [])
+        .map((row) => String(row.permission_key || "").trim().toLowerCase())
+        .includes("academia.admin");
     }
     setAdminNavigationVisibility(canSeeAdminNav);
     setGlobalCopyEditorAccess(roleListIncludesAdmin(profile?.roles) && !viewAs.active);

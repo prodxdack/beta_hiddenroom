@@ -5,7 +5,7 @@ import {
   postURL,
   revealMediaAdminLink,
   supabase,
-} from "./config.js?v=20260804-shared-client";
+} from "./config.js?v=20261015-view-as-readonly-v1";
 
 const PAGE_SIZE = 9;
 const state = { page: 0, loading: false, done: false };

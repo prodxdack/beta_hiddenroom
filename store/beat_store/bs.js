@@ -444,6 +444,9 @@ function handleAdminModeClick(event) {
 }
 
 async function currentUserIsAdmin() {
+  const viewAs = await Promise.resolve(window.HiddenRoomViewAs?.ready?.());
+  if (viewAs?.active) return false;
+
   const { data: { session } } = await supabase.auth.getSession();
   state.currentUserId = session?.user?.id ?? null;
   if (!session?.user) return false;
