@@ -420,6 +420,11 @@ const state = {
   /** Currently active section key */
   activeSection: 'overview',
 
+  /** Active folder in the client downloads library, or null at the root. */
+  clientDownloads: {
+    selectedFolder: null,
+  },
+
   /** Fetched data cache, keyed by section */
   data: {},
 
@@ -495,50 +500,63 @@ function renderCloudBreadcrumb(path) {
   `;
 }
 
+function renderPortalResourceCard({
+  kind = 'file',
+  title = '',
+  meta = '',
+  count = '',
+  action = '',
+  tag = 'article',
+  attributes = '',
+} = {}) {
+  const resourceKind = kind === 'folder' ? 'folder' : 'file';
+  const element = tag === 'button' ? 'button' : 'article';
+  const icon = resourceKind === 'folder' ? 'ph-folder-open' : 'ph-file';
+  const buttonType = element === 'button' && !/\btype=/.test(attributes) ? ' type="button"' : '';
+
+  return `
+    <${element} class="hr-resource-card hr-resource-card--${resourceKind}"${buttonType}${attributes ? ` ${attributes}` : ''}>
+      <span class="hr-resource-card__icon" aria-hidden="true"><i class="ph ${icon}"></i></span>
+      <span class="hr-resource-card__body">
+        <strong class="hr-resource-card__title">${escapeHTML(title)}</strong>
+        ${meta ? `<span class="hr-resource-card__meta">${escapeHTML(meta)}</span>` : ''}
+      </span>
+      ${count ? `<span class="hr-resource-card__count">${escapeHTML(count)}</span>` : ''}
+      ${action ? `<span class="hr-resource-card__actions">${action}</span>` : ''}
+      ${resourceKind === 'folder' && !action ? '<i class="ph ph-caret-right hr-resource-card__arrow" aria-hidden="true"></i>' : ''}
+    </${element}>
+  `;
+}
+
 function renderCloudFolderList(node, currentPath) {
   const folders = Array.isArray(node && node.folders) ? node.folders : [];
-  if (!folders.length) {
-    return `<p>No hay carpetas en esta ubicación.</p>`;
-  }
+  if (!folders.length) return `<p>No hay carpetas en esta ubicación.</p>`;
 
-  return folders.map((folder) => `
-    <div class="hr-card hr-panel hr-stack">
-      <div class="hr-stack hr-stack-sm">
-        <div>
-          <p><strong>${escapeHTML(folder)}</strong></p>
-          <p class="hr-eyebrow">Carpeta</p>
-        </div>
-        <div class="hr-stack hr-stack-sm">
-          <button class="hr-btn" type="button" data-action="cloud-open-folder" data-path="${escapeHTML(currentPath === '/' ? `/${folder}` : `${currentPath}/${folder}`)}">Abrir</button>
-          <button class="hr-btn" type="button" data-action="cloud-delete-item" data-item-type="folder" data-item-name="${escapeHTML(folder)}">Eliminar</button>
-        </div>
-      </div>
-    </div>
-  `).join('');
+  return folders.map((folder) => renderPortalResourceCard({
+    kind: 'folder',
+    title: folder,
+    meta: 'Carpeta',
+    action: `
+      <button class="hr-btn" type="button" data-action="cloud-open-folder" data-path="${escapeHTML(currentPath === '/' ? `/${folder}` : `${currentPath}/${folder}`)}">Abrir</button>
+      <button class="hr-btn" type="button" data-action="cloud-delete-item" data-item-type="folder" data-item-name="${escapeHTML(folder)}">Eliminar</button>
+    `,
+  })).join('');
 }
 
 function renderCloudFileList(node) {
   const files = Array.isArray(node && node.files) ? node.files : [];
-  if (!files.length) {
-    return `<p>No hay archivos en esta carpeta.</p>`;
-  }
+  if (!files.length) return `<p>No hay archivos en esta carpeta.</p>`;
 
-  return files.map((file) => `
-    <div class="hr-card hr-panel hr-stack">
-      <div class="hr-stack hr-stack-sm">
-        <div>
-          <p><strong>${escapeHTML(file.name)}</strong></p>
-          <p class="hr-eyebrow">${escapeHTML(file.type)} · ${escapeHTML(file.size)} · ${escapeHTML(file.modified)}</p>
-        </div>
-        <div class="hr-stack hr-stack-sm">
-          <button class="hr-btn" type="button" data-action="cloud-copy-link" data-url="${escapeHTML(file.url)}">Copiar enlace</button>
-          <button class="hr-btn" type="button" data-action="cloud-delete-item" data-item-type="file" data-item-name="${escapeHTML(file.name)}">Eliminar</button>
-        </div>
-      </div>
-    </div>
-  `).join('');
+  return files.map((file) => renderPortalResourceCard({
+    kind: 'file',
+    title: file.name,
+    meta: `${file.type} · ${file.size} · ${file.modified}`,
+    action: `
+      <button class="hr-btn" type="button" data-action="cloud-copy-link" data-url="${escapeHTML(file.url)}">Copiar enlace</button>
+      <button class="hr-btn" type="button" data-action="cloud-delete-item" data-item-type="file" data-item-name="${escapeHTML(file.name)}">Eliminar</button>
+    `,
+  })).join('');
 }
-
 
 /* ================================================================
    Section 3  ROLE ENGINE
@@ -679,7 +697,7 @@ async function renderViewAs() {
   const users = await ensureUsersLoaded();
   const selectedId = window.HiddenRoomViewAs?.getSelection?.()?.userId || '';
   return sectionShell('Administración', 'Ver como', 'title-view-as', `
-    <div class="db-card db-card--view-as">
+    <div class="db-card hr-card db-card--view-as">
       <div class="db-card__inner">
         <p class="db-section__summary">Selecciona un usuario para cargar el sitio con su perfil, roles y permisos reales.</p>
         <p class="db-note">La vista se mantiene en esta sesión del navegador. Las acciones de escritura quedan bloqueadas mientras observas otra cuenta.</p>
@@ -2353,11 +2371,11 @@ function renderPortalNavigation() {
   const erpEnabled = visiblePortalGroups().some((group) => group.key === 'erp');
   document.body.insertAdjacentHTML('beforeend', `
     <nav class="hr-portal-bottom-nav" aria-label="Navegación principal del portal">
-      <button type="button" data-section="overview"><span class="hr-portal-bottom-nav__icon ph ph-house" aria-hidden="true"></span>Inicio</button>
-      <button type="button" data-portal-group="client"><span class="hr-portal-bottom-nav__icon ph ph-user-circle" aria-hidden="true"></span>Cliente</button>
-      <button type="button" data-portal-group="collaborator"${collaboratorEnabled ? '' : ' disabled'}><span class="hr-portal-bottom-nav__icon ph ph-users-three" aria-hidden="true"></span>Colaborador</button>
-      <button type="button" data-portal-group="erp"${erpEnabled ? '' : ' disabled'}><span class="hr-portal-bottom-nav__icon ph ph-chart-bar" aria-hidden="true"></span>ERP</button>
-      <button type="button" data-portal-more aria-controls="hr-portal-more" aria-expanded="false"><span class="hr-portal-bottom-nav__icon ph ph-dots-three-outline" aria-hidden="true"></span>Más</button>
+      <button type="button" data-section="overview"><span class="hr-icon--nav hr-portal-bottom-nav__icon ph ph-house" aria-hidden="true"></span>Inicio</button>
+      <button type="button" data-portal-group="client"><span class="hr-icon--nav hr-portal-bottom-nav__icon ph ph-user-circle" aria-hidden="true"></span>Cliente</button>
+      <button type="button" data-portal-group="collaborator"${collaboratorEnabled ? '' : ' disabled'}><span class="hr-icon--nav hr-portal-bottom-nav__icon ph ph-users-three" aria-hidden="true"></span>Colaborador</button>
+      <button type="button" data-portal-group="erp"${erpEnabled ? '' : ' disabled'}><span class="hr-icon--nav hr-portal-bottom-nav__icon ph ph-chart-bar" aria-hidden="true"></span>ERP</button>
+      <button type="button" data-portal-more aria-controls="hr-portal-more" aria-expanded="false"><span class="hr-icon--nav hr-portal-bottom-nav__icon ph ph-dots-three-outline" aria-hidden="true"></span>Más</button>
     </nav>
     <button class="hr-portal-backdrop" type="button" aria-label="Cerrar menú" hidden></button>
     <aside class="hr-portal-drawer" id="hr-portal-more" aria-label="Menú del portal" aria-hidden="true" hidden>
@@ -2687,17 +2705,14 @@ function renderOverview() {
   const quickActions = buildQuickActions(roles);
 
   return `
-    <section class="db-section db-section--overview" aria-labelledby="section-overview-title">
+    <section class="db-section db-section--overview hr-portal-section" aria-labelledby="section-overview-title">
 
-      <header class="db-section__header">
-        <p class="section-label">Sistema</p>
-        <h1 class="db-section__title" id="section-overview-title">Inicio</h1>
-      </header>
+      ${renderPortalSectionHeader('Sistema', 'Inicio', 'section-overview-title')}
 
-      <div class="db-grid db-grid--2col">
+      <div class="db-grid hr-grid hr-grid-2 db-grid--2col">
 
-        <article class="db-card db-card--profile" aria-label="Perfil de usuario">
-          <div class="db-card__inner">
+        <article class="db-card hr-card db-card--profile hr-profile-card" aria-label="Perfil de usuario">
+          <div class="db-card__inner hr-profile-card__body">
             <div class="db-profile__avatar" aria-hidden="true">
               ${escapeHTML((user?.display_name ?? user?.email ?? '?')[0].toUpperCase())}
             </div>
@@ -2724,12 +2739,12 @@ function renderOverview() {
           </div>
         </article>
 
-        <article class="db-card" aria-label="Acciones rápidas">
+        <article class="db-card hr-card hr-action-panel" aria-label="Acciones rápidas">
           <header class="db-card__header">
             <span class="section-label">Acciones rápidas</span>
           </header>
           <div class="db-card__inner">
-            <div class="db-quick-actions">
+            <div class="db-quick-actions hr-action-list">
               ${quickActions}
             </div>
           </div>
@@ -2746,7 +2761,7 @@ function renderAccountSettings() {
 
   return sectionShell('Cuenta', 'Ajustes de Cuenta', 'title-account-settings', `
     <div class="db-admin-grid">
-      <article class="db-card">
+      <article class="db-card hr-card">
         <header class="db-card__header">
           <span class="section-label">Acceso</span>
         </header>
@@ -2810,7 +2825,7 @@ function buildQuickActions(roles) {
   }
 
   return actions.map((a) => `
-    <button class="db-quick-action" data-section="${escapeHTML(a.section)}">
+    <button class="db-quick-action hr-action-card" data-section="${escapeHTML(a.section)}">
       <span class="db-quick-action__copy">
         <span>${escapeHTML(a.label)}</span>
         ${a.caption ? `<small>${escapeHTML(a.caption)}</small>` : ''}
@@ -2854,13 +2869,13 @@ async function createUserNotification(userId, message, type = 'info') {
 
 function renderLoadingBlock(label = 'Cargando') {
   return `
-    <section class="db-section" aria-busy="true" aria-live="polite">
-      <header class="db-section__header">
+    <section class="db-section hr-portal-section" aria-busy="true" aria-live="polite">
+      <header class="db-section__header hr-portal-section__header">
         <p class="section-label">${escapeHTML(label)}</p>
-        <h1 class="db-section__title">Cargando...</h1>
+        <h1 class="db-section__title hr-portal-section__title">Cargando...</h1>
       </header>
-      <div class="db-grid db-grid--2col">
-        <article class="db-card db-skeleton-card">
+      <div class="db-grid hr-grid hr-grid-2 db-grid--2col">
+        <article class="db-card hr-card db-skeleton-card">
           <div class="db-card__inner">
             <span class="db-skeleton__line db-skeleton__line--wide"></span>
             <span class="db-skeleton__line db-skeleton__line--mid"></span>
@@ -2874,74 +2889,90 @@ function renderLoadingBlock(label = 'Cargando') {
 
 
 /* -- CLIENT: DOWNLOADS -------------------------------------- */
+function groupClientDownloadsByMonth(rows = []) {
+  const groups = new Map();
+  rows.forEach((item, index) => {
+    const isMembership = item?.release_mode === 'membership_delivery' || item?.membership_cycle_number !== null && item?.membership_cycle_number !== undefined;
+    const cycle = isMembership && Number.isFinite(Number(item.membership_cycle_number)) ? Number(item.membership_cycle_number) : null;
+    const key = cycle === null ? 'direct' : `membership-${cycle}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        title: cycle === null ? 'Descargas directas' : `Mes ${cycle}`,
+        subtitle: cycle === null ? 'Contenido disponible' : 'Membresía',
+        cycle,
+        firstIndex: index,
+        items: [],
+      });
+    }
+    groups.get(key).items.push(item);
+  });
+  return [...groups.values()].sort((a, b) => {
+    if (a.cycle !== null && b.cycle !== null) return b.cycle - a.cycle;
+    if (a.cycle !== null) return -1;
+    if (b.cycle !== null) return 1;
+    return a.firstIndex - b.firstIndex;
+  });
+}
+
+function renderClientDownloadsFolders(folders = []) {
+  if (!folders.length) return '<div id="js-downloads-body" class="db-downloads-empty db-empty">Sin descargas disponibles.</div>';
+  return `
+    <div id="js-downloads-body" class="hr-resource-list db-download-folders" aria-label="Carpetas de descargas">
+      ${folders.map((folder) => renderPortalResourceCard({
+        kind: 'folder', title: folder.title, meta: folder.subtitle,
+        count: `${folder.items.length} ${folder.items.length === 1 ? 'archivo' : 'archivos'}`,
+        tag: 'button',
+        attributes: `data-action="client-downloads-open-folder" data-folder-key="${escapeAttr(folder.key)}" aria-label="Abrir ${escapeAttr(folder.title)}"`,
+      })).join('')}
+    </div>
+  `;
+}
+
+function renderClientDownloadsFolder(folder) {
+  return `
+    <div id="js-downloads-body" class="hr-resource-browser db-downloads-browser">
+      <button class="hr-btn hr-btn--secondary db-btn-secondary db-downloads-browser__back" type="button" data-action="client-downloads-back">
+        <i class="ph ph-arrow-left" aria-hidden="true"></i>
+        <span>Volver a mis descargas</span>
+      </button>
+      <div class="hr-resource-browser__heading db-downloads-browser__heading">
+        <div>
+          <p class="section-label">Biblioteca</p>
+          <h2>${escapeHTML(folder.title)}</h2>
+          <p>${escapeHTML(folder.subtitle)} · ${folder.items.length} ${folder.items.length === 1 ? 'archivo' : 'archivos'}</p>
+        </div>
+      </div>
+      <div class="hr-resource-list db-download-files" aria-label="Archivos de ${escapeAttr(folder.title)}">
+        ${folder.items.map((item) => renderPortalResourceCard({
+          kind: 'file', title: item.name ?? '-',
+          meta: `${item.type ?? 'Archivo'}${item.notes ? ` · ${item.notes}` : ''}`,
+          action: renderDownloadAction(item),
+        })).join('')}
+      </div>
+    </div>
+  `;
+}
+
 async function renderClientDownloads() {
   const { data, error } = await supabase
     .from('downloads')
     .select('*')
     .eq('user_id', state.user.user_id)
     .order('created_at', { ascending: false });
-
   if (error) {
     console.error('[HR] renderClientDownloads:', error);
-    return `
-      <section class="db-section db-section--client-downloads" aria-labelledby="title-downloads">
-        <header class="db-section__header">
-          <p class="section-label">Cliente</p>
-          <h1 class="db-section__title" id="title-downloads">Descargas</h1>
-        </header>
-        <p class="db-empty db-empty--error">Error al cargar descargas. Intenta de nuevo.</p>
-      </section>
-    `;
+    return sectionShell('Cliente', 'Descargas', 'title-downloads', '<p class="db-empty db-empty--error">Error al cargar descargas. Intenta de nuevo.</p>');
   }
-
-  let rows;
-
-  if (!data || data.length === 0) {
-    rows = `
-      <tr class="db-table__empty-row hr-table-empty">
-        <td colspan="5" class="db-empty hr-table-empty">Sin descargas disponibles.</td>
-      </tr>
-    `;
-  } else {
-    rows = data.map((p) => `
-      <tr>
-        <td data-label="Producto"><span class="db-download-cell__value db-download-cell__value--product">${escapeHTML(p.name ?? '-')}</span></td>
-        <td data-label="Formato"><span class="db-download-cell__value">${escapeHTML(p.type ?? '-')}</span></td>
-        <td data-label="Origen"><span class="db-download-cell__value">${escapeHTML(p.release_mode === 'membership_delivery' ? `Membresía · Mes ${p.membership_cycle_number ?? '-'}` : 'Directa')}</span></td>
-        <td data-label="Notas"><span class="db-download-cell__value">${escapeHTML(p.notes ?? '-')}</span></td>
-        <td data-label="Acción" class="db-download-cell--action">
-          ${renderDownloadAction(p)}
-        </td>
-      </tr>
-    `).join('');
-  }
-
-  return `
-    <section class="db-section db-section--client-downloads" aria-labelledby="title-downloads">
-      <header class="db-section__header">
-        <p class="section-label">Cliente</p>
-        <h1 class="db-section__title" id="title-downloads">Descargas</h1>
-      </header>
-      <div class="db-table-wrap hr-table-wrap">
-        <table class="db-table hr-table hr-table-readable" aria-label="Productos descargables">
-          <thead>
-            <tr>
-              <th scope="col">Producto</th>
-              <th scope="col">Formato</th>
-              <th scope="col">Origen</th>
-              <th scope="col">Notas</th>
-              <th scope="col">Acción</th>
-            </tr>
-          </thead>
-          <tbody id="js-downloads-body">
-            ${rows}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  `;
+  const folders = groupClientDownloadsByMonth(data || []);
+  const selectedKey = state.clientDownloads?.selectedFolder;
+  const selectedFolder = folders.find((folder) => folder.key === selectedKey) || null;
+  const body = selectedFolder ? renderClientDownloadsFolder(selectedFolder) : renderClientDownloadsFolders(folders);
+  return sectionShell('Cliente', 'Descargas', 'title-downloads', `
+    <p class="db-section__intro">Tu biblioteca de contenido</p>
+    ${body}
+  `, 'db-section--client-downloads');
 }
-
 function isCloudDownloadUrl(value) {
   if (!value) return false;
   try {
@@ -3092,10 +3123,10 @@ async function renderClientSessions() {
   if (error) {
     console.error('[HR] renderClientSessions:', error);
     return `
-      <section class="db-section" aria-labelledby="title-sessions">
-        <header class="db-section__header">
+      <section class="db-section hr-portal-section" aria-labelledby="title-sessions">
+        <header class="db-section__header hr-portal-section__header">
           <p class="section-label">Cliente</p>
-          <h1 class="db-section__title" id="title-sessions">Sesiones</h1>
+          <h1 class="db-section__title hr-portal-section__title" id="title-sessions">Sesiones</h1>
         </header>
         <p class="db-empty db-empty--error">Error al cargar sesiones. Intenta de nuevo.</p>
       </section>
@@ -3123,10 +3154,10 @@ async function renderClientSessions() {
   }
 
   return `
-    <section class="db-section" aria-labelledby="title-sessions">
-      <header class="db-section__header">
+    <section class="db-section hr-portal-section" aria-labelledby="title-sessions">
+      <header class="db-section__header hr-portal-section__header">
         <p class="section-label">Cliente</p>
-        <h1 class="db-section__title" id="title-sessions">Sesiones</h1>
+        <h1 class="db-section__title hr-portal-section__title" id="title-sessions">Sesiones</h1>
       </header>
       <div class="db-table-wrap hr-table-wrap">
         <table class="db-table hr-table hr-table-readable" aria-label="Historial de sesiones">
@@ -3160,10 +3191,10 @@ async function renderClientTransactions() {
   if (error) {
     console.error('[HR] renderClientTransactions:', error);
     return `
-      <section class="db-section" aria-labelledby="title-txn">
-        <header class="db-section__header">
+      <section class="db-section hr-portal-section" aria-labelledby="title-txn">
+        <header class="db-section__header hr-portal-section__header">
           <p class="section-label">Cliente</p>
-          <h1 class="db-section__title" id="title-txn">Transacciones</h1>
+          <h1 class="db-section__title hr-portal-section__title" id="title-txn">Transacciones</h1>
         </header>
         <p class="db-empty db-empty--error">Error al cargar transacciones. Intenta de nuevo.</p>
       </section>
@@ -3191,10 +3222,10 @@ async function renderClientTransactions() {
   }
 
   return `
-    <section class="db-section" aria-labelledby="title-txn">
-      <header class="db-section__header">
+    <section class="db-section hr-portal-section" aria-labelledby="title-txn">
+      <header class="db-section__header hr-portal-section__header">
         <p class="section-label">Cliente</p>
-        <h1 class="db-section__title" id="title-txn">Transacciones</h1>
+        <h1 class="db-section__title hr-portal-section__title" id="title-txn">Transacciones</h1>
       </header>
       <div class="db-table-wrap hr-table-wrap">
         <table class="db-table hr-table hr-table-readable" aria-label="Historial de transacciones">
@@ -3228,10 +3259,10 @@ async function renderClientContracts() {
   if (error) {
     console.error('[HR] renderClientContracts:', error);
     return `
-      <section class="db-section" aria-labelledby="title-contracts">
-        <header class="db-section__header">
+      <section class="db-section hr-portal-section" aria-labelledby="title-contracts">
+        <header class="db-section__header hr-portal-section__header">
           <p class="section-label">Cliente</p>
-          <h1 class="db-section__title" id="title-contracts">Contratos</h1>
+          <h1 class="db-section__title hr-portal-section__title" id="title-contracts">Contratos</h1>
         </header>
         <p class="db-empty db-empty--error">Error al cargar contratos. Intenta de nuevo.</p>
       </section>
@@ -3244,7 +3275,7 @@ async function renderClientContracts() {
     listHTML = '<li class="db-empty">Sin contratos disponibles.</li>';
   } else {
     listHTML = data.map((c) => `
-      <li class="db-card-list__item">
+      <li class="db-card-list__item hr-list-item">
         <span class="db-card-list__label">Contrato #${escapeHTML(String(c.id))}</span>
         ${c.contract
           ? `<a class="btn-primary" href="${escapeHTML(c.contract)}" target="_blank" rel="noopener noreferrer">Ver contrato</a>`
@@ -3254,12 +3285,12 @@ async function renderClientContracts() {
   }
 
   return `
-    <section class="db-section" aria-labelledby="title-contracts">
-      <header class="db-section__header">
+    <section class="db-section hr-portal-section" aria-labelledby="title-contracts">
+      <header class="db-section__header hr-portal-section__header">
         <p class="section-label">Cliente</p>
-        <h1 class="db-section__title" id="title-contracts">Contratos</h1>
+        <h1 class="db-section__title hr-portal-section__title" id="title-contracts">Contratos</h1>
       </header>
-      <ul class="db-card-list" id="js-contracts-list" role="list">
+      <ul class="db-card-list hr-resource-list" id="js-contracts-list" role="list">
         ${listHTML}
       </ul>
     </section>
@@ -3290,10 +3321,10 @@ async function renderClientMembership() {
   if (membershipsResult.error || sessionsResult.error || transactionsResult.error) {
     console.error('[HR] renderClientMembership:', membershipsResult.error || sessionsResult.error || transactionsResult.error);
     return `
-      <section class="db-section" aria-labelledby="title-membership">
-        <header class="db-section__header">
+      <section class="db-section hr-portal-section" aria-labelledby="title-membership">
+        <header class="db-section__header hr-portal-section__header">
           <p class="section-label">Cliente</p>
-          <h1 class="db-section__title" id="title-membership">Membresía</h1>
+          <h1 class="db-section__title hr-portal-section__title" id="title-membership">Membresía</h1>
         </header>
         <p class="db-empty db-empty--error">Error al cargar membresía. Intenta de nuevo.</p>
       </section>
@@ -3311,10 +3342,10 @@ async function renderClientMembership() {
   const membershipSummary = renderMembershipSummary(membershipRows);
 
   return `
-    <section class="db-section" aria-labelledby="title-membership">
-      <header class="db-section__header">
+    <section class="db-section hr-portal-section" aria-labelledby="title-membership">
+      <header class="db-section__header hr-portal-section__header">
         <p class="section-label">Cliente</p>
-        <h1 class="db-section__title" id="title-membership">Membresía</h1>
+        <h1 class="db-section__title hr-portal-section__title" id="title-membership">Membresía</h1>
       </header>
       ${membershipNotices}
       ${membershipSummary}
@@ -3340,10 +3371,10 @@ async function renderClientTickets() {
     if (error) {
       console.error('[HR] renderClientTickets:', error);
       return `
-        <section class="db-section" aria-labelledby="title-tickets">
-          <header class="db-section__header">
+        <section class="db-section hr-portal-section" aria-labelledby="title-tickets">
+          <header class="db-section__header hr-portal-section__header">
             <p class="section-label">Cliente</p>
-            <h1 class="db-section__title" id="title-tickets">Tickets de Evento</h1>
+            <h1 class="db-section__title hr-portal-section__title" id="title-tickets">Tickets de Evento</h1>
           </header>
           <p class="db-empty db-empty--error">Error al cargar tickets. Intenta de nuevo.</p>
         </section>
@@ -3358,12 +3389,12 @@ async function renderClientTickets() {
     : '<li class="db-empty">Sin tickets adquiridos.</li>';
 
   return `
-    <section class="db-section" aria-labelledby="title-tickets">
-      <header class="db-section__header">
+    <section class="db-section hr-portal-section" aria-labelledby="title-tickets">
+      <header class="db-section__header hr-portal-section__header">
         <p class="section-label">Cliente</p>
-        <h1 class="db-section__title" id="title-tickets">Tickets de Evento</h1>
+        <h1 class="db-section__title hr-portal-section__title" id="title-tickets">Tickets de Evento</h1>
       </header>
-      <ul class="db-card-list" id="js-tickets-list" role="list">
+      <ul class="db-card-list hr-resource-list" id="js-tickets-list" role="list">
         ${listHTML}
       </ul>
     </section>
@@ -3428,10 +3459,10 @@ function renderClientTicketQrs(root = document) {
 /* -- CLIENT: STORE ------------------------------------------ */
 function renderClientStore() {
   return `
-    <section class="db-section" aria-labelledby="title-store">
-      <header class="db-section__header">
+    <section class="db-section hr-portal-section" aria-labelledby="title-store">
+      <header class="db-section__header hr-portal-section__header">
         <p class="section-label">Cliente</p>
-        <h1 class="db-section__title" id="title-store">Tienda Online - Pedidos</h1>
+        <h1 class="db-section__title hr-portal-section__title" id="title-store">Tienda Online - Pedidos</h1>
       </header>
       <div class="db-table-wrap hr-table-wrap">
         <table class="db-table hr-table hr-table-readable" aria-label="Historial de pedidos">
@@ -3483,10 +3514,10 @@ async function renderClientRewards() {
   if (scoresError || rewardsError || igContestError) {
     console.error('[HR] renderClientRewards:', scoresError || rewardsError || igContestError);
     return `
-      <section class="db-section" aria-labelledby="title-rewards">
-        <header class="db-section__header">
+      <section class="db-section hr-portal-section" aria-labelledby="title-rewards">
+        <header class="db-section__header hr-portal-section__header">
           <p class="section-label">Cliente</p>
-          <h1 class="db-section__title" id="title-rewards">Premios</h1>
+          <h1 class="db-section__title hr-portal-section__title" id="title-rewards">Premios</h1>
         </header>
         <p class="db-empty db-empty--error">Error al cargar premios. Intenta de nuevo.</p>
       </section>
@@ -3499,9 +3530,9 @@ async function renderClientRewards() {
     scoresHTML = '<p class="db-empty">Ingresa <a href="../minijuegos/">MINIJUEGOS</a> para sincronizar tu puntuacion.</p>';
   } else {
     scoresHTML = `
-      <ul class="db-card-list" role="list">
+      <ul class="db-card-list hr-resource-list" role="list">
         ${scores.map((s) => `
-          <li class="db-card-list__item">
+          <li class="db-card-list__item hr-list-item">
             <span class="db-card-list__label">${escapeHTML(s.game_id ?? '-')}</span>
             <span class="db-card-list__value">${escapeHTML(s.type ?? '')} ${escapeHTML(String(s.amount ?? 0))} pts</span>
           </li>
@@ -3512,7 +3543,7 @@ async function renderClientRewards() {
 
   const rewardsHTML = rewards?.length
     ? rewards.map((reward) => `
-      <li class="db-card-list__item">
+      <li class="db-card-list__item hr-list-item">
         <span class="db-card-list__label">${escapeHTML(reward.concept ?? 'Recompensa')}</span>
       </li>
     `).join('')
@@ -3520,7 +3551,7 @@ async function renderClientRewards() {
 
   const igContestHTML = igContest?.length
     ? igContest.map((item) => `
-      <li class="db-card-list__item">
+      <li class="db-card-list__item hr-list-item">
         <span class="db-card-list__label">${escapeHTML(item.concepto ?? 'IG CONTEST')}</span>
         <span class="db-card-list__value">${escapeHTML(item.ig_username ? `@${item.ig_username}` : '')}</span>
       </li>
@@ -3528,14 +3559,14 @@ async function renderClientRewards() {
     : '<li class="db-empty">Sin registros de IG CONTEST.</li>';
 
   return `
-    <section class="db-section" aria-labelledby="title-rewards">
-      <header class="db-section__header">
+    <section class="db-section hr-portal-section" aria-labelledby="title-rewards">
+      <header class="db-section__header hr-portal-section__header">
         <p class="section-label">Cliente</p>
-        <h1 class="db-section__title" id="title-rewards">Premios</h1>
+        <h1 class="db-section__title hr-portal-section__title" id="title-rewards">Premios</h1>
         <a class="btn-primary db-section__cta" href="../minijuegos/">MINIJUEGOS</a>
       </header>
-      <div class="db-grid db-grid--3col">
-        <article class="db-card" aria-label="Puntuaciones">
+      <div class="db-grid hr-grid hr-grid-3 db-grid--3col">
+        <article class="db-card hr-card" aria-label="Puntuaciones">
           <header class="db-card__header">
             <span class="section-label">Puntuaciones</span>
           </header>
@@ -3543,27 +3574,27 @@ async function renderClientRewards() {
             ${scoresHTML}
           </div>
         </article>
-        <article class="db-card" aria-label="Cupones">
+        <article class="db-card hr-card" aria-label="Cupones">
           <header class="db-card__header">
             <span class="section-label">Cupones Desbloqueados</span>
           </header>
-          <ul class="db-coupon-list" id="js-rewards-coupons" role="list">
+          <ul class="db-coupon-list hr-resource-list" id="js-rewards-coupons" role="list">
             <li class="db-empty">Proximamente.</li>
           </ul>
         </article>
-        <article class="db-card" aria-label="IG CONTEST">
+        <article class="db-card hr-card" aria-label="IG CONTEST">
           <header class="db-card__header">
             <span class="section-label">IG CONTEST</span>
           </header>
-          <ul class="db-card-list" id="js-rewards-ig-contest" role="list">
+          <ul class="db-card-list hr-resource-list" id="js-rewards-ig-contest" role="list">
             ${igContestHTML}
           </ul>
         </article>
-        <article class="db-card" aria-label="Tus recompensas">
+        <article class="db-card hr-card" aria-label="Tus recompensas">
           <header class="db-card__header">
             <span class="section-label">Tus recompensas</span>
           </header>
-          <ul class="db-card-list" id="js-rewards-inventory" role="list">
+          <ul class="db-card-list hr-resource-list" id="js-rewards-inventory" role="list">
             ${rewardsHTML}
           </ul>
         </article>
@@ -3589,7 +3620,7 @@ async function renderCollabDocs() {
       const title = item.title ?? item.name ?? item.contract_name ?? `Contrato #${item.id ?? '-'}`;
       const href = item.file_url ?? item.contract_url ?? item.storage_path ?? item.contract ?? '';
       return `
-        <li class="db-card-list__item">
+        <li class="db-card-list__item hr-list-item">
           <span class="db-card-list__label">${escapeHTML(title)}</span>
           <span class="db-card-list__value">${escapeHTML(item.status ?? item.type ?? 'documento')}</span>
           ${href ? `<a class="btn-primary" href="${escapeAttr(href)}" target="_blank" rel="noopener noreferrer">Ver</a>` : '<span class="db-empty">Sin archivo adjunto.</span>'}
@@ -3599,7 +3630,7 @@ async function renderCollabDocs() {
     : '<li class="db-empty">Sin documentos/contratos compartidos.</li>';
 
   return sectionShell('Colaborador', 'Documentos/Contratos', 'title-collab-docs', `
-    <ul class="db-card-list" id="js-collab-docs-list" role="list">${rows}</ul>
+    <ul class="db-card-list hr-resource-list" id="js-collab-docs-list" role="list">${rows}</ul>
   `);
 }
 
@@ -3766,10 +3797,10 @@ async function renderCollabTasks(contextLabel = 'Colaborador') {
   }).join('');
 
   return `
-    <section class="db-section db-section--wide" aria-labelledby="title-tasks">
-      <header class="db-section__header">
+    <section class="db-section db-section--wide hr-portal-section" aria-labelledby="title-tasks">
+      <header class="db-section__header hr-portal-section__header">
         <p class="section-label">${escapeHTML(contextLabel)}</p>
-        <h1 class="db-section__title" id="title-tasks">SCRUM / Tareas</h1>
+        <h1 class="db-section__title hr-portal-section__title" id="title-tasks">SCRUM / Tareas</h1>
       </header>
       <div class="db-toolbar">
         <label class="db-field db-field--compact">
@@ -3780,7 +3811,7 @@ async function renderCollabTasks(contextLabel = 'Colaborador') {
         </label>
       </div>
       <div class="db-admin-grid">
-        <article class="db-card">
+        <article class="db-card hr-card">
           <header class="db-card__header">
             <span class="section-label">${editable ? 'Nueva tarea' : 'Permisos'}</span>
           </header>
@@ -3796,12 +3827,12 @@ async function renderCollabTasks(contextLabel = 'Colaborador') {
 
 function renderCollabLog() {
   return `
-    <section class="db-section" aria-labelledby="title-log">
-      <header class="db-section__header">
+    <section class="db-section hr-portal-section" aria-labelledby="title-log">
+      <header class="db-section__header hr-portal-section__header">
         <p class="section-label">Colaborador</p>
-        <h1 class="db-section__title" id="title-log">Log de Actividad</h1>
+        <h1 class="db-section__title hr-portal-section__title" id="title-log">Log de Actividad</h1>
       </header>
-      <ol class="db-activity-log" id="js-collab-log" aria-label="Historial de actividad" reversed>
+      <ol class="db-activity-log hr-resource-list" id="js-collab-log" aria-label="Historial de actividad" reversed>
         <li class="db-empty">Sin actividad registrada.</li>
       </ol>
     </section>
@@ -4313,7 +4344,7 @@ function renderInstagramScraperMentionResults() {
   const scraper = state.instagramScraper;
   if (scraper.isRunning) {
     return `
-      <article class="db-card db-ig-loading-card" aria-live="polite" aria-busy="true">
+      <article class="db-card hr-card db-ig-loading-card" aria-live="polite" aria-busy="true">
         <div class="db-card__inner">
           <p class="hr-table-loading">Analizando comentarios</p>
         </div>
@@ -4847,7 +4878,7 @@ function renderErpInstagramScraper() {
     <p class="db-section__summary">Extrae comentarios con Node.js y Playwright usando una sesion local persistente. Las cookies nunca salen de tu equipo.</p>
     ${scraper.error ? `<p class="db-empty db-empty--error">${escapeHTML(scraper.error)}</p>` : ''}
     <div class="db-admin-grid db-admin-grid--single db-ig-rank">
-      <article class="db-card"><div class="db-card__inner">
+      <article class="db-card hr-card"><div class="db-card__inner">
         <form class="db-form" data-form="instagram-scrape">
           <label class="db-field"><span>URL publica del post o reel</span>
             <input name="url" type="url" required pattern="https://(www\\.)?instagram\\.com/(p|reel)/.+" value="${escapeAttr(scraper.sourceUrl)}" placeholder="https://www.instagram.com/p/..." />
@@ -4878,7 +4909,7 @@ async function renderErpInstagramMentionRank() {
     <p class="db-section__summary">Analiza comentarios de publicaciones de Instagram con Instagram Login o Facebook Graph API. El token solo vive en memoria durante esta sesion del dashboard.</p>
     ${igState.error ? `<p class="db-empty db-empty--error">${escapeHTML(igState.error)}</p>` : ''}
     <div class="db-admin-grid db-admin-grid--single db-ig-rank">
-      <article class="db-card">
+      <article class="db-card hr-card">
         <div class="db-card__inner">
           <header class="db-card__header"><span class="section-label">Conexion</span></header>
           <form class="db-form" data-form="ig-list-media">
@@ -4912,13 +4943,13 @@ async function renderErpInstagramMentionRank() {
       </article>
 
       ${isAnalyzing ? `
-        <article class="db-card db-ig-loading-card" aria-live="polite" aria-busy="true">
+        <article class="db-card hr-card db-ig-loading-card" aria-live="polite" aria-busy="true">
           <div class="db-card__inner">
             <p class="hr-table-loading">Analizando comentarios</p>
           </div>
         </article>
       ` : analysis ? '' : `
-        <article class="db-card">
+        <article class="db-card hr-card">
           <div class="db-card__inner">
             <header class="db-card__header"><span class="section-label">Publicaciones</span></header>
             ${media.length ? `<div class="db-ig-media-grid">${media.map(renderIgMediaCard).join('')}</div>` : '<p class="db-empty">Carga publicaciones para elegir una y analizar comentarios.</p>'}
@@ -4969,12 +5000,12 @@ function renderIgAnalysisSummary(analysis, media) {
   const shouldExplain = coverage < 100 && Number(analysis.meta_comments_count || 0) > Number(analysis.comments_count || 0);
   const commentScope = igCommentScopeSummary(analysis, media);
   return `
-    <article class="db-card">
+    <article class="db-card hr-card">
       <div class="db-card__inner">
         <header class="db-card__header"><span class="section-label">Resultado</span></header>
         ${analysis.analysis_warning ? `<p class="db-empty db-empty--error">${escapeHTML(analysis.analysis_warning)}</p>` : ''}
         ${analysis.save_warning ? `<p class="db-empty db-empty--error">${escapeHTML(analysis.save_warning)}</p>` : ''}
-        <div class="db-grid db-grid--3col">
+        <div class="db-grid hr-grid hr-grid-3 db-grid--3col">
           ${renderStatCard('Comentarios', analysis.comments_count ?? 0)}
           ${renderStatCard('Menciones', analysis.mentions_count ?? 0)}
           ${renderStatCard('Usuarios arrobados', analysis.unique_mentions_count ?? 0)}
@@ -5027,7 +5058,7 @@ function renderIgMentionDebug(debug) {
 function renderIgRankingTables(analysis) {
   return `
     <div class="db-grid db-grid--2col db-ig-ranking-grid">
-      <article class="db-card">
+      <article class="db-card hr-card">
         <div class="db-card__inner">
           <header class="db-card__header"><span class="section-label">Mas arrobados total</span></header>
           <button class="db-btn-secondary" type="button" data-action="ig-export-csv" data-ranking="total">Exportar CSV</button>
@@ -5035,7 +5066,7 @@ function renderIgRankingTables(analysis) {
           ${renderIgRankingTable(analysis.ranking_total, false)}
         </div>
       </article>
-      <article class="db-card">
+      <article class="db-card hr-card">
         <div class="db-card__inner">
           <header class="db-card__header"><span class="section-label">Mas arrobados por usuarios unicos</span></header>
           <button class="db-btn-secondary" type="button" data-action="ig-export-csv" data-ranking="unique">Exportar CSV</button>
@@ -5044,7 +5075,7 @@ function renderIgRankingTables(analysis) {
         </div>
       </article>
     </div>
-    <article class="db-card db-ig-author-summary">
+    <article class="db-card hr-card db-ig-author-summary">
       <div class="db-card__inner">
         <header class="db-card__header"><span class="section-label">Resumen de autores</span></header>
         <p class="db-note">Usuarios ordenados por cantidad de comentarios principales y artistas etiquetados.</p>
@@ -5052,7 +5083,7 @@ function renderIgRankingTables(analysis) {
         ${renderIgAuthorSummaryTable(analysis.ranking_authors)}
       </div>
     </article>
-    <article class="db-card db-ig-author-summary">
+    <article class="db-card hr-card db-ig-author-summary">
       <div class="db-card__inner">
         <header class="db-card__header"><span class="section-label">Artistas distintos mencionados</span></header>
         <p class="db-note">Usuarios ordenados por la cantidad de artistas diferentes que etiquetaron.</p>
@@ -5580,7 +5611,7 @@ async function renderErpCsvUpload() {
   const importState = passlineImportState();
   return sectionShell('ERP', 'Subir CSV', 'title-erp-csv-upload', `
     <div class="db-admin-grid db-admin-grid--single">
-      <article class="db-card">
+      <article class="db-card hr-card">
         <div class="db-card__inner">
           <div class="db-form__row">
             <label class="db-field">
@@ -6171,7 +6202,7 @@ async function renderErpOps() {
       </label>
     </div>
     <div class="db-admin-grid db-admin-grid--single">
-      <article class="db-card">
+      <article class="db-card hr-card">
         <header class="db-card__header"><span class="section-label">${escapeHTML(selectedForm.label)}</span></header>
         <div class="db-card__inner">${selectedForm.html}</div>
       </article>
@@ -6626,7 +6657,7 @@ function renderFinanceMetrics(transactions, amountGetter = transactionAmount, op
       ${renderStatCard('Balance', money(balance))}
     </div>
     <div class="db-grid db-grid--2col db-finance-dashboard">
-      <article class="db-card">
+      <article class="db-card hr-card">
         <header class="db-card__header"><span class="section-label">Ingresos vs egresos</span></header>
         <div class="db-card__inner">
           <div class="db-bar-chart">
@@ -6635,10 +6666,10 @@ function renderFinanceMetrics(transactions, amountGetter = transactionAmount, op
           </div>
         </div>
       </article>
-      <article class="db-card">
+      <article class="db-card hr-card">
         <header class="db-card__header"><span class="section-label">Top clientes</span></header>
-        <ul class="db-card-list" role="list">
-          ${clients.length ? clients.map((client) => `<li class="db-card-list__item"><span class="db-card-list__label">${escapeHTML(client.label)}</span><span class="db-card-list__value">${money(client.total)}</span></li>`).join('') : '<li class="db-empty">Sin clientes en el periodo.</li>'}
+        <ul class="db-card-list hr-resource-list" role="list">
+          ${clients.length ? clients.map((client) => `<li class="db-card-list__item hr-list-item"><span class="db-card-list__label">${escapeHTML(client.label)}</span><span class="db-card-list__value">${money(client.total)}</span></li>`).join('') : '<li class="db-empty">Sin clientes en el periodo.</li>'}
         </ul>
       </article>
     </div>
@@ -6891,7 +6922,7 @@ function renderEventRightsChart(event, transactions = []) {
 
   return `
     <div class="db-grid db-grid--2col db-event-rights">
-      <article class="db-card">
+      <article class="db-card hr-card">
         <header class="db-card__header"><span class="section-label">Derechos Adquiridos</span></header>
         <div class="db-card__inner db-event-rights__inner">
           <div class="db-pie-chart" style="--hr-deg:${hiddenRoomDeg}deg" aria-label="Derechos adquiridos"></div>
@@ -6967,7 +6998,7 @@ function renderEventInternalInvestors(event, transactions = []) {
     : '<tr class="db-table__empty-row hr-table-empty"><td colspan="4" class="db-empty hr-table-empty">Sin inversiones internas registradas.</td></tr>';
 
   return `
-    <article class="db-card db-event-investors">
+    <article class="db-card hr-card db-event-investors">
       <header class="db-card__header"><span class="section-label">Inversores internos sobre costo total</span></header>
       <div class="db-card__inner">
         <div class="db-event-investors__summary">
@@ -6997,7 +7028,7 @@ function renderEventInternalInvestors(event, transactions = []) {
 function renderEventInfo(event) {
   if (!event) return '';
   return `
-    <div class="db-grid db-grid--3col">
+    <div class="db-grid hr-grid hr-grid-3 db-grid--3col">
       ${renderStatCard('Evento', event.name ?? event.event_key ?? '-')}
       ${renderStatCard('Clave', event.event_key ?? '-')}
       ${renderStatCard('Fecha / status', `${formatDisplayDateOnly(event.event_date)} · ${event.status ?? '-'}`)}
@@ -7060,7 +7091,7 @@ function eventSummaryFor(event, transactions = []) {
 function renderEventMovementForm(event, formName, participants = [], financeEntities = [], paymentMethods = state.data.paymentMethods ?? []) {
   const today = todayDateInputValue();
   return `
-    <article class="db-card">
+    <article class="db-card hr-card">
       <header class="db-card__header"><span class="section-label">Nuevo movimiento</span></header>
       <div class="db-card__inner">
         <form class="db-form" data-form="${escapeAttr(formName)}">
@@ -7405,7 +7436,7 @@ async function renderErpAuthAudit() {
 
   return sectionShell('ERP', 'Auth / Registros', 'title-erp-auth-audit', `
     ${renderAuthAuditFilterBar(persistedDataValue('authAuditFilter', 'all'))}
-    <div class="db-grid db-grid--3col">
+    <div class="db-grid hr-grid hr-grid-3 db-grid--3col">
       ${renderStatCard('Auth users', String(totals.auth_users ?? 0))}
       ${renderStatCard('Perfiles public.users', String(totals.public_profiles ?? 0))}
       ${renderStatCard('Alertas de fusión', String(alerts))}
@@ -8076,7 +8107,7 @@ function formatMembershipSessionDates(row) {
       .split(',')
       .map((value) => value.trim())
       .filter(Boolean)
-  );
+  , 'db-section--client-downloads');
 }
 
 function renderMembershipDashboardRow(row, delivery = null, options = {}) {
@@ -8168,18 +8199,24 @@ function renderMembershipSessionNotesInput(row, formId) {
  * @param {string} titleId
  * @param {string} bodyHTML
  */
-function sectionShell(label, title, titleId, bodyHTML) {
+function renderPortalSectionHeader(label, title, titleId, summary = '') {
   return `
-    <section class="db-section" aria-labelledby="${escapeHTML(titleId)}">
-      <header class="db-section__header">
-        <p class="section-label">${escapeHTML(label)}</p>
-        <h1 class="db-section__title" id="${escapeHTML(titleId)}">${escapeHTML(title)}</h1>
-      </header>
+    <header class="db-section__header hr-portal-section__header">
+      <p class="section-label">${escapeHTML(label)}</p>
+      <h1 class="db-section__title hr-portal-section__title" id="${escapeHTML(titleId)}">${escapeHTML(title)}</h1>
+      ${summary ? `<p class="db-section__summary hr-portal-section__summary">${escapeHTML(summary)}</p>` : ''}
+    </header>
+  `;
+}
+
+function sectionShell(label, title, titleId, bodyHTML, modifier = '') {
+  return `
+    <section class="db-section hr-portal-section ${escapeAttr(modifier)}" aria-labelledby="${escapeHTML(titleId)}">
+      ${renderPortalSectionHeader(label, title, titleId)}
       ${bodyHTML}
     </section>
   `;
 }
-
 async function ensureUsersLoaded() {
   if (state.data.users?.length) return state.data.users;
 
@@ -9546,7 +9583,7 @@ function topClients(transactions, amountGetter = transactionAmount) {
 
 function renderStatCard(label, value) {
   return `
-    <article class="db-card db-stat-card">
+    <article class="db-card hr-card db-stat-card">
       <div class="db-card__inner">
         <span class="section-label">${escapeHTML(label)}</span>
         <strong>${escapeHTML(value)}</strong>
@@ -9557,7 +9594,7 @@ function renderStatCard(label, value) {
 
 function renderServerStatusCard(label, value) {
   return `
-    <article class="db-card db-card--server-status">
+    <article class="db-card hr-card db-card--server-status">
       <div class="db-card__inner">
         <span class="section-label">${escapeHTML(label)}</span>
         <strong>${escapeHTML(value ?? '-')}</strong>
@@ -9575,7 +9612,7 @@ function renderServerMetricCard(label, valueLabel, value, history, unit = '%', o
     ? renderServerSparkline(history, unit, max)
     : renderServerPieChart(percent, label, tone);
   return `
-    <article class="db-card db-card--server-metric db-card--server-metric-${tone}">
+    <article class="db-card hr-card db-card--server-metric db-card--server-metric-${tone}">
       <div class="db-card__inner">
         <div class="db-server-metric__head">
           <span class="section-label">${escapeHTML(label)}</span>
@@ -12590,6 +12627,20 @@ function attachMainDelegation() {
       }
     }
 
+    if (action === 'client-downloads-open-folder') {
+      const folderKey = e.target.closest('[data-folder-key]')?.dataset.folderKey;
+      if (folderKey) {
+        setState({ clientDownloads: { selectedFolder: folderKey } });
+        renderSection(state.activeSection);
+      }
+      return;
+    }
+
+    if (action === 'client-downloads-back') {
+      setState({ clientDownloads: { selectedFolder: null } });
+      renderSection(state.activeSection);
+      return;
+    }
     if (action === 'cloud-upload-file') {
       document.getElementById('js-cloud-file-input')?.click();
       return;
