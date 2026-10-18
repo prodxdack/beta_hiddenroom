@@ -2353,11 +2353,11 @@ function renderPortalNavigation() {
   const erpEnabled = visiblePortalGroups().some((group) => group.key === 'erp');
   document.body.insertAdjacentHTML('beforeend', `
     <nav class="hr-portal-bottom-nav" aria-label="Navegación principal del portal">
-      <button type="button" data-section="overview"><span>⌂</span>Inicio</button>
-      <button type="button" data-portal-group="client"><span>◎</span>Cliente</button>
-      <button type="button" data-portal-group="collaborator"${collaboratorEnabled ? '' : ' disabled'}><span>◇</span>Colaborador</button>
-      <button type="button" data-portal-group="erp"${erpEnabled ? '' : ' disabled'}><span>▦</span>ERP</button>
-      <button type="button" data-portal-more aria-controls="hr-portal-more" aria-expanded="false"><span>•••</span>Más</button>
+      <button type="button" data-section="overview"><span class="hr-portal-bottom-nav__icon ph ph-house" aria-hidden="true"></span>Inicio</button>
+      <button type="button" data-portal-group="client"><span class="hr-portal-bottom-nav__icon ph ph-user-circle" aria-hidden="true"></span>Cliente</button>
+      <button type="button" data-portal-group="collaborator"${collaboratorEnabled ? '' : ' disabled'}><span class="hr-portal-bottom-nav__icon ph ph-users-three" aria-hidden="true"></span>Colaborador</button>
+      <button type="button" data-portal-group="erp"${erpEnabled ? '' : ' disabled'}><span class="hr-portal-bottom-nav__icon ph ph-chart-bar" aria-hidden="true"></span>ERP</button>
+      <button type="button" data-portal-more aria-controls="hr-portal-more" aria-expanded="false"><span class="hr-portal-bottom-nav__icon ph ph-dots-three-outline" aria-hidden="true"></span>Más</button>
     </nav>
     <button class="hr-portal-backdrop" type="button" aria-label="Cerrar menú" hidden></button>
     <aside class="hr-portal-drawer" id="hr-portal-more" aria-label="Menú del portal" aria-hidden="true" hidden>
