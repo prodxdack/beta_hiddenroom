@@ -2011,18 +2011,29 @@ function syncInfrastructureRefresh(sectionKey) {
 }
 
 function persistActiveSection(sectionKey) {
-  try {
-    localStorage.setItem(ACTIVE_SECTION_STORAGE_KEY, sectionKey);
-  } catch (err) {
-    console.warn('[HR] active section storage unavailable:', err);
+  const canRestore = hasRole('admin') && !state.viewAs?.active;
+  if (canRestore) {
+    try {
+      localStorage.setItem(ACTIVE_SECTION_STORAGE_KEY, sectionKey);
+    } catch (err) {
+      console.warn('[HR] active section storage unavailable:', err);
+    }
+
+    if (window.location.hash !== `#${sectionKey}`) {
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${sectionKey}`);
+    }
+    return;
   }
 
-  if (window.location.hash !== `#${sectionKey}`) {
-    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${sectionKey}`);
+  // Client sessions always start at Inicio; do not leave a section route behind.
+  if (window.location.hash) {
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
   }
 }
 
 function initialSectionKey() {
+  if (!hasRole('admin') || state.viewAs?.active) return 'overview';
+
   const hashKey = decodeURIComponent(window.location.hash.replace(/^#/, '')).trim();
   if (SECTIONS[hashKey]) return hashKey;
 
@@ -2873,7 +2884,7 @@ async function renderClientDownloads() {
   if (error) {
     console.error('[HR] renderClientDownloads:', error);
     return `
-      <section class="db-section" aria-labelledby="title-downloads">
+      <section class="db-section db-section--client-downloads" aria-labelledby="title-downloads">
         <header class="db-section__header">
           <p class="section-label">Cliente</p>
           <h1 class="db-section__title" id="title-downloads">Descargas</h1>
@@ -2894,11 +2905,11 @@ async function renderClientDownloads() {
   } else {
     rows = data.map((p) => `
       <tr>
-        <td>${escapeHTML(p.name ?? '-')}</td>
-        <td>${escapeHTML(p.type ?? '-')}</td>
-        <td>${escapeHTML(p.release_mode === 'membership_delivery' ? `Membresía · Mes ${p.membership_cycle_number ?? '-'}` : 'Directa')}</td>
-        <td>${escapeHTML(p.notes ?? '-')}</td>
-        <td>
+        <td data-label="Producto"><span class="db-download-cell__value db-download-cell__value--product">${escapeHTML(p.name ?? '-')}</span></td>
+        <td data-label="Formato"><span class="db-download-cell__value">${escapeHTML(p.type ?? '-')}</span></td>
+        <td data-label="Origen"><span class="db-download-cell__value">${escapeHTML(p.release_mode === 'membership_delivery' ? `Membresía · Mes ${p.membership_cycle_number ?? '-'}` : 'Directa')}</span></td>
+        <td data-label="Notas"><span class="db-download-cell__value">${escapeHTML(p.notes ?? '-')}</span></td>
+        <td data-label="Acción" class="db-download-cell--action">
           ${renderDownloadAction(p)}
         </td>
       </tr>
@@ -2906,7 +2917,7 @@ async function renderClientDownloads() {
   }
 
   return `
-    <section class="db-section" aria-labelledby="title-downloads">
+    <section class="db-section db-section--client-downloads" aria-labelledby="title-downloads">
       <header class="db-section__header">
         <p class="section-label">Cliente</p>
         <h1 class="db-section__title" id="title-downloads">Descargas</h1>

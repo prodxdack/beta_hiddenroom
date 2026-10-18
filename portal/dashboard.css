@@ -3672,3 +3672,292 @@ input[data-user-search] {
     z-index: var(--hr-z-drawer) !important;
   }
 }
+
+/* ================================================================
+   21. CLIENT-FIRST HOME / DOWNLOADS
+   Keep the existing dashboard markup and data flow, but give the two
+   most-used client views a calmer, music-platform presentation.
+=============================================================== */
+.db-section--overview,
+.db-section--client-downloads {
+  max-width: 1160px;
+}
+
+.db-section--overview .db-section__header,
+.db-section--client-downloads .db-section__header {
+  margin-bottom: var(--hr-space-xl);
+}
+
+.db-section--overview .db-section__title,
+.db-section--client-downloads .db-section__title {
+  font-size: clamp(30px, 4vw, 44px);
+  letter-spacing: -.035em;
+}
+
+.db-section--overview .db-card {
+  overflow: hidden;
+  border: 1px solid var(--hr-border);
+  border-radius: var(--hr-radius-lg);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--hr-red) 7%, transparent), transparent 42%),
+    var(--hr-surface);
+  box-shadow: var(--hr-shadow-sm);
+}
+
+.db-section--overview .db-card--profile .db-card__inner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--hr-space-lg);
+  padding: var(--hr-space-xl);
+}
+
+.db-section--overview .db-profile__avatar {
+  width: 76px;
+  height: 76px;
+  border: 2px solid var(--hr-red);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--hr-red) 13%, var(--hr-surface-2));
+  color: var(--hr-red);
+  box-shadow: 0 0 0 7px color-mix(in srgb, var(--hr-red) 8%, transparent);
+}
+
+.db-section--overview .db-profile__info {
+  gap: var(--hr-space-md);
+}
+
+.db-section--overview .db-profile__name {
+  font-size: clamp(22px, 3vw, 32px);
+  line-height: 1.08;
+}
+
+.db-section--overview .db-profile__meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--hr-space-sm) var(--hr-space-lg);
+}
+
+.db-section--overview .db-profile__row {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.db-section--overview .db-profile__row dt {
+  min-width: 0;
+  color: var(--hr-muted);
+  font-size: 9px;
+  letter-spacing: .14em;
+}
+
+.db-section--overview .db-profile__row dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--hr-text);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.db-section--overview .db-profile__roles {
+  gap: var(--hr-space-xs);
+}
+
+.db-section--overview .db-profile__roles .db-badge {
+  border-radius: var(--hr-radius-pill);
+  padding-inline: 9px;
+}
+
+.db-section--overview .db-card:not(.db-card--profile) .db-card__header {
+  padding: var(--hr-space-xl) var(--hr-space-xl) 0;
+}
+
+.db-section--overview .db-card:not(.db-card--profile) .db-card__inner {
+  padding: var(--hr-space-md) var(--hr-space-xl) var(--hr-space-xl);
+}
+
+.db-section--overview .db-quick-actions {
+  gap: var(--hr-space-sm);
+}
+
+.db-section--overview .db-quick-action {
+  min-height: 52px;
+  border: 1px solid var(--hr-border-strong);
+  border-radius: var(--hr-radius-md);
+  background: color-mix(in srgb, var(--hr-surface-2) 82%, transparent);
+  padding: 0 var(--hr-space-md);
+}
+
+.db-section--client-downloads .db-table-wrap {
+  overflow: hidden;
+  border: 1px solid var(--hr-border);
+  border-radius: var(--hr-radius-lg);
+  background: var(--hr-surface);
+  box-shadow: var(--hr-shadow-sm);
+}
+
+.db-section--client-downloads .db-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.db-section--client-downloads .db-table th {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--hr-border);
+  color: var(--hr-muted);
+}
+
+.db-section--client-downloads .db-table td {
+  padding: 16px;
+  border-bottom: 1px solid var(--hr-border);
+  color: var(--hr-text);
+  vertical-align: middle;
+}
+
+.db-section--client-downloads .db-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.db-section--client-downloads .db-table tbody tr:hover td {
+  background: color-mix(in srgb, var(--hr-red) 5%, transparent);
+}
+
+.db-download-cell__value {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--hr-muted);
+  line-height: 1.45;
+}
+
+.db-download-cell__value--product {
+  color: var(--hr-text);
+  font-family: var(--hr-font-display);
+  font-size: 13px;
+}
+
+.db-section--client-downloads .db-download-action {
+  border-radius: var(--hr-radius-md);
+  background: var(--hr-red);
+  color: var(--hr-text);
+}
+
+@media (max-width: 640px) {
+  .db-section--overview .db-card--profile .db-card__inner {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--hr-space-md);
+    padding: var(--hr-space-lg);
+  }
+
+  .db-section--overview .db-profile__avatar {
+    width: 58px;
+    height: 58px;
+    font-size: 22px;
+  }
+
+  .db-section--overview .db-profile__info {
+    gap: var(--hr-space-sm);
+  }
+
+  .db-section--overview .db-profile__name {
+    font-size: clamp(19px, 6vw, 26px);
+  }
+
+  .db-section--overview .db-profile__meta,
+  .db-section--overview .db-profile__roles {
+    grid-column: 1 / -1;
+  }
+
+  .db-section--overview .db-profile__meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--hr-space-md) var(--hr-space-sm);
+  }
+
+  .db-section--overview .db-card:not(.db-card--profile) .db-card__header {
+    padding: var(--hr-space-lg) var(--hr-space-lg) 0;
+  }
+
+  .db-section--overview .db-card:not(.db-card--profile) .db-card__inner {
+    padding: var(--hr-space-md) var(--hr-space-lg) var(--hr-space-lg);
+  }
+
+  .db-section--client-downloads .db-table-wrap {
+    overflow: visible;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .db-section--client-downloads .db-table,
+  .db-section--client-downloads .db-table thead,
+  .db-section--client-downloads .db-table tbody,
+  .db-section--client-downloads .db-table tr,
+  .db-section--client-downloads .db-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .db-section--client-downloads .db-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .db-section--client-downloads .db-table tbody {
+    display: grid;
+    gap: var(--hr-space-md);
+  }
+
+  .db-section--client-downloads .db-table tbody tr:not(.db-table__empty-row) {
+    padding: var(--hr-space-md);
+    border: 1px solid var(--hr-border);
+    border-radius: var(--hr-radius-lg);
+    background: var(--hr-surface);
+    box-shadow: var(--hr-shadow-sm);
+  }
+
+  .db-section--client-downloads .db-table tbody tr:not(.db-table__empty-row) td {
+    display: grid;
+    grid-template-columns: minmax(72px, 28%) minmax(0, 1fr);
+    gap: var(--hr-space-sm);
+    align-items: start;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--hr-border);
+  }
+
+  .db-section--client-downloads .db-table tbody tr:not(.db-table__empty-row) td::before {
+    content: attr(data-label);
+    color: var(--hr-muted);
+    font-family: var(--hr-font-mono);
+    font-size: 9px;
+    letter-spacing: .12em;
+    line-height: 1.35;
+    text-transform: uppercase;
+  }
+
+  .db-section--client-downloads .db-table tbody tr:not(.db-table__empty-row) td:last-child {
+    display: block;
+    padding-top: var(--hr-space-md);
+    border-bottom: 0;
+  }
+
+  .db-section--client-downloads .db-table tbody tr:not(.db-table__empty-row) td:last-child::before {
+    display: block;
+    margin-bottom: var(--hr-space-sm);
+  }
+
+  .db-section--client-downloads .db-download-action {
+    width: 100%;
+  }
+
+  .db-section--client-downloads .db-table__empty-row td {
+    display: block;
+    padding: var(--hr-space-xl) var(--hr-space-md);
+    border: 1px dashed var(--hr-border);
+    border-radius: var(--hr-radius-lg);
+  }
+}
