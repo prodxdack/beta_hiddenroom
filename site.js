@@ -1541,6 +1541,7 @@ let hrBeatPlayerFullscreenLastFocus = null;
 let hrBeatAudioContext = null;
 let hrBeatAnalyser = null;
 let hrBeatAudioSource = null;
+let hrBeatGain = null;
 let hrBeatAnalyserAudio = null;
 let hrBeatVisualizerFrame = 0;
 let hrBeatVisualizerResizeObserver = null;
@@ -1551,6 +1552,8 @@ let hrBeatVisualizerPalette = { hue: 195, saturation: 69 };
 let hrBeatPlayerShuffle = false;
 let hrBeatPlayerRepeat = false;
 let hrBeatPlayerVolumeBeforeMute = 1;
+let hrBeatPlayerVolume = 1;
+let hrBeatPlayerMediaSessionBound = false;
 let hrBeatPlayerColorValue = "#7cd0e9";
 let hrBeatPlayerColorPicker = { hue: 195, saturation: 69, value: 92 };
 let hrBeatPlayerColorCycle = false;
@@ -1812,19 +1815,29 @@ function ensureBeatPlayerAudioGraph(audio) {
   if (!hrBeatAudioContext || hrBeatAnalyserAudio !== audio) {
     try {
       audio.crossOrigin = "anonymous";
+      if (navigator.audioSession && "type" in navigator.audioSession) {
+        try { navigator.audioSession.type = "playback"; } catch {}
+      }
       hrBeatAudioContext = new AudioContextConstructor();
       hrBeatAnalyser = hrBeatAudioContext.createAnalyser();
       hrBeatAnalyser.fftSize = 512;
       hrBeatAnalyser.smoothingTimeConstant = 0.82;
       hrBeatAudioSource = hrBeatAudioContext.createMediaElementSource(audio);
+      hrBeatGain = hrBeatAudioContext.createGain();
+      hrBeatGain.gain.value = hrBeatPlayerVolume;
       hrBeatAudioSource.connect(hrBeatAnalyser);
-      hrBeatAnalyser.connect(hrBeatAudioContext.destination);
+      hrBeatAnalyser.connect(hrBeatGain);
+      hrBeatGain.connect(hrBeatAudioContext.destination);
+      // Safari can ignore HTMLMediaElement.volume after createMediaElementSource().
+      // Keep the element at unity and apply the page volume through Web Audio.
+      try { audio.volume = 1; } catch {}
       hrBeatAnalyserAudio = audio;
       hrBeatVisualizerFrequencyData = new Uint8Array(hrBeatAnalyser.frequencyBinCount);
     } catch {
       hrBeatAudioContext = null;
       hrBeatAnalyser = null;
       hrBeatAudioSource = null;
+      hrBeatGain = null;
       hrBeatAnalyserAudio = null;
       hrBeatVisualizerFrequencyData = null;
       return false;
@@ -2013,6 +2026,72 @@ function setupBeatPlayerVisualizers(audio) {
   });
 }
 
+function updateBeatPlayerMediaSession(detail = hrCurrentBeatDetail) {
+  const mediaSession = navigator.mediaSession;
+  if (!mediaSession) return;
+  try {
+    if (detail?.title && typeof window.MediaMetadata === "function") {
+      mediaSession.metadata = new MediaMetadata({
+        title: String(detail.title),
+        artist: String(detail.detail || "Hidden Room"),
+        album: "Hidden Room · Beat Store",
+        artwork: detail.cover ? [{ src: String(detail.cover), sizes: "512x512" }] : [],
+      });
+    }
+  } catch {}
+}
+
+function updateBeatPlayerMediaSessionPosition() {
+  const mediaSession = navigator.mediaSession;
+  const audio = document.getElementById("beat-audio");
+  if (!mediaSession || !audio || typeof mediaSession.setPositionState !== "function") return;
+  const duration = Number(audio.duration);
+  const currentTime = Number(audio.currentTime);
+  if (!Number.isFinite(duration) || duration <= 0 || !Number.isFinite(currentTime)) return;
+  try {
+    mediaSession.setPositionState({
+      duration,
+      playbackRate: Number(audio.playbackRate) || 1,
+      position: Math.max(0, Math.min(duration, currentTime)),
+    });
+  } catch {}
+}
+
+function syncBeatPlayerMediaSessionState() {
+  const mediaSession = navigator.mediaSession;
+  if (!mediaSession) return;
+  try { mediaSession.playbackState = isBeatPlayerPlaying() ? "playing" : "paused"; } catch {}
+  updateBeatPlayerMediaSessionPosition();
+}
+
+function setupBeatPlayerMediaSession() {
+  const mediaSession = navigator.mediaSession;
+  if (!mediaSession || hrBeatPlayerMediaSessionBound) return;
+  hrBeatPlayerMediaSessionBound = true;
+  const handlers = {
+    play: () => setGlobalBeatPlayerPlayback(true),
+    pause: () => setGlobalBeatPlayerPlayback(false),
+    stop: () => setGlobalBeatPlayerPlayback(false),
+    seekbackward: (details) => seekGlobalBeatPlayer(-(Number(details.seekOffset) || 10)),
+    seekforward: (details) => seekGlobalBeatPlayer(Number(details.seekOffset) || 10),
+    previoustrack: () => seekGlobalBeatPlayer(-10),
+    nexttrack: () => dispatchGlobalBeatPlayerNext({
+      beatId: hrCurrentBeatDetail?.beatId || "",
+      src: getBeatPlayerSrc(),
+      shuffle: hrBeatPlayerShuffle,
+    }),
+  };
+  Object.entries(handlers).forEach(([action, handler]) => {
+    try { mediaSession.setActionHandler(action, handler); } catch {}
+  });
+}
+
+function seekGlobalBeatPlayer(offset) {
+  const audio = document.getElementById("beat-audio");
+  if (!audio || !Number.isFinite(audio.duration)) return;
+  audio.currentTime = Math.max(0, Math.min(audio.duration, audio.currentTime + Number(offset || 0)));
+}
+
 function renderGlobalBeatPlayer() {
   if (!shouldRenderGlobalBeatPlayer()) return "";
   document.body.classList.add("hr-has-beat-player");
@@ -2155,11 +2234,14 @@ function hydrateGlobalBeatPlayer() {
 
   fallbackAudio.removeAttribute("controls");
   fallbackAudio.crossOrigin = "anonymous";
+  fallbackAudio.setAttribute("playsinline", "");
+  fallbackAudio.setAttribute("webkit-playsinline", "");
   fallbackAudio.setAttribute("controlsList", "nodownload noplaybackrate");
   fallbackAudio.addEventListener("contextmenu", (event) => event.preventDefault());
 
   const sync = () => syncGlobalBeatPlayerControls(toggles, seek, time, mutes, volumes, waveform);
   setupBeatPlayerVisualizers(fallbackAudio);
+  setupBeatPlayerMediaSession();
   more?.addEventListener("click", (event) => {
     event.preventDefault();
     const open = Boolean(menu?.hidden);
@@ -2403,6 +2485,7 @@ function hydrateGlobalBeatPlayer() {
 
   ["loadedmetadata", "durationchange", "timeupdate", "pause", "play", "waiting", "canplay", "ended", "volumechange"].forEach((eventName) => {
     fallbackAudio.addEventListener(eventName, () => {
+      syncBeatPlayerMediaSessionState();
       if (hrWaveSurfer) return;
       if (eventName === "waiting") player.dataset.state = "loading";
       if (eventName === "canplay") player.dataset.state = fallbackAudio.paused ? "paused" : "playing";
@@ -2433,6 +2516,7 @@ function hydrateGlobalBeatPlayer() {
   if (window.ResizeObserver) new ResizeObserver(resize).observe(player);
   window.addEventListener("resize", resize);
   sync();
+  syncBeatPlayerMediaSessionState();
   emitGlobalBeatPlayerState();
 }
 function setBeatPlayerControlHint(control, label) {
@@ -2592,6 +2676,7 @@ function setGlobalBeatPlayer(detail, options = {}) {
   hrBeatPlayerQueue = sanitizeBeatPlayerQueue(options.queue || detail.queue, detail);
   hrCurrentBeatDetail = detail;
   hrBeatVisualizerDisplayValues = [];
+  updateBeatPlayerMediaSession(detail);
 
   destroyBeatWaveform();
   setGlobalWaveformMode("loading");
@@ -2714,7 +2799,7 @@ async function loadBeatWaveform(src, options = {}) {
       waveform,
     );
     if (options.autoplay && !hrWaveSurfer.isPlaying()) {
-      Promise.resolve(hrWaveSurfer.play()).catch(() => {});
+      setGlobalBeatPlayerPlayback(true);
     }
     emitGlobalBeatPlayerState();
 
@@ -2737,7 +2822,7 @@ async function loadBeatWaveform(src, options = {}) {
   hrWaveSurfer.on("finish", () => {
     if (hrBeatPlayerRepeat) {
       hrWaveSurfer.seekTo(0);
-      hrWaveSurfer.play();
+      setGlobalBeatPlayerPlayback(true);
     } else {
       hrWaveSurfer.seekTo(0);
       if (player) player.dataset.state = "ended";
@@ -2818,21 +2903,17 @@ function getBeatPlayerDuration() {
 }
 
 function isBeatPlayerPlaying() {
-  if (hrWaveSurfer && hrWaveSurferReady) return Boolean(hrWaveSurfer.isPlaying());
   const audio = document.getElementById("beat-audio");
   return Boolean(audio?.src && !audio.paused && !audio.ended);
 }
 
 function setGlobalBeatPlayerPlayback(shouldPlay) {
-  if (hrWaveSurfer && hrWaveSurferReady) {
-    if (shouldPlay) Promise.resolve(hrWaveSurfer.play()).catch(() => {});
-    else hrWaveSurfer.pause();
-    return;
-  }
   const audio = document.getElementById("beat-audio");
   if (!audio) return;
-  if (shouldPlay) audio.play().catch(() => {});
-  else audio.pause();
+  if (shouldPlay) {
+    if (hrBeatAudioContext?.state === "suspended") hrBeatAudioContext.resume().catch(() => {});
+    audio.play().catch(() => {});
+  } else audio.pause();
 }
 
 function toggleGlobalBeatPlayerPlayback() {
@@ -2840,25 +2921,27 @@ function toggleGlobalBeatPlayerPlayback() {
 }
 
 function getBeatPlayerMuted() {
-  return Boolean(document.getElementById("beat-audio")?.muted || hrWaveSurfer?.getMuted?.());
+  return Boolean(document.getElementById("beat-audio")?.muted);
 }
 
 function setBeatPlayerMuted(muted) {
-  if (hrWaveSurfer) hrWaveSurfer.setMuted(muted);
   const audio = document.getElementById("beat-audio");
   if (audio) audio.muted = muted;
 }
 
 function getBeatPlayerVolume() {
-  const waveVolume = hrWaveSurfer?.getVolume?.();
-  if (Number.isFinite(waveVolume)) return waveVolume;
-  return document.getElementById("beat-audio")?.volume ?? 1;
+  return hrBeatPlayerVolume;
 }
 
 function setBeatPlayerVolume(value) {
-  if (hrWaveSurfer) hrWaveSurfer.setVolume(value);
+  const next = Math.max(0, Math.min(1, Number(value) || 0));
+  hrBeatPlayerVolume = next;
+  if (hrBeatGain) hrBeatGain.gain.value = next;
   const audio = document.getElementById("beat-audio");
-  if (audio) audio.volume = value;
+  if (audio) {
+    audio.volume = 1;
+    audio.muted = next === 0;
+  }
 }
 function persistGlobalBeatPlayerState() {
   const title = document.getElementById("player-title");
