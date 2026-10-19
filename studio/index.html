@@ -14,7 +14,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Space+Grotesk:wght@400;500;600;700&family=Unbounded:wght@400;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="../styles.css?v=20261018-global-volume-control-v3">
+  <link rel="stylesheet" href="../styles.css?v=20261019-player-title-links-controls-v2">
   <link rel="stylesheet" href="studio.css?v=20261002-remove-number-spans-v1">
 </head>
 <body class="studio-page hr-page" data-hr-chrome data-hr-context="studio">
@@ -29,7 +29,7 @@
           <p class="hr-subtitle">Sesiones de estudio para grabación y producción en Ixtapaluca y CDMX.</p>
           <div class="hr-cluster">
             <a class="hr-btn hr-btn-primary" href="#solicitud">Armar mi solicitud</a>
-            <a class="hr-btn hr-btn-outline" href="/#studio">Ver precios en Home</a>
+            <a class="hr-btn hr-btn-outline" href="#precios">Ver precios</a>
           </div>
         </div>
         <figure class="studio-hero__visual hr-card">
@@ -39,7 +39,7 @@
       </div>
     </section>
 
-    <section class="studio-services hr-section" aria-labelledby="services-title">
+    <section id="precios" class="studio-services hr-section" aria-labelledby="services-title">
       <div class="hr-container hr-stack hr-stack-xl">
         <div class="studio-section-heading">
           <p class="hr-eyebrow">Servicios</p>
@@ -53,17 +53,6 @@
 
     <section id="solicitud" class="studio-request hr-section" aria-labelledby="request-title">
       <div class="hr-container studio-request__grid">
-        <div class="studio-request__intro hr-stack">
-          <p class="hr-eyebrow">Solicitud</p>
-          <h2 id="request-title" class="hr-title">Cuéntanos qué necesitas.</h2>
-          <p class="hr-subtitle">Selecciona una opción, sede y fecha preferida. Al final podrás abrir un mensaje ya preparado en WhatsApp y revisar todo antes de enviarlo.</p>
-          <ol class="studio-request__steps">
-            <li><strong>Selecciona</strong><small>Servicio y sede.</small></li>
-            <li><strong>Describe</strong><small>Fecha y contexto.</small></li>
-            <li><strong>Confirma</strong><small>Revisa el mensaje.</small></li>
-          </ol>
-        </div>
-
         <form id="studio-request-form" class="studio-request__form hr-card hr-panel hr-stack" novalidate>
           <div class="studio-form__top">
             <p class="hr-eyebrow">Solicitud de Studio</p>
@@ -89,7 +78,7 @@
     </section>
   </main>
 
-<script src="../site.js?v=20261019-console-404-fix-v4"></script>
+<script src="../site.js?v=20261019-nav-store-portal-study-v1"></script>
   <script src="../analytics/analytics.js?v=20260830-analytics-minimum"></script>
   <script type="module" src="studio.js?v=20261006-studio-copy-refresh"></script>
 </body>

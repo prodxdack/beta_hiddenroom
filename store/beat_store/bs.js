@@ -1,5 +1,5 @@
 
-import { beatCardMarkup as sharedBeatCardMarkup } from "./beat-card.js?v=20261018-license-request-v10";
+import { beatCardMarkup as sharedBeatCardMarkup } from "./beat-card.js?v=20261019-beat-card-component-v2";
 import { beatLicenseAssignmentIsSelectable, beatLicenseModalMarkup } from "./license-modal.js?v=20261018-license-request-v10";
 
 const SUPABASE_URL = "https://rpcunbkstadgngqrjafp.supabase.co";
@@ -986,6 +986,7 @@ function beatCardMarkup(item) {
   return sharedBeatCardMarkup({
     id: escapeHtml(item.id),
     title: escapeHtml(title),
+    slug: product?.slug || "",
     producerMarkup: producerLinkMarkup(item, producer),
     coverMarkup: coverMarkup(item),
     metaMarkup: musicMetaMarkup(meta),
@@ -1227,13 +1228,14 @@ function addBeatLicenseToCart(itemId, licenseId) {
     license_format: license.format,
     license_terms: license.terms,
     beat_producer: producerDisplayName(productProducer(item)),
+    producer_slug: producerProfileForProduct(product)?.slug || normalizeKey(productProducer(item)),
     quantity: 1,
   });
   localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
   if (typeof window.gtag === "function") window.gtag("event", "add_to_cart", { funnel: "beat_store", item_type: "beat_license" });
   document.querySelectorAll(".cart-count").forEach((element) => { element.textContent = String(cart.reduce((sum, entry) => sum + Math.max(1, Number(entry?.quantity) || 1), 0)); });
   window.dispatchEvent(new CustomEvent("hr:store-cart-updated"));
-  showNotice("Licencia agregada al carrito");
+  showNotice("añadido al carrito");
   return true;
 }
 
@@ -1320,21 +1322,12 @@ function syncBeatCardPlayState(event) {
   const isPlaying = Boolean(event.detail?.isPlaying);
   const activeId = String(event.detail?.beatId || "");
   const activeItem = state.items.find((candidate) => candidate.id === activeId || candidate.product?.id === activeId);
-  const activeSlug = String(activeItem?.product?.slug || event.detail?.slug || "").trim();
-  const beatUrl = activeSlug
-    ? new URL(`/store/product.html?slug=${encodeURIComponent(activeSlug)}`, window.location.origin).href
-    : "";
+  const beatStoreUrl = new URL("/store/beat_store/", window.location.origin).href;
   [document.getElementById("player-title"), document.querySelector("#beat-player-fullscreen-title > a")].forEach((link) => {
     if (!link) return;
-    if (beatUrl) {
-      link.href = beatUrl;
-      link.removeAttribute("aria-disabled");
-      link.removeAttribute("tabindex");
-    } else {
-      link.removeAttribute("href");
-      link.setAttribute("aria-disabled", "true");
-      link.setAttribute("tabindex", "-1");
-    }
+    link.href = beatStoreUrl;
+    link.removeAttribute("aria-disabled");
+    link.removeAttribute("tabindex");
   });
   const producerProfile = producerProfileForProduct(activeItem?.product);
   const producerLink = document.querySelector("#beat-player-fullscreen-producer > a");
@@ -1371,7 +1364,7 @@ function playBeat(itemId) {
   const producer = productProducer(item);
   const producerProfile = producerProfileForProduct(item.product);
   detail.detail = producerDisplayName(producer);
-  detail.producerSlug = producerProfile?.is_active === false ? "" : producerProfile?.slug || "";
+  detail.producerSlug = producerProfile?.is_active === false ? "" : producerProfile?.slug || normalizeKey(producer);
   window.dispatchEvent(new CustomEvent("hr:beat-preview", {
     detail: {
       ...detail,
@@ -1392,7 +1385,7 @@ function beatPlayerDetailForItem(item) {
     cover: coverUrlForItem(item),
     beatId: item.id,
     slug: item.product?.slug || "",
-    producerSlug: producerProfile?.is_active === false ? "" : producerProfile?.slug || "",
+    producerSlug: producerProfile?.is_active === false ? "" : producerProfile?.slug || normalizeKey(producer),
     genre: item.product?.beat_genre || item.beat?.genre || "",
     bpm: item.product?.beat_bpm || item.beat?.bpm || "",
     key: item.product?.beat_key || item.beat?.key || "",
@@ -1768,7 +1761,7 @@ function renderAdminProducts() {
           ${adminBeatAssetBadges(product)}
         </div>
         <h3>${escapeHtml(product.name)}</h3>
-        <p>${escapeHtml(product.slug)} / ${escapeHtml(product.producer ? producerDisplayName(product.producer) : "Sin productor")} / stock ${escapeHtml(product.stock ?? "ilimitado")}</p>${adminProductMetaText(product) ? `<p class="beat-admin-row__music">${escapeHtml(adminProductMetaText(product))}</p>` : ""}
+        <p>${escapeHtml(product.slug)} / ${product.producer ? producerLinkMarkup({ product }, product.producer) : "Sin productor"} / stock ${escapeHtml(product.stock ?? "ilimitado")}</p>${adminProductMetaText(product) ? `<p class="beat-admin-row__music">${escapeHtml(adminProductMetaText(product))}</p>` : ""}
       </div>
       <div class="admin-actions">
         <button class="secondary-button" type="button" data-edit-beat="${escapeHtml(product.id)}">Editar</button>
@@ -2686,8 +2679,9 @@ function producerLinkMarkup(item, fallbackName = "") {
   const product = item?.product || {};
   const profile = producerProfileForProduct(product);
   const name = producerDisplayName(profile?.display_name || fallbackName || "Productor por confirmar");
-  if (!profile?.slug || profile.is_active === false) return escapeHtml(name);
-  return `<a href="producer.html?producer=${encodeURIComponent(profile.slug)}">${escapeHtml(name)}</a>`;
+  const slug = profile?.slug || normalizeKey(fallbackName);
+  if (!slug || profile?.is_active === false || name === "Productor por confirmar") return escapeHtml(name);
+  return "<a href=\"producer.html?producer=" + encodeURIComponent(slug) + "\">" + escapeHtml(name) + "</a>";
 }
 
 async function createOrOpenProducerProfile(productId) {

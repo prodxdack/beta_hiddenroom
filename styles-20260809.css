@@ -1,5 +1,5 @@
 /* ================================================================
-   HIDDEN ROOM â€” Global Stylesheet
+   HIDDEN ROOM — Global Stylesheet
    hiddenroom.mx | Una Marca de Grupo Mysauth
    ================================================================
    TABLE OF CONTENTS
@@ -22,7 +22,7 @@
    16. Footer
    17. Keyframe Animations
    18. Responsive Overrides
-   â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   ──────────────────────────────────────────────────────────────
    MINIGAME EXTENSIONS (additive, page-scoped)
    19. Page Shell (cursor reset, wrapper)
    20. Canvas & Scanlines
@@ -36,14 +36,14 @@
 
 
 /* ================================================================
-   1. CSS CUSTOM PROPERTIES â€” DESIGN TOKENS
+   1. CSS CUSTOM PROPERTIES — DESIGN TOKENS
 ================================================================ */
 :root {
 
-  /* â€” Color Palette â€” */
+  /* — Color Palette — */
 
   /*
-   * PRIMARY ACCENT â€” Red
+   * PRIMARY ACCENT — Red
    * Current dominant brand color. Used everywhere.
    */
   --red:          #db0100;
@@ -52,14 +52,14 @@
   --red-ghost:    rgba(219,   1,   0, 0.04);
 
   /*
-   * BRAND PALETTE â€” registered tokens, not yet applied to UI.
+   * BRAND PALETTE — registered tokens, not yet applied to UI.
    * Use var(--magenta), var(--teal), var(--green), var(--maroon)
    * when assigning roles in future sections or themed pages.
    *
-   *  --magenta  â†’  high-energy neon; candidate for Dem00nz / drop events
-   *  --teal     â†’  cool contrast; candidate for Media / Live Sessions
-   *  --green    â†’  fresh accent; candidate for Car Culture / success states
-   *  --maroon   â†’  muted warm; candidate for backgrounds, borders, overlays
+   *  --magenta  →  high-energy neon; candidate for Dem00nz / drop events
+   *  --teal     →  cool contrast; candidate for Media / Live Sessions
+   *  --green    →  fresh accent; candidate for Car Culture / success states
+   *  --maroon   →  muted warm; candidate for backgrounds, borders, overlays
    */
   --magenta:        #db00db;
   --magenta-hover:  #ff00ff;
@@ -96,7 +96,7 @@
   --coupon:       #c8ff00;
   --muted:        rgba(240, 236, 228, 0.25);
 
-  /* â€” Typography â€” */
+  /* — Typography — */
   --font-mono:    var(--font-body);
   --font-display: 'Unbounded', sans-serif;
   --font-body:    'Space Grotesk', sans-serif;
@@ -113,7 +113,7 @@
   --tracking-wider:    0.25em;
   --tracking-widest:   0.35em;
 
-  /* â€” Spacing â€” */
+  /* — Spacing — */
   --space-xs:    4px;
   --space-sm:    8px;
   --space-md:    16px;
@@ -127,7 +127,7 @@
   --padding-page:    48px;   /* standard horizontal page padding */
   --padding-section: 120px;  /* standard vertical section padding */
 
-  /* â€” Transitions â€” */
+  /* — Transitions — */
   --ease-standard: cubic-bezier(.25, .46, .45, .94);
   --duration-fast: 0.2s;
   --duration-base: 0.35s;
@@ -141,7 +141,7 @@
                           transform var(--duration-slow) var(--ease-standard);
   --transition-gallery:   transform 0.6s var(--ease-standard);
 
-  /* â€” Z-Index Scale â€” */
+  /* — Z-Index Scale — */
   --z-base:       0;
   --z-above:      1;
   --z-nav:        100;
@@ -153,7 +153,7 @@
   --z-cursor-ring:9998;
   --z-cursor-dot: 9999;
 
-  /* â€” Borders â€” */
+  /* — Borders — */
   --border-subtle:  1px solid var(--white-trace);
   --border-faint:   1px solid var(--white-ghost);
   --border-dim:     1px solid var(--white-faint);
@@ -384,7 +384,7 @@ body:not(:has(.cursor)) { cursor: default; }
    Base shared properties, then per-variant overrides.
 ================================================================ */
 
-/* â€” Shared button foundation â€” */
+/* — Shared button foundation — */
 .btn-primary,
 .btn-outline {
   font-family: var(--font-mono);
@@ -400,7 +400,7 @@ body:not(:has(.cursor)) { cursor: default; }
   overflow: hidden;
 }
 
-/* â€” Primary: solid red â€” */
+/* — Primary: solid red — */
 .btn-primary {
   color: var(--white);
   background: var(--red);
@@ -416,7 +416,7 @@ body:not(:has(.cursor)) { cursor: default; }
 }
 .btn-primary:hover::after { opacity: 1; }
 
-/* â€” Outline: ghost with dim border â€” */
+/* — Outline: ghost with dim border — */
 .btn-outline {
   color: var(--white-dim);
   background: transparent;
@@ -454,7 +454,7 @@ section { position: relative; }
   background: var(--red);
 }
 
-/* Muted number/text inside a label â€” magenta touch */
+/* Muted number/text inside a label — magenta touch */
 .section-num {
   font-family: var(--font-display);
   font-size: var(--text-sm);
@@ -673,7 +673,7 @@ section { position: relative; }
   align-items: center;
   gap: 40px;
 }
-.marquee-item::after { content: 'âœ¦'; font-size: 8px; color: rgba(255, 255, 255, 0.5); }
+.marquee-item::after { content: '✦'; font-size: 8px; color: rgba(255, 255, 255, 0.5); }
 .marquee-item:nth-child(even)::after { color: var(--magenta); }
 
 
@@ -866,7 +866,7 @@ section { position: relative; }
   margin-bottom: var(--space-2xl);
 }
 
-/* Spec card â€” reusable for pricing / stat items */
+/* Spec card — reusable for pricing / stat items */
 .spec-item {
   border-left: 2px solid var(--magenta);
   padding-left: var(--space-md);
@@ -1011,7 +1011,7 @@ section { position: relative; }
    These replace the most common inline style patterns found in the HTML.
 ================================================================ */
 
-/* Logo images in nav and footer â€” height controlled here, not inline */
+/* Logo images in nav and footer — height controlled here, not inline */
 .img-logo {
   height: 44px;
   width: auto;
@@ -1172,12 +1172,12 @@ body.hr-has-beat-player {
 
 /* ================================================================
    MINIGAME EXTENSIONS
-   Strictly additive â€” only affects minigame pages.
+   Strictly additive — only affects minigame pages.
    Shares tokens from :root above; adds no new visual direction.
 ================================================================ */
 
 /* ================================================================
-   19. PAGE SHELL â€” Full-viewport wrapper (minigame pages)
+   19. PAGE SHELL — Full-viewport wrapper (minigame pages)
 ================================================================ */
 #wrapper {
   position: relative;
@@ -1203,7 +1203,7 @@ body.hr-has-beat-player {
   height: 100%;
 }
 
-/* CRT scanlines â€” mirrors grain overlay aesthetic */
+/* CRT scanlines — mirrors grain overlay aesthetic */
 #scanlines {
   position: absolute;
   inset: 0;
@@ -1220,7 +1220,7 @@ body.hr-has-beat-player {
 
 
 /* ================================================================
-   21. HUD â€” Score / Lives bar
+   21. HUD — Score / Lives bar
 ================================================================ */
 #hud {
   position: absolute;
@@ -1251,7 +1251,7 @@ body.hr-has-beat-player {
 
 
 /* ================================================================
-   22. OVERLAY SCREENS â€” Start / Game Over
+   22. OVERLAY SCREENS — Start / Game Over
 ================================================================ */
 .screen {
   position: absolute;
@@ -1268,7 +1268,7 @@ body.hr-has-beat-player {
 }
 .screen.hidden { display: none; }
 
-/* Red eyebrow with flanking rules â€” mirrors .hero-eyebrow pattern */
+/* Red eyebrow with flanking rules — mirrors .hero-eyebrow pattern */
 .screen-label {
   font-size: var(--text-sm);
   letter-spacing: var(--tracking-widest);
@@ -1419,7 +1419,7 @@ body.hr-has-beat-player {
 }
 
 @media (max-height: 500px) {
-  /* Landscape / very short screens â€” compact the overlays */
+  /* Landscape / very short screens — compact the overlays */
   .screen       { gap: var(--space-sm); }
   .screen-title { font-size: clamp(24px, 8vw, 48px); }
   .screen-sub   { display: none; }
@@ -3362,7 +3362,7 @@ body[data-hr-chrome] .success-brand {
   .hr-page-title { font-size: clamp(32px, 12vw, 58px); }
 }
 
-/* El portal cambia a layout mÃ³vil en 800px. Entre 801px y 900px solo
+/* El portal cambia a layout móvil en 800px. Entre 801px y 900px solo
    activamos la hamburguesa global y conservamos su sidebar de escritorio. */
 @media (min-width: 801px) and (max-width: 900px) {
   .db-body .db-main {
@@ -4175,16 +4175,16 @@ body.hr-has-beat-player .db-toast-region {
 ================================================================ */
 
 /* ================================================================
-   PORTAL â€” login / recovery
+   PORTAL — login / recovery
    Source: portal/login.css
 ================================================================ */
 /* ================================================================
    27. LOGIN PAGE
    Full-viewport centered layout. No nav, no footer.
-   All classes are additive â€” nothing from above is overridden.
+   All classes are additive — nothing from above is overridden.
 ================================================================ */
 
-/* â€” Page shell â€” */
+/* — Page shell — */
 .login-page {
   min-height: 100dvh;
   display: flex;
@@ -4196,7 +4196,7 @@ body.hr-has-beat-player .db-toast-region {
   overflow-y: auto;
 }
 
-/* Subtle red radial glow behind the card â€” mirrors hero-bg::before */
+/* Subtle red radial glow behind the card — mirrors hero-bg::before */
 .login-page::before {
   content: '';
   position: fixed;
@@ -4208,7 +4208,7 @@ body.hr-has-beat-player .db-toast-region {
   z-index: var(--z-base);
 }
 
-/* â€” Card â€” */
+/* — Card — */
 .login-card {
   position: relative;
   z-index: var(--z-above);
@@ -4229,7 +4229,7 @@ body.hr-has-beat-player .db-toast-region {
   background: linear-gradient(to right, var(--red), var(--magenta));
 }
 
-/* â€” Card header â€” */
+/* — Card header — */
 .login-logo {
   display: flex;
   justify-content: center;
@@ -4269,7 +4269,7 @@ body.hr-has-beat-player .db-toast-region {
   margin-bottom: var(--space-2xl);
 }
 
-/* â€” Form layout â€” */
+/* — Form layout — */
 .login-form {
   display: flex;
   flex-direction: column;
@@ -4309,7 +4309,7 @@ body.hr-has-beat-player .db-toast-region {
   background: var(--black);
 }
 
-/* â€” Forgot password link â€” */
+/* — Forgot password link — */
 .password-field {
   position: relative;
   width: 100%;
@@ -4383,7 +4383,7 @@ body.hr-has-beat-player .db-toast-region {
   text-transform: uppercase;
 }
 
-/* â€” Submit button â€” full width variant of btn-primary â€” */
+/* — Submit button — full width variant of btn-primary — */
 .login-submit {
   width: 100%;
   text-align: center;
@@ -4411,7 +4411,7 @@ body.hr-has-beat-player .db-toast-region {
 .login-submit:hover { background: var(--red-hover); }
 .login-submit:hover::after { opacity: 1; }
 
-/* â€” Divider â€” */
+/* — Divider — */
 .login-divider {
   display: flex;
   align-items: center;
@@ -4432,7 +4432,7 @@ body.hr-has-beat-player .db-toast-region {
   color: var(--white-mark);
 }
 
-/* â€” Register link row â€” */
+/* — Register link row — */
 .login-register {
   text-align: center;
   font-size: var(--text-xs);
@@ -4448,7 +4448,7 @@ body.hr-has-beat-player .db-toast-region {
 }
 .login-register a:hover { color: var(--red-hover); }
 
-/* â€” Version stamp â€” */
+/* — Version stamp — */
 .login-version {
   font-size: var(--text-xs);
   letter-spacing: var(--tracking-wide);
@@ -4458,7 +4458,7 @@ body.hr-has-beat-player .db-toast-region {
   opacity: 0.5;
 }
 
-/* â€” Responsive â€” */
+/* — Responsive — */
 @media (max-width: 480px) {
   .login-page {
     align-items: flex-start;
@@ -4471,7 +4471,7 @@ body.hr-has-beat-player .db-toast-region {
   }
 }
 
-/* Portal access screens â€” opt-in bridge to the global HR system. */
+/* Portal access screens — opt-in bridge to the global HR system. */
 .login-page {
   color: var(--hr-text);
 }
@@ -4601,21 +4601,21 @@ body.hr-has-beat-player .db-toast-region {
 }
 
 /* ================================================================
-   PORTAL â€” dashboard
+   PORTAL — dashboard
    Source: portal/dashboard.css
 ================================================================ */
 /* ================================================================
-   HIDDEN ROOM / MYSAUTH â€” Dashboard Layer
+   HIDDEN ROOM / MYSAUTH — Dashboard Layer
    portal/dashboard.css
    ================================================================
    ADDITIVE ONLY.
-   â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-   â€¢ Inherits all tokens from ../styles.css
-   â€¢ Defines layout primitives (sidebar, topbar, main)
-   â€¢ Defines dashboard-specific components
-   â€¢ Never redefines or overrides :root tokens
-   â€¢ Never uses inline styles (see HTML)
-   â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   ─────────────────────────────────────────────────────────────
+   • Inherits all tokens from ../styles.css
+   • Defines layout primitives (sidebar, topbar, main)
+   • Defines dashboard-specific components
+   • Never redefines or overrides :root tokens
+   • Never uses inline styles (see HTML)
+   ─────────────────────────────────────────────────────────────
    TABLE OF CONTENTS
    1.  Dashboard Body Override
    2.  Layout Shell
@@ -4640,7 +4640,7 @@ body.hr-has-beat-player .db-toast-region {
 
 /* ================================================================
    1. DASHBOARD BODY OVERRIDE
-   â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   ─────────────────────────────────────────────────────────────
    The public site uses cursor:none everywhere.
    Inside the portal we restore it; the custom cursor JS from
    site.js still runs, so both coexist.
@@ -4662,7 +4662,7 @@ body.hr-has-beat-player .db-toast-region {
 }
 
 /* mix-blend-mode:difference (from styles.css) makes the red dot
-   invisible on dark surfaces â€” neutralize it inside the portal */
+   invisible on dark surfaces — neutralize it inside the portal */
 .db-body .cursor {
   mix-blend-mode: normal !important;
 }
@@ -4840,7 +4840,7 @@ body.hr-has-beat-player .db-toast-region {
   text-transform: uppercase;
 }
 
-/* Mobile toggle â€” hidden on desktop */
+/* Mobile toggle — hidden on desktop */
 
 /* ================================================================
    5. MAIN / SECTION CONTAINER
@@ -5541,7 +5541,7 @@ body.hr-has-beat-player .db-toast-region {
   padding: 0 4px;
 }
 
-/* Role badge variants â€” maps to brand palette */
+/* Role badge variants — maps to brand palette */
 .db-badge--role        { border-radius: 0; }
 .db-badge--client      { color: var(--teal);    border-color: var(--teal-dim);    background: var(--teal-ghost); }
 .db-badge--collaborator{ color: var(--magenta); border-color: var(--magenta-dim); background: var(--magenta-ghost); }
@@ -8205,7 +8205,7 @@ input[data-user-search] {
 }
 
 /* ================================================================
-   MEDIA â€” public
+   MEDIA — public
    Source: media/media.css
 ================================================================ */
 .sr-only {
@@ -8591,7 +8591,7 @@ input[data-user-search] {
 }
 
 /* ================================================================
-   MEDIA â€” admin
+   MEDIA — admin
    Source: media/admin.css
 ================================================================ */
 .media-admin {
@@ -8972,7 +8972,7 @@ input[data-user-search] {
 }
 
 /* ================================================================
-   STORE â€” catalog / checkout / admin
+   STORE — catalog / checkout / admin
    Source: store/store.css
 ================================================================ */
 html { color-scheme: dark; }
@@ -9372,7 +9372,7 @@ body[data-hr-chrome] .success-brand { top: 72px; }
 }
 
 /* ================================================================
-   STORE â€” Beat Store
+   STORE — Beat Store
    Source: store/beat_store/bs.css
 ================================================================ */
 .beat-store-page .beat-hero {
@@ -10659,10 +10659,10 @@ body.beat-admin-mode .beat-admin {
 }
 
 /* ================================================================
-   TICKETS â€” public / generation / validation / print
+   TICKETS — public / generation / validation / print
    Source: tickets/tickets.css
 ================================================================ */
-/* Capa especÃ­fica de la boletera. Todos los selectores estÃ¡n aislados. */
+/* Capa específica de la boletera. Todos los selectores están aislados. */
 .tickets-page {
   background:
     radial-gradient(circle at 85% 5%, rgba(219, 1, 0, .16), transparent 32rem),
@@ -13772,15 +13772,28 @@ body.hr-beat-player-fullscreen-open .hr-beat-player {
   position: relative;
   z-index: 1;
   width: auto;
+  min-width: 0;
+  max-width: 100%;
   margin: 0 16px;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .hr-beat-player-fullscreen__wave-slot .hr-beat-player__wave-wrap,
 .hr-beat-player-fullscreen__wave-slot .hr-beat-player__wave {
   width: 100% !important;
   min-width: 0;
+  max-width: 100%;
   height: 58px !important;
   min-height: 58px;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+.hr-beat-player-fullscreen__wave-slot .hr-beat-player__wave > wave,
+.hr-beat-player-fullscreen__wave-slot .hr-beat-player__wave > wave > canvas {
+  display: block;
+  max-width: 100% !important;
+  box-sizing: border-box;
 }
 
 .hr-beat-player-fullscreen__footer {
@@ -13828,6 +13841,10 @@ body.hr-beat-player-fullscreen-open .hr-beat-player {
   width: 100%;
   min-width: 0;
 }
+.hr-beat-player-fullscreen__share { display: inline-flex; align-items: center; justify-content: center; width: auto; min-width: 0; height: auto; margin: 4px auto 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; color: #a6c6df; font: 700 10px/1.2 var(--hr-font-mono); letter-spacing: .08em; text-decoration: none; text-transform: none; cursor: pointer; }
+.hr-beat-player-fullscreen__share:disabled { opacity: .42; cursor: not-allowed; }
+.hr-beat-player-fullscreen__share:hover,
+.hr-beat-player-fullscreen__share:focus-visible { outline: none; text-decoration: underline; text-underline-offset: 3px; }
 .hr-beat-player-fullscreen__buy { display: grid !important; grid-area: auto; width: min(280px, 100%); justify-self: center; height: 42px; flex: 0 0 42px; }
 
 @media (max-width: 620px) {
@@ -13892,7 +13909,7 @@ body.hr-beat-player-fullscreen-open .hr-beat-player {
   .hr-beat-player-fullscreen__label,
   .hr-beat-player-fullscreen__stats { font-size: 8px; }
   .hr-beat-player-fullscreen__stats { gap: 10px; }
-  .hr-beat-player-fullscreen__wave-slot { margin: 0 10px; }
+  .hr-beat-player-fullscreen__wave-slot { width: calc(100% - 20px); max-width: calc(100% - 20px); margin: 0 10px; overflow: hidden; }
   .hr-beat-player-fullscreen__footer { margin: 0 10px 8px; padding-top: 9px; font-size: 8px; }
   .hr-beat-player-fullscreen__play { width: 66px; height: 66px; }
   .hr-beat-player-fullscreen__play .hr-beat-player__art-icon { font-size: 23px; }
@@ -13900,6 +13917,7 @@ body.hr-beat-player-fullscreen-open .hr-beat-player {
   .hr-beat-player-fullscreen__hardware-row { grid-template-columns: 36px 36px 48px minmax(80px, 1fr); gap: 8px; }
   .hr-beat-player-fullscreen__hardware-row > button { width: 36px; height: 28px; }
   .hr-beat-player-fullscreen__hardware-row .hr-beat-player__mute { width: 48px; font-size: 8px; }
+  .hr-beat-player-fullscreen__share { margin-top: -4px; font-size: 9px; }
   .hr-beat-player-fullscreen__buy { display: grid !important; height: 38px; min-width: 0; flex-basis: 38px; font-size: 9px; }
 }
 
@@ -14275,6 +14293,10 @@ body.hr-beat-player-fullscreen-open .hr-global-drawer {
   --hr-player-accent: var(--hr-player-color-accent);
 }
 
+.hr-beat-player-fullscreen__share { color: var(--hr-player-color-muted); }
+.hr-beat-player-fullscreen__share:hover,
+.hr-beat-player-fullscreen__share:focus-visible { color: var(--hr-player-color-bright); }
+
 .hr-beat-player-fullscreen__appearance {
   position: absolute;
   top: calc(50% + 24px);
@@ -14638,7 +14660,19 @@ body.hr-beat-player-fullscreen-open .hr-global-drawer {
     margin-top: 8px !important;
   }
 
- .hr-beat-player-fullscreen__screen > .hr-beat-player-fullscreen__footer {
+   .hr-beat-player-fullscreen__wave-slot {
+    align-self: center !important;
+    width: calc(100% - 20px) !important;
+    max-width: calc(100% - 20px) !important;
+    margin-inline: auto !important;
+    box-sizing: border-box;
+  }
+
+  .hr-beat-player-fullscreen__share {
+    margin-top: 8px !important;
+  }
+
+.hr-beat-player-fullscreen__screen > .hr-beat-player-fullscreen__footer {
     width: auto !important;
   }
 }
@@ -14982,15 +15016,18 @@ body.hr-beat-player-fullscreen-open .hr-global-drawer {
 #beat-player-fullscreen-title > a,
 #beat-player-fullscreen-title > a:visited { color: inherit; text-decoration: none !important; }
 #beat-player-fullscreen-producer > a { color: inherit; text-decoration: none; }
+#player-detail > a { color: inherit; text-decoration: none; }
 #player-title:not([aria-disabled="true"]):hover,
 #player-title:not([aria-disabled="true"]):focus-visible,
 #beat-player-fullscreen-title > a:not([aria-disabled="true"]):hover,
 #beat-player-fullscreen-title > a:not([aria-disabled="true"]):focus-visible,
+#player-detail > a:not([aria-disabled="true"]):hover,
+#player-detail > a:not([aria-disabled="true"]):focus-visible,
 #beat-player-fullscreen-producer > a:not([aria-disabled="true"]):hover,
 #beat-player-fullscreen-producer > a:not([aria-disabled="true"]):focus-visible { text-decoration: none; }
-.hr-beat-player__menu button { display: block; width: 100%; padding: 8px 10px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.hr-beat-player__menu button { display: flex; align-items: center; width: 100%; min-height: 42px; padding: 0 12px; border: 0; background: transparent; color: var(--white); font: 700 9px/1.2 var(--hr-font-mono); letter-spacing: .12em; text-align: left; text-transform: uppercase; cursor: pointer; }
 .hr-beat-player__menu button:hover,
-.hr-beat-player__menu button:focus-visible { background: rgba(255,255,255,.07); color: #fff; }
+.hr-beat-player__menu button:focus-visible { background: var(--red-ghost); color: var(--red-hover); outline: none; }
 .hr-beat-player-fullscreen__hardware-row > button.is-active { border-color: var(--hr-player-accent); background: linear-gradient(var(--hr-player-color-panel), var(--hr-player-color-dark)); color: var(--hr-player-color-bright); box-shadow: 0 0 0 1px color-mix(in srgb, var(--hr-player-accent), transparent 45%), inset 0 1px 0 color-mix(in srgb, var(--hr-player-color-bright), transparent 68%); }
 .hr-beat-player-color-picker { position: relative; display: grid; grid-template-columns: 34px minmax(0,1fr); align-items: center; gap: 4px; min-width: 0; color: var(--hr-player-color-muted); font: 500 7px/1 var(--hr-font-mono); letter-spacing: .08em; }
 .hr-beat-player-color-picker__toggle { display: flex; align-items: center; gap: 4px; width: 100%; min-width: 0; height: 20px; padding: 2px 3px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--hr-player-color-line), transparent 20%); border-radius: 3px; background: var(--hr-player-color-dark); color: var(--hr-player-accent); font: 500 8px/1 var(--hr-font-mono); text-align: left; cursor: pointer; }
@@ -15407,4 +15444,94 @@ body span[data-hr-copy-segment] {
   height: 18px;
   margin: 0;
   flex: 0 0 18px;
+}
+
+/* Final fullscreen player sizing: keep transport controls compact on responsive screens. */
+@media (min-width: 621px) {
+  .hr-beat-player-fullscreen__play {
+    width: 84px;
+    height: 84px;
+  }
+
+  .hr-beat-player-fullscreen__play .hr-beat-player__art-icon {
+    font-size: 26px;
+  }
+}
+
+@media (max-width: 620px) {
+  .hr-beat-player-fullscreen__play {
+    width: 68px !important;
+    height: 68px !important;
+  }
+
+  .hr-beat-player-fullscreen__play .hr-beat-player__art-icon {
+    font-size: 23px !important;
+  }
+}
+
+.beat-card__title-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.beat-card__title-link:hover,
+.beat-card__title-link:focus-visible {
+  color: var(--red-hover, var(--red));
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* General Store: beats inherit the Beat Store card component and stay in one horizontal row. */
+.store-catalog-row {
+  display: grid;
+  gap: var(--hr-space-md);
+}
+.store-catalog-row__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--hr-border);
+  padding-bottom: 10px;
+}
+.store-catalog-row__header h2 {
+  margin: 0;
+  color: var(--hr-text);
+  font: 700 clamp(20px, 3vw, 30px) / 1.1 var(--hr-font-display);
+  text-transform: uppercase;
+}
+.store-catalog-row__header span {
+  color: var(--hr-muted);
+  font: 500 10px / 1 var(--hr-font-mono);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.store-beat-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(280px, 32vw);
+  gap: var(--hr-space-md);
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: visible;
+  padding: 2px 2px 10px;
+  scrollbar-width: thin;
+}
+.store-beat-row .beat-card {
+  width: 100%;
+  min-width: 0;
+}
+.store-product-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  border-top: 1px solid var(--hr-border);
+  border-left: 1px solid var(--hr-border);
+}
+@media (max-width: 900px) {
+  .store-product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .store-beat-row { grid-auto-columns: minmax(260px, 78vw); }
+  .store-product-grid { grid-template-columns: 1fr; }
 }

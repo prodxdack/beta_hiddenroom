@@ -1,4 +1,4 @@
-import { supabase, escapeHtml } from "./store.js?v=20261018-license-request-v10";
+import { supabase, escapeHtml } from "./store.js?v=20261019-producer-links-toast-v1";
 
 const CLOUD_ORIGIN = "https://cloud.hiddenroom.mx";
 const statusElement = document.getElementById("orders-status");
@@ -97,7 +97,7 @@ function orderMarkup(order, downloads) {
       <div class="order-items">
         ${(order.store_order_items ?? []).map((item) => `
           <div class="summary-line">
-            ${item.license_name ? `<small class="summary-license">${escapeHtml(item.license_name)}${item.producer_name ? ` · ${escapeHtml(producerDisplayName(item.producer_name))}` : ""}</small>` : ""}
+            ${item.license_name ? `<small class="summary-license">${escapeHtml(item.license_name)}${item.producer_name ? ` · ${producerLinkMarkup(item.producer_name)}` : ""}</small>` : ""}
             <span>${escapeHtml(item.product_name)} × ${item.quantity}</span>
             <span>${formatPrice(item.total, order.currency)}</span>
           </div>`).join("")}
@@ -153,6 +153,14 @@ function producerDisplayName(value) {
   return clean && !["Productor por confirmar", "Productor", "Sin productor", "Tu cuenta"].includes(clean) ? "@" + clean : clean || "Productor por confirmar";
 }
 
+function producerLinkMarkup(value) {
+  const label = producerDisplayName(value);
+  const rawName = String(value || "").trim().replace(/^@+/, "").toLowerCase();
+  const placeholder = ["", "productor por confirmar", "productor", "sin productor", "tu cuenta"].includes(rawName);
+  const slug = String(value || "").trim().replace(/^@+/, "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  if (placeholder || !slug) return escapeHtml(label);
+  return "<a href=\"/store/beat_store/producer.html?producer=" + encodeURIComponent(slug) + "\">" + escapeHtml(label) + "</a>";
+}
 function statusLabel(status) {
   return {
     pending: "Pendiente",

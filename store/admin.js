@@ -1,5 +1,5 @@
-import { supabase } from "./store.js?v=20261018-license-request-v10";
-import { fillProductForm, getEditingProductId, getProductFormPayload, productAdminMarkup, resetProductForm } from "./admin-components.js?v=20261018-producer-handle-v1";
+import { supabase } from "./store.js?v=20261019-producer-links-toast-v1";
+import { fillProductForm, getEditingProductId, getProductFormPayload, productAdminMarkup, resetProductForm } from "./admin-components.js?v=20261019-producer-links-v1";
 
 const shell = document.getElementById("admin-shell");
 const denied = document.getElementById("admin-denied");

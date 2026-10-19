@@ -33,7 +33,8 @@ async function init() {
   state.profile = profile;
   newLink.hidden = false;
   const producerName = producerDisplayName(profile?.display_name || account?.display_name || account?.username || 'Tu cuenta');
-  introElement.textContent = `${producerName} · beats propios`;
+  const producerHref = profile?.slug ? "<a href=\"producer.html?producer=" + encodeURIComponent(profile.slug) + "\">" + escapeHtml(producerName) + "</a>" : escapeHtml(producerName);
+  introElement.innerHTML = producerHref + " · beats propios";
   await loadProducts();
   listElement.addEventListener('click', handleAction);
 }

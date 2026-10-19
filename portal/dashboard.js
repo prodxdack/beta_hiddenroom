@@ -3536,7 +3536,7 @@ async function renderClientSessions() {
   if (!data || data.length === 0) {
     rows = `
       <tr class="db-table__empty-row hr-table-empty">
-        <td colspan="5" class="db-empty hr-table-empty">Sin sesiones registradas.</td>
+        <td colspan="4" class="db-empty hr-table-empty">Sin sesiones registradas.</td>
       </tr>
     `;
   } else {
@@ -3544,7 +3544,6 @@ async function renderClientSessions() {
       <tr>
         <td>${escapeHTML(s.concept ?? '-')}</td>
         <td>${s.session_date ? formatDisplayDateOnly(s.session_date) : '-'}</td>
-        <td>${escapeHTML(s.status ?? '-')}</td>
         <td>${escapeHTML(s.cost != null ? `$${s.cost}` : '-')}</td>
         <td>${escapeHTML(s.notes ?? '-')}</td>
       </tr>
@@ -3563,7 +3562,6 @@ async function renderClientSessions() {
             <tr>
               <th scope="col">Concepto</th>
               <th scope="col">Fecha</th>
-              <th scope="col">Estado</th>
               <th scope="col">Costo</th>
               <th scope="col">Notas</th>
             </tr>
@@ -3610,7 +3608,6 @@ async function renderClientTransactions() {
   } else {
     rows = data.map((tx) => `
       <tr>
-        <td>${escapeHTML(tx.concept ?? '-')}</td>
         <td>${escapeHTML(tx.type ?? '-')}</td>
         <td>$${escapeHTML(String(tx.amount ?? 0))}</td>
         <td>${tx.date ? formatDisplayDateOnly(tx.date) : '-'}</td>
@@ -3629,7 +3626,6 @@ async function renderClientTransactions() {
         <table class="db-table hr-table hr-table-readable" aria-label="Historial de transacciones">
           <thead>
             <tr>
-              <th scope="col">Concepto</th>
               <th scope="col">Tipo</th>
               <th scope="col">Monto</th>
               <th scope="col">Fecha</th>
@@ -8539,7 +8535,7 @@ function renderMembershipDashboardRow(row, delivery = null, options = {}) {
       <td class="${escapeAttr(membershipCellClass('saldo', row).trim())}">${formatMembershipRowBalance(row)}</td>
       <td>${escapeHTML(formatDisplayDateOnly(row.fecha_de_saldo))}</td>
       ${options.showScheduledDelivery ? `<td>${escapeHTML(formatDisplayDateOnly(computedDelivery?.estimatedDelivery))}</td>` : ''}
-      <td>${options.canEditMaterialDelivery ? renderMembershipDeliveryDateInput(row, computedDelivery, deliveryFormId, cycleNumber, deliveredAtText) : escapeHTML(deliveredAtText)}</td>
+      <td class="${computedDelivery?.deliveredAt ? "db-membership-delivery-date--delivered" : ""}">${options.canEditMaterialDelivery ? renderMembershipDeliveryDateInput(row, computedDelivery, deliveryFormId, cycleNumber, deliveredAtText) : escapeHTML(deliveredAtText)}</td>
       <td>${options.canEditMaterialDelivery ? renderMembershipSessionNotesInput(row, sessionNotesFormId) : escapeHTML(displayNotes || '-')}</td>
     </tr>
   `;

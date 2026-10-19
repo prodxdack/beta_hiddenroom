@@ -72,7 +72,7 @@ export function productAdminMarkup(product) {
   const status = product.is_active ? "Activo" : "Inactivo";
   const format = product.is_digital ? "Digital" : "Fisico";
   const flags = [status, product.featured ? "Featured" : "", format].filter(Boolean).join(" / ");
-  const producer = product.producer ? " / " + escapeHtml(producerDisplayName(product.producer)) : "";
+  const producer = product.producer ? " / " + producerLinkMarkup(product.producer) : "";
   return [
     "<article class=\"admin-product-row\">",
     "<div>",
@@ -95,6 +95,12 @@ function producerDisplayName(value) {
   return clean && !["Productor por confirmar", "Productor", "Sin productor", "Tu cuenta"].includes(clean) ? "@" + clean : clean || "Productor por confirmar";
 }
 
+function producerLinkMarkup(value) {
+  const label = producerDisplayName(value);
+  const slug = String(value || "").trim().replace(/^@+/, "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  if (!slug || label === "Productor por confirmar") return escapeHtml(label);
+  return "<a href=\"/store/beat_store/producer.html?producer=" + encodeURIComponent(slug) + "\">" + escapeHtml(label) + "</a>";
+}
 function formatPrice(value, currency = "MXN") {
   return new Intl.NumberFormat("es-MX", { style: "currency", currency: currency || "MXN" }).format(Number(value));
 }

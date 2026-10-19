@@ -1,6 +1,18 @@
 
-import { beatCardMarkup as sharedBeatCardMarkup } from "./beat-card.js?v=20261018-license-request-v10";
+import { beatCardMarkup as sharedBeatCardMarkup } from "./beat-card.js?v=20261019-beat-card-component-v2";
 import { beatLicenseAssignmentIsSelectable, beatLicenseModalMarkup } from "./license-modal.js?v=20261018-license-request-v10";
+
+function resetProducerPageScroll() {
+  if (document.body?.dataset.page !== "beat-producer") return;
+  window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  document.documentElement.scrollTop = 0;
+  document.body.scrollTop = 0;
+}
+
+resetProducerPageScroll();
+window.addEventListener("pageshow", resetProducerPageScroll);
+window.setTimeout(resetProducerPageScroll, 0);
+window.setTimeout(resetProducerPageScroll, 120);
 
 const SUPABASE_URL = "https://rpcunbkstadgngqrjafp.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_7v_FIgTjWjJgtT1YHIAYSw_bRBmQjZO";
@@ -26,9 +38,15 @@ let avatarPinchStart = null;
 let avatarDragStart = null;
 const avatarCropState = { x: 0.5, y: 0.5, zoom: 1 };
 
-initProducerPage().catch((error) => {
-  grid.innerHTML = errorState(error.message || "No se pudo cargar el productor.");
-});
+initProducerPage()
+  .then(() => resetProducerPageScroll())
+  .catch((error) => {
+    grid.innerHTML = errorState(error.message || "No se pudo cargar el productor.");
+  })
+  .finally(() => {
+    resetProducerPageScroll();
+    window.setTimeout(resetProducerPageScroll, 0);
+  });
 
 async function initProducerPage() {
   if (!profileSlug) throw new Error("Falta el productor en la URL.");
@@ -141,7 +159,8 @@ function beatCardMarkup(product) {
   return sharedBeatCardMarkup({
     id: escapeHtml(product.id),
     title: escapeHtml(product.name),
-    producerMarkup: escapeHtml(producerDisplayName(state.profile.display_name)),
+    slug: product.slug || "",
+    producerMarkup: producerLinkMarkup(state.profile.display_name, state.profile.slug),
     coverMarkup: coverMarkup(product),
     metaMarkup: musicMetaMarkup(meta),
     optionsMarkup: producerCardOptionsMarkup(product),
@@ -602,12 +621,13 @@ function addLicenseToCart(productId, licenseId) {
     license_format: license.format || "",
     license_terms: license.terms || "",
     beat_producer: producerDisplayName(state.profile.display_name),
+    producer_slug: state.profile.slug || normalizeKey(state.profile.display_name),
     quantity: 1,
   });
   localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
   document.querySelectorAll(".cart-count").forEach((element) => { element.textContent = String(cart.reduce((sum, entry) => sum + Math.max(1, Number(entry?.quantity) || 1), 0)); });
   window.dispatchEvent(new CustomEvent("hr:store-cart-updated"));
-  showNotice("Licencia agregada al carrito");
+  showNotice("añadido al carrito");
   return true;
 }
 
@@ -641,6 +661,12 @@ function producerStorageName(value) {
   return String(value || "").trim().replace(/^@+/, "");
 }
 
+function producerLinkMarkup(value, slug = "") {
+  const label = producerDisplayName(value);
+  const producerSlug = String(slug || normalizeKey(value)).trim();
+  if (!producerSlug) return escapeHtml(label);
+  return "<a href=\"producer.html?producer=" + encodeURIComponent(producerSlug) + "\">" + escapeHtml(label) + "</a>";
+}
 function producerDisplayName(value) {
   const clean = producerStorageName(value);
   return clean ? `@${clean}` : "Productor por confirmar";

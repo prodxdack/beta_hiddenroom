@@ -1,13 +1,24 @@
 import { PaymentForm } from "./payment-form.js";
+import { beatCardMarkup } from "./beat_store/beat-card.js?v=20261019-beat-card-component-v2";
 
 export const SUPABASE_URL = "https://rpcunbkstadgngqrjafp.supabase.co";
 export const SUPABASE_ANON_KEY = "sb_publishable_7v_FIgTjWjJgtT1YHIAYSw_bRBmQjZO";
 export const CART_STORAGE_KEY = "hidden_room_store_cart";
 export let MP_PUBLIC_KEY = window.VITE_MP_PUBLIC_KEY || "";
+const STORE_SUPABASE_CDN = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
 
 const BEAT_STORE_CLOUD_ORIGIN = "https://cloud.hiddenroom.mx";
 
-export const supabase = await window.HiddenRoomSupabase.getClient();
+async function getStoreSupabaseClient() {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    if (window.HiddenRoomSupabase?.getClient) return window.HiddenRoomSupabase.getClient();
+    await new Promise((resolve) => window.setTimeout(resolve, 50));
+  }
+  const { createClient } = await import(STORE_SUPABASE_CDN);
+  return createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+}
+
+export const supabase = await getStoreSupabaseClient();
 
 
 
@@ -34,7 +45,7 @@ async function initStore() {
   updateCartCount();
   const { data } = await supabase.auth.getSession();
   currentSession = data.session;
-  await loadMercadoPagoPublicKey();
+  void loadMercadoPagoPublicKey().catch(() => {});
   syncAccountNavigation();
 
   const page = document.body.dataset.page;
@@ -53,7 +64,7 @@ async function loadMercadoPagoPublicKey() {
 export async function fetchProducts() {
   const { data, error } = await supabase
     .from("store_products")
-    .select("id, slug, name, description, category, price, currency, image_url, stock, is_digital, featured, producer_profile_id")
+    .select("id, slug, name, description, category, price, currency, image_url, stock, is_digital, featured, producer, producer_profile_id")
     .eq("is_active", true)
     .order("featured", { ascending: false })
     .order("created_at", { ascending: false });
@@ -101,6 +112,7 @@ function normalizeCartItem(item) {
       license_format: String(item?.license_format ?? "").trim(),
       license_terms: String(item?.license_terms ?? "").trim(),
       beat_producer: String(item?.beat_producer ?? "").trim(),
+      producer_slug: String(item?.producer_slug ?? "").trim(),
     } : {}),
   };
 }
@@ -200,10 +212,10 @@ async function validatedCart() {
     });
   }
 
-  saveCart(validItems.map(({ id, quantity, beat_id, license_id, license_price, license_name, license_description, license_format, license_terms, beat_producer }) => ({
+  saveCart(validItems.map(({ id, quantity, beat_id, license_id, license_price, license_name, license_description, license_format, license_terms, beat_producer, producer_slug }) => ({
     id,
     quantity,
-    ...(license_id ? { beat_id, license_id, license_price, license_name, license_description, license_format, license_terms, beat_producer } : {}),
+    ...(license_id ? { beat_id, license_id, license_price, license_name, license_description, license_format, license_terms, beat_producer, producer_slug } : {}),
   })));
   return validItems;
 }
@@ -258,7 +270,49 @@ function renderCatalog() {
     return;
   }
 
-  grid.innerHTML = filtered.map(productCardMarkup).join("");
+  const beats = filtered.filter((product) => product.category === "beats");
+  const otherProducts = filtered.filter((product) => product.category !== "beats");
+  grid.innerHTML = [
+    beats.length ? `
+      <section class="store-catalog-row store-catalog-row--beats" aria-labelledby="store-beats-title">
+        <header class="store-catalog-row__header"><h2 id="store-beats-title">Beats</h2><span>${beats.length} disponibles</span></header>
+        <div class="store-beat-row">${beats.map(storeBeatCardMarkup).join("")}</div>
+      </section>` : "",
+    otherProducts.length ? `
+      <section class="store-catalog-row store-catalog-row--products" aria-labelledby="store-products-title">
+        <header class="store-catalog-row__header"><h2 id="store-products-title">Catálogo</h2><span>${otherProducts.length} productos</span></header>
+        <div class="store-product-grid">${otherProducts.map(productCardMarkup).join("")}</div>
+      </section>` : "",
+  ].join("");
+}
+
+function formatStoreDuration(seconds) {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
+function storeBeatCardMarkup(product) {
+  const imageMarkup = productVisualMarkup(product).replace('class="product-art', 'class="beat-card__cover product-art');
+  const meta = [
+    product.beat_genre ? `<span><strong>Género</strong> ${escapeHtml(product.beat_genre)}</span>` : "",
+    product.beat_bpm ? `<span><strong>BPM</strong> ${escapeHtml(product.beat_bpm)}</span>` : "",
+    product.beat_key ? `<span><strong>Tonalidad</strong> ${escapeHtml(product.beat_key)}</span>` : "",
+    product.beat_duration_seconds ? `<span><strong>Duración</strong> ${escapeHtml(formatStoreDuration(product.beat_duration_seconds))}</span>` : "",
+  ].filter(Boolean).join("");
+  const producer = producerLinkMarkup(product.producer || "Productor por confirmar");
+  const priceLabel = Number.isFinite(Number(product.price)) ? formatPrice(product.price, product.currency) : "Aún no disponible";
+  const productHref = `product.html?slug=${encodeURIComponent(product.slug)}`;
+  return beatCardMarkup({
+    id: escapeHtml(product.id),
+    title: escapeHtml(product.name),
+    slug: product.slug || "",
+    producerMarkup: producer,
+    coverMarkup: imageMarkup,
+    metaMarkup: meta ? `<div class="beat-card__music">${meta}</div>` : '<p class="beat-card__music--empty">Beat Store</p>',
+    priceLabel: escapeHtml(priceLabel),
+    canBuy: productCanBePurchased(product),
+    actionMarkup: `<a class="primary-button" href="${productHref}">Ver producto</a>`,
+  });
 }
 
 function productCardMarkup(product) {
@@ -285,6 +339,24 @@ function producerDisplayName(value) {
   return "@" + clean;
 }
 
+function producerSlugFromName(value) {
+  return String(value || "")
+    .replace(/^@+/, "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function producerLinkMarkup(value, slug = "") {
+  const label = producerDisplayName(value);
+  const rawName = String(value || "").trim().replace(/^@+/, "").toLowerCase();
+  const placeholder = ["", "productor por confirmar", "productor", "sin productor", "tu cuenta"].includes(rawName);
+  const producerSlug = String(slug || producerSlugFromName(value)).trim();
+  if (placeholder || !producerSlug) return escapeHtml(label);
+  return "<a href=\"beat_store/producer.html?producer=" + encodeURIComponent(producerSlug) + "\">" + escapeHtml(label) + "</a>";
+}
 async function renderProduct() {
   const container = document.getElementById("product-detail");
   const slug = new URLSearchParams(window.location.search).get("slug")?.trim();
@@ -364,7 +436,7 @@ async function renderProduct() {
           cover: productImageUrl(product.beat_cover_path || product.image_url),
           beatId: product.id,
           slug: product.slug || "",
-          producerSlug: product.producerSlug || "",
+          producerSlug: product.producerSlug || producerSlugFromName(product.producer),
           genre: product.beat_genre || "",
           bpm: product.beat_bpm || "",
           key: product.beat_key || "",
@@ -389,7 +461,7 @@ async function renderProduct() {
       detailPreviewButton.setAttribute("aria-label", `${isPlaying ? "Pausar" : "Reproducir"} preview de ${product.name}`);
       const icon = detailPreviewButton.querySelector("[data-beat-preview-icon]");
       const label = detailPreviewButton.querySelector("[data-beat-preview-label]");
-      if (icon) icon.innerHTML = isPlaying ? "&#10074;&#10074;" : "&#9654;";
+      if (icon) icon.innerHTML = isPlaying ? '<i class="ph ph-pause" aria-hidden="true"></i>' : '<i class="ph ph-play" aria-hidden="true"></i>';
       if (label) label.textContent = isPlaying ? "Pausar preview" : "Escuchar preview";
     });
   };
@@ -403,7 +475,7 @@ function renderBeatProductMarkup(product, assignments, previewUrl, priceLabel, p
   const bpm = product.beat_bpm || "BPM por confirmar";
   const key = product.beat_key || "Tonalidad por confirmar";
   const previewMarkup = previewUrl
-    ? `<div class="beat-detail-preview"><button class="beat-detail-preview__button" type="button" data-beat-preview-detail aria-pressed="false" aria-label="Reproducir preview de ${escapeHtml(product.name)}"><span class="beat-detail-preview__icon" data-beat-preview-icon aria-hidden="true">&#9654;</span><span><strong data-beat-preview-label>Escuchar preview</strong><small>Reproducir en el player de Hidden Room</small></span></button></div>`
+    ? `<div class="beat-detail-preview"><button class="beat-detail-preview__button" type="button" data-beat-preview-detail aria-pressed="false" aria-label="Reproducir preview de ${escapeHtml(product.name)}"><span class="beat-detail-preview__icon" data-beat-preview-icon aria-hidden="true"><i class="ph ph-play" aria-hidden="true"></i></span><span><strong data-beat-preview-label>Escuchar preview</strong><small>Reproducir en el player de Hidden Room</small></span></button></div>`
     : `<p class="stock-note beat-detail-preview-empty">Preview pendiente de procesamiento.</p>`;
   const licensesMarkup = assignments.length
     ? `<div class="beat-detail-license-list">${assignments.map((assignment) => {
@@ -413,12 +485,12 @@ function renderBeatProductMarkup(product, assignments, previewUrl, priceLabel, p
     : `<p class="beat-detail-empty">No hay licencias disponibles para este beat.</p>`;
 
   return `
-    <div class="product-detail__visual">${productVisualMarkup(product)}${previewUrl ? `<button class="product-detail__cover-play" type="button" data-beat-preview-detail aria-pressed="false" aria-label="Reproducir preview de ${escapeHtml(product.name)}"><span data-beat-preview-icon aria-hidden="true">&#9654;</span></button>` : ""}</div>
+    <div class="product-detail__visual">${productVisualMarkup(product)}${previewUrl ? `<button class="product-detail__cover-play" type="button" data-beat-preview-detail aria-pressed="false" aria-label="Reproducir preview de ${escapeHtml(product.name)}"><span data-beat-preview-icon aria-hidden="true"><i class="ph ph-play" aria-hidden="true"></i></span></button>` : ""}</div>
     <div class="product-detail__content">
       <h1>${escapeHtml(product.name)}</h1>
       ${productDescriptionMarkup}
       <p class="product-price product-price--from">${escapeHtml(priceLabel)}</p>
-      <div class="beat-detail-meta"><p class="beat-detail-meta__producer">${escapeHtml(producer)}</p><p class="beat-detail-meta__stats">${escapeHtml(genre)} · ${escapeHtml(bpm)} BPM · ${escapeHtml(key)}</p></div>
+      <div class="beat-detail-meta"><p class="beat-detail-meta__producer">${producerLinkMarkup(producer, product.producerSlug)}</p><p class="beat-detail-meta__stats">${escapeHtml(genre)} · ${escapeHtml(bpm)} BPM · ${escapeHtml(key)}</p></div>
       ${previewMarkup}
       <section class="beat-detail-licenses" aria-labelledby="beat-detail-licenses-title"><header class="beat-detail-licenses__header"><div><p class="eyebrow">Beat Store</p><h2 id="beat-detail-licenses-title">Elige tu licencia</h2></div><p>Selecciona el formato y los derechos que necesitas.</p></header>${licensesMarkup}</section>
     </div>`;
@@ -468,8 +540,8 @@ function addBeatLicenseToCart(product, assignment) {
   if (!beatLicenseIsSelectable(product, assignment)) return;
   const license = assignment.beat_licenses;
   const cart = getCart().filter((item) => cartIdentity(item) !== `${product.id}::${assignment.license_id}`);
-  cart.push({ id: product.id, beat_id: product.id, license_id: assignment.license_id, license_price: Number(assignment.price), license_name: license?.name || "Licencia", license_description: license?.description || "", license_format: license?.format || "", license_terms: license?.terms || "", beat_producer: producerDisplayName(product.producer), quantity: 1 });
-  saveCart(cart); showNotice("Licencia agregada al carrito");
+  cart.push({ id: product.id, beat_id: product.id, license_id: assignment.license_id, license_price: Number(assignment.price), license_name: license?.name || "Licencia", license_description: license?.description || "", license_format: license?.format || "", license_terms: license?.terms || "", beat_producer: producerDisplayName(product.producer), producer_slug: product.producerSlug || producerSlugFromName(product.producer), quantity: 1 });
+  saveCart(cart); showNotice("añadido al carrito");
 }
 
 async function renderCart() {
@@ -491,7 +563,7 @@ async function renderCart() {
         <div>
           <span class="product-category">${escapeHtml(categoryLabel(item.category))}</span>
           <h2>${escapeHtml(item.name)}</h2>
-          ${item.license_id ? `<p class="cart-license-detail"><strong>${escapeHtml(item.license_name || "Licencia")}</strong>${item.beat_producer ? ` · ${escapeHtml(producerDisplayName(item.beat_producer))}` : ""}</p>` : ""}
+          ${item.license_id ? `<p class="cart-license-detail"><strong>${escapeHtml(item.license_name || "Licencia")}</strong>${item.beat_producer ? ` · ${producerLinkMarkup(item.beat_producer, item.producer_slug)}` : ""}</p>` : ""}
           <p>${formatPrice(item.price, item.currency)} por unidad</p>
           ${item.license_id ? '<p class="cart-digital-note">Licencia digital · cantidad fija</p>' : `<div class="quantity-control" aria-label="Cantidad de ${escapeHtml(item.name)}">
             <button type="button" data-quantity="${escapeHtml(item.id)}" data-change="-1" aria-label="Reducir cantidad">−</button>
@@ -607,7 +679,7 @@ async function initializeCheckout() {
   const containsBeatLicense = items.some((item) => item.license_id);
   if (containsBeatLicense && !currentSession?.user) {
     button.disabled = true;
-    errorElement.textContent = "Inicia sesiÃ³n para comprar licencias de beats y conservar sus descargas.";
+    errorElement.textContent = "Inicia sesión para comprar licencias de beats y conservar sus descargas.";
   }
   if (!items.length) {
     button.disabled = true;
@@ -622,7 +694,7 @@ async function initializeCheckout() {
       items = await validatedCart();
       if (!items.length) throw new Error("No hay productos en el carrito.");
       if (items.some((item) => item.license_id) && !currentSession?.user) {
-        throw new Error("Inicia sesiÃ³n para comprar licencias de beats y conservar sus descargas.");
+        throw new Error("Inicia sesión para comprar licencias de beats y conservar sus descargas.");
       }
 
       const formData = new FormData(form);
@@ -819,7 +891,7 @@ function orderSummaryMarkup(items, includeButton) {
     ${items.map((item) => `
       <div class="summary-line">
         ${item.license_id ? `<details class="summary-license-details"><summary>Detalles de la licencia</summary><p>${item.license_snapshot?.format ? `Formato: ${escapeHtml(item.license_snapshot.format)}. ` : ""}${item.license_snapshot?.terms ? escapeHtml(item.license_snapshot.terms) : ""}</p></details>` : ""}
-        <span><strong>${escapeHtml(item.name)}</strong>${item.license_id ? `<small class="summary-license">${escapeHtml(item.license_name || "Licencia digital")}${item.beat_producer ? ` · ${escapeHtml(producerDisplayName(item.beat_producer))}` : ""}</small>` : ""} × ${item.quantity}</span>
+        <span><strong>${escapeHtml(item.name)}</strong>${item.license_id ? `<small class="summary-license">${escapeHtml(item.license_name || "Licencia digital")}${item.beat_producer ? ` · ${producerLinkMarkup(item.beat_producer, item.producer_slug)}` : ""}</small>` : ""} × ${item.quantity}</span>
         <span>${formatPrice(Number(item.price) * item.quantity, item.currency)}</span>
       </div>`).join("")}
     <div class="summary-line summary-total">

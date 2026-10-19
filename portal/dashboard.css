@@ -4959,3 +4959,21 @@ button.hr-resource-card:focus-visible { outline: 2px solid var(--hr-red); outlin
     height: 30px;
   }
 }
+
+/* Client membership layout and delivery status. */
+.db-membership-summary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.db-membership-summary__item,
+.db-membership-notice,
+.db-membership-sync,
+.db-table-wrap--membership {
+  border-radius: var(--hr-radius-md);
+}
+.db-membership-delivery-date--delivered {
+  color: var(--green);
+  font-weight: 600;
+}
+@media (max-width: 520px) {
+  .db-membership-summary { grid-template-columns: 1fr; }
+}

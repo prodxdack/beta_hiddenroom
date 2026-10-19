@@ -163,7 +163,7 @@ function renderMessages(chatOutput, messages) {
   chatOutput.replaceChildren();
   messages.forEach((message) => {
     const block = document.createElement("p");
-    const label = message.role === "user" ? "TÃº" : message.role === "model" ? "Kairen" : "Error";
+    const label = message.role === "user" ? "Tú" : message.role === "model" ? "Kairen" : "Error";
     const strong = document.createElement("strong");
     strong.textContent = `${label}: `;
     block.append(strong, document.createTextNode(message.text));

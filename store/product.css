@@ -63,6 +63,13 @@
 
 .store-product-page .product-detail__cover-play.is-playing { padding-left: 0; }
 
+.store-product-page .product-detail__cover-play .ph,
+.store-product-page .beat-detail-preview__icon .ph {
+  display: block;
+  font-size: 1em;
+  line-height: 1;
+}
+
 .store-product-page .product-detail__content { min-width: 0; max-width: 650px; padding-top: 4px; }
 
 .store-product-page .product-detail h1 {

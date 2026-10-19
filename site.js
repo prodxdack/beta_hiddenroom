@@ -399,7 +399,7 @@ function renderMoreNav(activeModule, navPath, drawer = false) {
   const linksClass = drawer ? "hr-global-drawer__more-links" : "hr-nav__more-links";
   return `
     <details class="${detailsClass}"${isMoreActive ? " open" : ""}>
-      <summary class="${summaryClass}">MÁS <span class="hr-nav__more-chevron" aria-hidden="true"></span></summary>
+      <summary class="${summaryClass}" data-global-more-toggle>MÁS <span class="hr-nav__more-chevron" aria-hidden="true"></span></summary>
       <div class="${linksClass}">
         ${moreLinks.map((item) => renderGlobalNavLink(item, activeModule, navPath, drawer)).join("")}
         <button class="${linksClass}__action" type="button" data-view-as-admin-action hidden>Ver como</button>
@@ -412,7 +412,7 @@ let globalSessionSnapshot = null;
 
 const HR_COPY_EDITOR_CANDIDATE_SELECTOR = "h1,h2,h3,h4,h5,h6,p,a,button,li,dt,dd,blockquote,figcaption,legend,summary,span,small";
 const HR_COPY_EDITOR_IGNORE_SELECTOR = "#hr-global-nav,#hr-beat-player,#hr-beat-player-fullscreen,#posts-grid,#editorial-grid,#featured-grid,#post-content,#related-grid,#product-grid,#beat-grid,#product-detail,#cart-items,#cart-summary,#orders-list,#tickets-list,#ticket-result,#studio-request-result,#studio-price,script,style,noscript,svg,canvas,video,audio,iframe,input,textarea,select,option,[aria-hidden=\"true\"],[data-hr-copy-ignore],[data-hr-session],[data-hr-drawer-session],.site-status,.site-version,#cursor,#cursorRing";
-const HR_SITE_TEXT_OVERRIDES_ENABLED = false;
+const HR_SITE_TEXT_OVERRIDES_ENABLED = true;
 
 const hrCopyEditorState = {
   root: null,
@@ -1548,8 +1548,10 @@ let hrWaveSurferReady = false;
 let hrWaveSurferFailed = false;
 let hrCurrentBeatDetail = null;
 let hrBeatPlayerQueue = [];
+let hrBeatPlayerRestartTapAt = 0;
 let hrGlobalBeatPlayerHydrated = false;
 let hrGlobalBeatPlayerDefaultPromise = null;
+let hrGlobalBeatPlayerQueuePromise = null;
 let hrBeatPlayerFullscreenPlaceholder = null;
 let hrBeatPlayerFullscreenLastFocus = null;
 let hrBeatAudioContext = null;
@@ -1616,7 +1618,7 @@ function beatPlayerIcon(name) {
     fullscreen: '<path d="M8.5 4.5H4.5V8.5M15.5 4.5H19.5V8.5M8.5 19.5H4.5V15.5M15.5 19.5H19.5V15.5"></path>',
     more: '<circle cx="5" cy="12" r="2.1"></circle><circle cx="12" cy="12" r="2.1"></circle><circle cx="19" cy="12" r="2.1"></circle>',
     shuffle: '<path d="M4 7H7C10 7 12 17 17 17H20M17 14L20 17L17 20M4 17H7C8.5 17 9.5 16 10.5 14.5M14 9.5C15 8 16 7 17 7H20"></path><path d="M17 4L20 7L17 10"></path>',
-    repeat: '<path d="M5 8H16L14 6M16 8L14 10M19 16H8L10 18M8 16L10 14"></path>',
+    repeat: '<path d="M5 8a7 7 0 0 1 12-2l2 2M19 16a7 7 0 0 1-12 2l-2-2M19 4v4h-4M5 20v-4h4"></path>',
   };
   const solidIcons = ["play", "pause", "prev", "next", "more"];
   const heavyIcons = ["close", "fullscreen", "shuffle", "repeat"];
@@ -2153,10 +2155,22 @@ function globalBeatProducerDisplayName(value) {
   return "@" + clean;
 }
 
-function globalBeatPlayerDetailFromProduct(product) {
+function globalBeatProducerSlug(value) {
+  return String(value || "")
+    .replace(/^@+/, "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function globalBeatPlayerDetailFromProduct(product, producerProfiles = []) {
   const beatId = String(product?.id || "").trim();
   const src = globalBeatPlayerPreviewUrl(product);
   if (!beatId || !src || product?.category !== "beats") return null;
+  const producerProfile = producerProfiles.find((profile) => profile.id === product?.producer_profile_id)
+    || producerProfiles.find((profile) => globalBeatProducerSlug(profile.slug) === globalBeatProducerSlug(product?.producer));
   return {
     source: HR_BEAT_PLAYER_SOURCE,
     src,
@@ -2165,10 +2179,36 @@ function globalBeatPlayerDetailFromProduct(product) {
     cover: globalBeatPlayerCoverUrl(product),
     beatId,
     slug: String(product?.slug || "").trim(),
+    producerSlug: producerProfile?.is_active === false ? "" : producerProfile?.slug || globalBeatProducerSlug(product?.producer),
     genre: String(product?.beat_genre || "").trim(),
     bpm: product?.beat_bpm || "",
     key: String(product?.beat_key || "").trim(),
   };
+}
+
+async function loadGlobalBeatPlayerQueue(supabase, producerProfiles = []) {
+  if (hrGlobalBeatPlayerQueuePromise) return hrGlobalBeatPlayerQueuePromise;
+  hrGlobalBeatPlayerQueuePromise = (async () => {
+    const { data, error } = await supabase
+      .from("store_products")
+      .select("id,slug,name,category,image_url,beat_cover_path,producer,producer_profile_id,beat_preview_path,beat_preview_status,beat_genre,beat_bpm,beat_key,featured,created_at")
+      .eq("category", "beats")
+      .eq("is_active", true)
+      .order("featured", { ascending: false })
+      .order("created_at", { ascending: false });
+    if (error) return [];
+    const profileIds = [...new Set((data || []).map((product) => product.producer_profile_id).filter(Boolean))];
+    let profiles = producerProfiles;
+    if (profileIds.length) {
+      const { data: loadedProfiles } = await supabase
+        .from("producer_profiles")
+        .select("id,slug,is_active")
+        .in("id", profileIds);
+      profiles = loadedProfiles || producerProfiles;
+    }
+    return (data || []).map((product) => globalBeatPlayerDetailFromProduct(product, profiles)).filter(Boolean);
+  })().catch(() => []);
+  return hrGlobalBeatPlayerQueuePromise;
 }
 
 async function loadGlobalBeatPlayerDefault() {
@@ -2187,18 +2227,45 @@ async function loadGlobalBeatPlayerDefault() {
       if (!beatId) return;
       const { data: product, error: productError } = await supabase
         .from("store_products")
-        .select("id,slug,name,category,image_url,beat_cover_path,producer,beat_preview_path,beat_preview_status,beat_genre,beat_bpm,beat_key")
+        .select("id,slug,name,category,image_url,beat_cover_path,producer,producer_profile_id,beat_preview_path,beat_preview_status,beat_genre,beat_bpm,beat_key")
         .eq("id", beatId)
         .eq("category", "beats")
         .eq("is_active", true)
         .maybeSingle();
       if (productError) return;
-      const detail = globalBeatPlayerDetailFromProduct(product);
-      if (!detail || String(hrCurrentBeatDetail?.beatId || "") === detail.beatId) return;
-      setGlobalBeatPlayer(detail, { autoplay: false, queue: [detail] });
+      let producerProfiles = [];
+      const profileIds = product?.producer_profile_id ? [product.producer_profile_id] : [];
+      if (profileIds.length) {
+        const { data: profiles } = await supabase
+          .from("producer_profiles")
+          .select("id,slug,is_active")
+          .in("id", profileIds);
+        producerProfiles = profiles || [];
+      }
+      const detail = globalBeatPlayerDetailFromProduct(product, producerProfiles);
+      if (!detail) return;
+      const queue = await loadGlobalBeatPlayerQueue(supabase, producerProfiles);
+      if (hrCurrentBeatDetail?.beatId) {
+        if (hrBeatPlayerQueue.length < 2) {
+          hrBeatPlayerQueue = sanitizeBeatPlayerQueue(queue, hrCurrentBeatDetail);
+          persistGlobalBeatPlayerState();
+        }
+        return;
+      }
+      setGlobalBeatPlayer(detail, { autoplay: false, queue });
     } catch {}
   })();
   return hrGlobalBeatPlayerDefaultPromise;
+}
+async function ensureGlobalBeatPlayerQueue() {
+  if (!hrCurrentBeatDetail || hrBeatPlayerQueue.length > 1) return;
+  try {
+    const supabase = await getHiddenRoomSupabaseClient();
+    const queue = await loadGlobalBeatPlayerQueue(supabase);
+    if (!queue.length) return;
+    hrBeatPlayerQueue = sanitizeBeatPlayerQueue(queue, hrCurrentBeatDetail);
+    persistGlobalBeatPlayerState();
+  } catch {}
 }
 function renderGlobalBeatPlayer() {
   if (!shouldRenderGlobalBeatPlayer()) return "";
@@ -2208,7 +2275,7 @@ function renderGlobalBeatPlayer() {
       <button class="hr-beat-player__art" id="beat-player-art" type="button" data-beat-player-toggle aria-label="Reproducir preview" title="Reproducir preview" data-tooltip="Reproducir preview" aria-pressed="false"><span>HR</span><span class="hr-beat-player__art-icon" aria-hidden="true">${beatPlayerIcon("play")}</span></button>
       <div class="hr-beat-player__meta">
         <strong><a id="player-title" href="#" data-hr-spa="off" aria-disabled="true">Selecciona un beat</a></strong>
-        <span id="player-detail"></span>
+        <span id="player-detail"><a href="#" data-hr-spa="off" aria-disabled="true" tabindex="-1">Productor por confirmar</a></span>
       </div>
       <button class="hr-beat-player__more" type="button" data-beat-player-more aria-label="Opciones del reproductor" title="Opciones del reproductor" data-tooltip="Opciones del reproductor" aria-expanded="false" aria-controls="beat-player-menu">${beatPlayerIcon("more")}</button>
       <button class="hr-beat-player__fullscreen" type="button" data-beat-player-fullscreen aria-label="Abrir reproductor en pantalla completa" title="Abrir reproductor en pantalla completa" data-tooltip="Abrir pantalla completa" aria-controls="hr-beat-player-fullscreen" disabled>${beatPlayerIcon("fullscreen")}</button>
@@ -2287,7 +2354,7 @@ function renderGlobalBeatPlayer() {
             </div>
           </div>
           <div class="hr-beat-player-fullscreen__transport" aria-label="Control central de reproducción">
-            <button class="hr-beat-player-fullscreen__nav" type="button" data-beat-player-restart aria-label="Regresar el beat al inicio" title="Volver al inicio" data-tooltip="Volver al inicio" disabled>${beatPlayerIcon("prev")}</button>
+            <button class="hr-beat-player-fullscreen__nav" type="button" data-beat-player-restart aria-label="Volver al inicio o reproducir el beat anterior" title="Primer toque: volver al inicio · segundo toque: beat anterior" data-tooltip="Inicio / beat anterior" disabled>${beatPlayerIcon("prev")}</button>
             <button class="hr-beat-player-fullscreen__play" type="button" data-beat-player-fullscreen-toggle aria-label="Reproducir preview" title="Reproducir preview" data-tooltip="Reproducir preview" aria-pressed="false" disabled><span class="hr-beat-player__art-icon" aria-hidden="true">${beatPlayerIcon("play")}</span></button>
             <button class="hr-beat-player-fullscreen__nav" type="button" data-beat-player-next aria-label="Reproducir el siguiente beat" title="Siguiente beat" data-tooltip="Siguiente beat" disabled>${beatPlayerIcon("next")}</button>
           </div>
@@ -2297,7 +2364,8 @@ function renderGlobalBeatPlayer() {
             <button class="hr-beat-player__mute" type="button" data-beat-player-mute aria-label="Silenciar preview" title="Silenciar preview" data-tooltip="Silenciar preview" aria-pressed="false">${beatPlayerIcon("volume")}</button>
             <input class="hr-beat-player__volume" id="beat-player-fullscreen-volume" type="range" min="0" max="1" value="1" step="0.01" aria-label="Volumen del preview" title="Ajustar volumen del preview">
           </div>
-          <button class="hr-beat-player-fullscreen__buy hr-beat-player__buy" type="button" data-beat-player-buy disabled>BUY BEAT</button>
+          <button class="hr-beat-player-fullscreen__buy hr-beat-player__buy" type="button" data-beat-player-buy disabled>COMPRAR BEAT</button>
+          <button class="hr-beat-player-fullscreen__share" type="button" data-beat-player-share disabled aria-label="Compartir beat" title="Compartir beat">Compartir beat</button>
         </div>
       </div>
     </section>
@@ -2337,7 +2405,7 @@ function hydrateGlobalBeatPlayer() {
   const colorPickerHex = colorPicker?.querySelector("[data-color-picker-hex]");
   const colorPickerChannels = colorPicker?.querySelectorAll("[data-color-picker-channel]") || [];
   const colorPickerValue = colorPicker?.querySelector("[data-color-picker-value]");
-  const playerShare = document.querySelector("[data-beat-player-share]");
+  const playerShares = document.querySelectorAll("[data-beat-player-share]");
   const buyButtons = document.querySelectorAll("[data-beat-player-buy]");
 
   fallbackAudio.removeAttribute("controls");
@@ -2495,12 +2563,27 @@ function hydrateGlobalBeatPlayer() {
   });
   fullscreenRestart?.addEventListener("click", () => {
     if (!fallbackAudio.src) return;
+    const now = performance.now();
+    const repeatTap = now - hrBeatPlayerRestartTapAt < 2000;
+    hrBeatPlayerRestartTapAt = now;
+    if (repeatTap) {
+      hrBeatPlayerRestartTapAt = 0;
+      dispatchGlobalBeatPlayerPrevious({
+        beatId: hrCurrentBeatDetail?.beatId || player.dataset.beatId || "",
+        src: getBeatPlayerSrc(),
+        shuffle: hrBeatPlayerShuffle,
+      });
+      return;
+    }
     if (hrWaveSurfer && hrWaveSurferReady) hrWaveSurfer.seekTo(0);
     else fallbackAudio.currentTime = 0;
     if (hrCurrentBeatDetail) hrCurrentBeatDetail.currentTime = 0;
     sync();
     persistGlobalBeatPlayerState();
     emitGlobalBeatPlayerState();
+    window.setTimeout(() => {
+      if (performance.now() - hrBeatPlayerRestartTapAt >= 2000) hrBeatPlayerRestartTapAt = 0;
+    }, 2000);
   });
   fullscreenNext?.addEventListener("click", () => {
     if (!fallbackAudio.src) return;
@@ -2510,12 +2593,12 @@ function hydrateGlobalBeatPlayer() {
       shuffle: hrBeatPlayerShuffle,
     });
   });
-  playerShare?.addEventListener("click", async () => {
+  playerShares.forEach((playerShare) => playerShare.addEventListener("click", async () => {
     const slug = String(hrCurrentBeatDetail?.slug || "").trim();
     if (!slug) return;
-    const url = new URL(`/store/product.html?slug=${encodeURIComponent(slug)}`, window.location.origin).href;
+    const url = new URL("/store/product.html?slug=" + encodeURIComponent(slug), window.location.origin).href;
     const title = String(hrCurrentBeatDetail?.title || "Beat Store");
-    const shareData = { title: `${title} | Hidden Room`, text: `Escucha ${title} en Hidden Room.`, url };
+    const shareData = { title: title + " | Hidden Room", text: "Escucha " + title + " en Hidden Room.", url };
     try {
       if (typeof navigator.share === "function") await navigator.share(shareData);
       else if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(url);
@@ -2526,7 +2609,7 @@ function hydrateGlobalBeatPlayer() {
       if (error?.name !== "AbortError") playerShare.textContent = "No se pudo compartir";
       window.setTimeout(() => { if (playerShare) playerShare.textContent = "Compartir beat"; }, 1600);
     }
-  });
+  }));
   document.addEventListener("keydown", (event) => {
     if (!fullscreen || fullscreen.hidden) return;
     if (event.key === "Escape") {
@@ -2586,7 +2669,7 @@ function hydrateGlobalBeatPlayer() {
   try {
     sessionStorage.removeItem("hr_global_beat_player");
     const saved = JSON.parse(sessionStorage.getItem(HR_BEAT_PLAYER_STORAGE_KEY) || "null");
-    if (isBeatStorePlayerDetail(saved)) setGlobalBeatPlayer(sanitizeBeatPlayerDetail(saved), { autoplay: false, restoreTime: true });
+    if (isBeatStorePlayerDetail(saved)) setGlobalBeatPlayer(sanitizeBeatPlayerDetail(saved), { autoplay: false, restoreTime: true, queue: saved.queue });
     else sessionStorage.removeItem(HR_BEAT_PLAYER_STORAGE_KEY);
   } catch {
     sessionStorage.removeItem(HR_BEAT_PLAYER_STORAGE_KEY);
@@ -2605,13 +2688,11 @@ function hydrateGlobalBeatPlayer() {
         } else {
           fallbackAudio.currentTime = 0;
           player.dataset.state = "ended";
-          if (hrBeatPlayerShuffle) {
-            dispatchGlobalBeatPlayerNext({
-              beatId: hrCurrentBeatDetail?.beatId || player.dataset.beatId || "",
-              src: getBeatPlayerSrc(),
-              shuffle: true,
-            });
-          }
+          dispatchGlobalBeatPlayerNext({
+            beatId: hrCurrentBeatDetail?.beatId || player.dataset.beatId || "",
+            src: getBeatPlayerSrc(),
+            shuffle: hrBeatPlayerShuffle,
+          });
         }
       }
       sync();
@@ -2736,6 +2817,12 @@ function dispatchGlobalBeatPlayerNext(detail = {}) {
     detail,
   }));
 }
+function dispatchGlobalBeatPlayerPrevious(detail = {}) {
+  window.dispatchEvent(new CustomEvent("hr:beat-player-previous", {
+    cancelable: true,
+    detail,
+  }));
+}
 
 function isBeatStorePlayerDetail(detail) {
   return String(detail?.source || "").trim().toLowerCase() === HR_BEAT_PLAYER_SOURCE
@@ -2771,14 +2858,21 @@ function nextGlobalBeatPlayerDetail({ beatId = "", src = "", shuffle = false } =
   }
   return sequence[(currentIndex + 1 + sequence.length) % sequence.length] || sequence[0];
 }
+function previousGlobalBeatPlayerDetail({ beatId = "", src = "" } = {}) {
+  const sequence = hrBeatPlayerQueue.length ? hrBeatPlayerQueue : (hrCurrentBeatDetail ? [hrCurrentBeatDetail] : []);
+  if (!sequence.length) return null;
+  const currentIndex = sequence.findIndex((entry) => String(entry.beatId || "") === String(beatId) || entry.src === src);
+  return sequence[(currentIndex - 1 + sequence.length) % sequence.length] || sequence[sequence.length - 1];
+}
 
 function setGlobalBeatPlayer(detail, options = {}) {
   detail = sanitizeBeatPlayerDetail(detail);
   if (!isBeatStorePlayerDetail(detail)) return;
+  hrBeatPlayerRestartTapAt = 0;
   const player = document.getElementById("hr-beat-player");
   const fallbackAudio = document.getElementById("beat-audio");
   const title = document.getElementById("player-title");
-  const meta = document.getElementById("player-detail");
+  const producerMetaLink = document.querySelector("#player-detail > a");
   const art = document.getElementById("beat-player-art");
   const fullscreenTitle = document.querySelector("#beat-player-fullscreen-title > a");
   const fullscreenProducer = document.querySelector("#beat-player-fullscreen-producer > a");
@@ -2788,7 +2882,7 @@ function setGlobalBeatPlayer(detail, options = {}) {
   const key = document.querySelectorAll("#beat-player-key, #beat-player-fullscreen-key");
   const buyButtons = document.querySelectorAll("[data-beat-player-buy]");
   const playerLinks = [title, fullscreenTitle].filter(Boolean);
-  const playerShare = document.querySelector("[data-beat-player-share]");
+  const playerShares = document.querySelectorAll("[data-beat-player-share]");
   if (!detail?.src) return;
   hrBeatPlayerQueue = sanitizeBeatPlayerQueue(options.queue || detail.queue, detail);
   hrCurrentBeatDetail = detail;
@@ -2807,21 +2901,20 @@ function setGlobalBeatPlayer(detail, options = {}) {
   player?.classList.add("is-loaded");
   if (player) player.dataset.state = "loading";
   if (title) title.textContent = detail.title || "Beat Store";
-  if (meta) meta.textContent = detail.detail || "";
+  if (producerMetaLink) producerMetaLink.textContent = detail.detail || "Productor por confirmar";
   if (fullscreenTitle) fullscreenTitle.textContent = detail.title || "Beat Store";
   const productUrl = detail.slug ? new URL(`/store/product.html?slug=${encodeURIComponent(detail.slug)}`, window.location.origin).href : "";
+  const beatStoreUrl = new URL("/store/beat_store/", window.location.origin).href;
   playerLinks.forEach((link) => {
-    if (productUrl) {
-      link.href = productUrl;
-      link.removeAttribute("aria-disabled");
-      link.removeAttribute("tabindex");
-    } else {
-      link.removeAttribute("href");
-      link.setAttribute("aria-disabled", "true");
-      link.setAttribute("tabindex", "-1");
-    }
+    link.href = beatStoreUrl;
+    link.removeAttribute("aria-disabled");
+    link.removeAttribute("tabindex");
   });
-  if (playerShare) playerShare.hidden = !productUrl;
+  playerShares.forEach((shareButton) => {
+    const compactShare = Boolean(shareButton.closest("#beat-player-menu"));
+    shareButton.hidden = compactShare && !productUrl;
+    shareButton.disabled = !productUrl;
+  });
   if (fullscreenProducer) fullscreenProducer.textContent = detail.detail || "";
   const producerUrl = detail.producerSlug
     ? new URL(`/store/beat_store/producer.html?producer=${encodeURIComponent(detail.producerSlug)}`, window.location.origin).href
@@ -2835,6 +2928,17 @@ function setGlobalBeatPlayer(detail, options = {}) {
       fullscreenProducer.removeAttribute("href");
       fullscreenProducer.setAttribute("aria-disabled", "true");
       fullscreenProducer.setAttribute("tabindex", "-1");
+    }
+  }
+  if (producerMetaLink) {
+    if (producerUrl) {
+      producerMetaLink.href = producerUrl;
+      producerMetaLink.removeAttribute("aria-disabled");
+      producerMetaLink.removeAttribute("tabindex");
+    } else {
+      producerMetaLink.removeAttribute("href");
+      producerMetaLink.setAttribute("aria-disabled", "true");
+      producerMetaLink.setAttribute("tabindex", "-1");
     }
   }
   if (fullscreenGenre) fullscreenGenre.textContent = String(detail.genre || "GÉNERO").trim() || "GÉNERO";
@@ -2943,13 +3047,11 @@ async function loadBeatWaveform(src, options = {}) {
     } else {
       hrWaveSurfer.seekTo(0);
       if (player) player.dataset.state = "ended";
-      if (hrBeatPlayerShuffle) {
-        dispatchGlobalBeatPlayerNext({
-          beatId: hrCurrentBeatDetail?.beatId || player?.dataset.beatId || "",
-          src: getBeatPlayerSrc(),
-          shuffle: true,
-        });
-      }
+      dispatchGlobalBeatPlayerNext({
+        beatId: hrCurrentBeatDetail?.beatId || player?.dataset.beatId || "",
+        src: getBeatPlayerSrc(),
+        shuffle: hrBeatPlayerShuffle,
+      });
     }
     syncGlobalBeatPlayerControls(
       player?.querySelectorAll("[data-beat-player-toggle]"),
@@ -3092,17 +3194,44 @@ window.addEventListener("beforeunload", persistGlobalBeatPlayerState);
 window.addEventListener("hr:beat-preview", (event) => {
   if (!isBeatStorePlayerDetail(event.detail)) return;
   setGlobalBeatPlayer(event.detail, { autoplay: true, queue: event.detail?.queue });
+  ensureGlobalBeatPlayerQueue();
 });
 window.addEventListener("hr:beat-player-default", (event) => {
   if (!isBeatStorePlayerDetail(event.detail)) return;
-  setGlobalBeatPlayer(event.detail, { autoplay: false, queue: event.detail?.queue || [event.detail] });
+  setGlobalBeatPlayer(event.detail, { autoplay: false, queue: event.detail?.queue });
+  ensureGlobalBeatPlayerQueue();
 });
 window.addEventListener("hr:beat-player-next", (event) => {
   if (event.defaultPrevented) return;
+  if (hrBeatPlayerQueue.length < 2) {
+    event.preventDefault();
+    ensureGlobalBeatPlayerQueue().then(() => {
+      const next = nextGlobalBeatPlayerDetail(event.detail);
+      if (next) setGlobalBeatPlayer(next, { autoplay: true, queue: hrBeatPlayerQueue });
+    });
+    return;
+  }
   const next = nextGlobalBeatPlayerDetail(event.detail);
   if (!next) return;
   event.preventDefault();
   setGlobalBeatPlayer(next, { autoplay: true, queue: hrBeatPlayerQueue });
+});
+window.addEventListener("hr:beat-player-previous", (event) => {
+  if (event.defaultPrevented) return;
+  if (hrBeatPlayerQueue.length < 2) {
+    event.preventDefault();
+    ensureGlobalBeatPlayerQueue().then(() => {
+      const previous = previousGlobalBeatPlayerDetail(event.detail);
+      if (previous && previous.beatId !== hrCurrentBeatDetail?.beatId) {
+        setGlobalBeatPlayer(previous, { autoplay: true, queue: hrBeatPlayerQueue });
+      }
+    });
+    return;
+  }
+  const previous = previousGlobalBeatPlayerDetail(event.detail);
+  if (!previous || previous.beatId === hrCurrentBeatDetail?.beatId) return;
+  event.preventDefault();
+  setGlobalBeatPlayer(previous, { autoplay: true, queue: hrBeatPlayerQueue });
 });
 window.addEventListener("hr:beat-preview-toggle", (event) => {
   if (event.detail?.source !== HR_BEAT_PLAYER_SOURCE) return;
@@ -3206,6 +3335,13 @@ function renderGlobalNav() {
   });
   document.querySelectorAll("[data-global-drawer-close]").forEach((control) => {
     control.addEventListener("click", () => toggleGlobalDrawer(false));
+  });
+  document.querySelectorAll("[data-global-more-toggle]").forEach((summary) => {
+    summary.addEventListener("click", (event) => {
+      event.preventDefault();
+      const details = summary.closest("details");
+      if (details) details.open = !details.open;
+    });
   });
   document.querySelector(".hr-global-drawer")?.addEventListener("click", (event) => {
     const actionButton = event.target.closest("[data-global-nav-action]");
