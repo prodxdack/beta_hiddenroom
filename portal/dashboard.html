@@ -24,9 +24,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Space+Grotesk:wght@400;500;600;700&family=Unbounded:wght@400;700;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../styles-20260809.css?v=20261014-view-as-drag-v1">
+  <link rel="stylesheet" href="../styles-20260809.css?v=20261018-global-volume-control-v3">
   <link rel="stylesheet" href="../assets/vendor/phosphor/phosphor.css?v=20261018-bottom-nav-icons-v1">
-  <link rel="stylesheet" href="dashboard.css?v=20261018-portal-components-v2">
+  <link rel="stylesheet" href="dashboard.css?v=20261018-client-home-compact-v1">
 
 </head>
 
@@ -78,15 +78,15 @@
           <li class="db-sidebar__label" aria-hidden="true">Cliente</li>
 
           <li>
-            <button class="db-sidebar__item" data-section="client-downloads">
-              <span class="db-icon db-icon--download" aria-hidden="true"></span>
-              <span class="db-sidebar__item-text">Descargas</span>
+            <button class="db-sidebar__item" data-section="client-membership">
+              <span class="db-icon db-icon--star" aria-hidden="true"></span>
+              <span class="db-sidebar__item-text">Membresía</span>
             </button>
           </li>
           <li>
-            <button class="db-sidebar__item" data-section="client-sessions">
-              <span class="db-icon db-icon--calendar" aria-hidden="true"></span>
-              <span class="db-sidebar__item-text">Sesiones</span>
+            <button class="db-sidebar__item" data-section="client-downloads">
+              <span class="db-icon db-icon--download" aria-hidden="true"></span>
+              <span class="db-sidebar__item-text">Descargas</span>
             </button>
           </li>
           <li>
@@ -96,15 +96,21 @@
             </button>
           </li>
           <li>
-            <button class="db-sidebar__item" data-section="client-contracts">
-              <span class="db-icon db-icon--doc" aria-hidden="true"></span>
-              <span class="db-sidebar__item-text">Contratos</span>
+            <button class="db-sidebar__item" data-section="client-rewards">
+              <span class="db-icon db-icon--star" aria-hidden="true"></span>
+              <span class="db-sidebar__item-text">Premios</span>
             </button>
           </li>
           <li>
-            <button class="db-sidebar__item" data-section="client-membership">
-              <span class="db-icon db-icon--star" aria-hidden="true"></span>
-              <span class="db-sidebar__item-text">Membresía</span>
+            <button class="db-sidebar__item" data-section="client-sessions">
+              <span class="db-icon db-icon--calendar" aria-hidden="true"></span>
+              <span class="db-sidebar__item-text">Sesiones</span>
+            </button>
+          </li>
+          <li>
+            <button class="db-sidebar__item" data-section="client-contracts">
+              <span class="db-icon db-icon--doc" aria-hidden="true"></span>
+              <span class="db-sidebar__item-text">Contratos</span>
             </button>
           </li>
           <li>
@@ -120,19 +126,12 @@
             </button>
           </li>
           <li>
-            <button class="db-sidebar__item" data-section="client-rewards">
-              <span class="db-icon db-icon--star" aria-hidden="true"></span>
-              <span class="db-sidebar__item-text">Premios</span>
-            </button>
-          </li>
-          <li>
             <button class="db-sidebar__item" data-sidebar-action="minigames">
               <span class="db-icon db-icon--grid" aria-hidden="true"></span>
               <span class="db-sidebar__item-text">Minijuegos</span>
             </button>
           </li>
         </ul>
-
         <!-- -- ROLE: collaborator ------------------- -->
         <ul class="db-sidebar__group" role="list" data-role-gate="collaborator" hidden>
           <li class="db-sidebar__label" aria-hidden="true">Colaborador</li>
@@ -355,25 +354,6 @@
 
     </main>
 
-    <!-- -- NOTIFICATIONS PANEL --
-         Flex sibling of main inside .db-layout.
-         Width animates open/closed via CSS; JS toggles [hidden].
-    -->
-    <aside
-      class="db-notifications"
-      id="js-notifications-panel"
-      aria-label="Notificaciones"
-      hidden
-    >
-      <header class="db-notifications__header">
-        <span class="section-label">Notificaciones</span>
-        <button class="db-icon-btn hr-icon-btn" id="js-notif-close" aria-label="Cerrar panel">x</button>
-      </header>
-      <ul class="db-notifications__list" id="js-notif-list" role="list">
-        <!-- Injected by JS -->
-      </ul>
-    </aside>
-
   </div><!-- /.db-layout -->
 
 
@@ -389,10 +369,10 @@
   =================================================== -->
   <!-- Global behavior (cursor, reveal, etc.) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-<script src="../site.js?v=20261015-view-as-readonly-v1" defer></script>
+<script src="../site.js?v=20261018-producer-handle-v1" defer></script>
 
   <!-- Dashboard controller / router -->
-  <script src="dashboard.js?v=20261018-portal-components-v2" type="module"></script>
+  <script src="dashboard.js?v=20261018-erp-membership-scheduled-date-v1" type="module"></script>
 
   <!--
     Cursor hover patch - site.js binds mouseenter/mouseleave with querySelectorAll

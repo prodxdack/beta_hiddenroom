@@ -1,4 +1,4 @@
-import { supabase, escapeHtml } from "./store.js";
+import { supabase, escapeHtml } from "./store.js?v=20261018-license-request-v10";
 
 const CLOUD_ORIGIN = "https://cloud.hiddenroom.mx";
 const statusElement = document.getElementById("orders-status");
@@ -97,7 +97,7 @@ function orderMarkup(order, downloads) {
       <div class="order-items">
         ${(order.store_order_items ?? []).map((item) => `
           <div class="summary-line">
-            ${item.license_name ? `<small class="summary-license">${escapeHtml(item.license_name)}${item.producer_name ? ` · ${escapeHtml(item.producer_name)}` : ""}</small>` : ""}
+            ${item.license_name ? `<small class="summary-license">${escapeHtml(item.license_name)}${item.producer_name ? ` · ${escapeHtml(producerDisplayName(item.producer_name))}` : ""}</small>` : ""}
             <span>${escapeHtml(item.product_name)} × ${item.quantity}</span>
             <span>${formatPrice(item.total, order.currency)}</span>
           </div>`).join("")}
@@ -146,6 +146,11 @@ async function handleDownloadClick(event) {
     button.textContent = "Reintentar descarga";
     statusElement.textContent = error.message || "No se pudo preparar la descarga.";
   }
+}
+
+function producerDisplayName(value) {
+  const clean = String(value || "").trim().replace(/^@+/, "");
+  return clean && !["Productor por confirmar", "Productor", "Sin productor", "Tu cuenta"].includes(clean) ? "@" + clean : clean || "Productor por confirmar";
 }
 
 function statusLabel(status) {

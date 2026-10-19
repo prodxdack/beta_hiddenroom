@@ -16,7 +16,7 @@
  * ================================================================
  */
 
-import { cloudSourceToFile, createCloudSourcePicker, joinCloudPath, walkCloudSource } from "../assets/js/cloud-source-picker.js";
+import { cloudSourceToFile, createCloudSourcePicker, joinCloudPath, walkCloudSource } from "../assets/js/cloud-source-picker.js?v=20261018-debian-cloud-picker-v2";
 
 'use strict';
 
@@ -84,12 +84,12 @@ const TRANSACTION_CONCEPT_OPTIONS = [
 const EVENT_FINANCE_CONCEPT_OPTIONS = ['VENUE APARTADO', 'VENUE LIQUIDACIÓN', 'FLYER', 'OTRO'];
 const CLOUD_HIDDENROOM_URL = 'https://cloud.hiddenroom.mx/';
 const CLOUD_FUNCTION_BASE = `${SUPABASE_URL}/functions/v1`;
-const CLOUD_STAGING_BUCKET = 'cloud-staging';
 const INSTAGRAM_SCRAPER_URL = 'http://127.0.0.1:4317';
 const INSTAGRAM_SCRAPER_STORAGE_KEY = 'hr_instagram_scraper_last_result';
 const BEAT_STORE_CLOUD_PATH = '/beats_store';
 const BEAT_AUDIO_ACCEPT = '.mp3,.wav,.m4a,.aac,.ogg,.flac,.aif,.aiff,audio/mpeg,audio/mp4,audio/x-m4a,audio/wav,audio/x-wav,audio/aac,audio/ogg,audio/flac,audio/aiff';
 const BEAT_AUDIO_EXTENSIONS = new Set(['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac', 'aif', 'aiff']);
+const CLOUD_PREVIEW_AUDIO_EXTENSIONS = new Set([...BEAT_AUDIO_EXTENSIONS, 'oga', 'opus']);
 
 function normalizeCloudPath(path) {
   if (!path || path === '/') return '/';
@@ -168,23 +168,9 @@ async function igAnalyzeCommentsStream(payload) {
   return result;
 }
 
-function buildCloudFunctionUrl(functionName, path = '/') {
-  const normalized = normalizeCloudPath(path);
-  return `${CLOUD_FUNCTION_BASE}/${functionName}?path=${encodeURIComponent(normalized)}`;
-}
-
-function buildCloudStagingPath(userId, fileName) {
-  const safeFileName = String(fileName || 'archivo')
-    .replace(/[\\/]/g, '_')
-    .replace(/[\u0000-\u001f\u007f]/g, '')
-    .trim() || 'archivo';
-  const uniquePart = globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2);
-  return `${userId}/${Date.now()}-${uniquePart}-${safeFileName}`;
-}
-
 async function listCloudFiles(path = state.erpCloud.currentPath) {
   const currentPath = normalizeCloudPath(path);
-  const response = await cloudApiFetch(buildCloudFunctionUrl('cloud-list', currentPath), {
+  const response = await cloudApiFetch(`${CLOUD_HIDDENROOM_URL.replace(/\/$/, '')}/api/files?path=${encodeURIComponent(currentPath)}`, {
     method: 'GET',
   });
 
@@ -247,40 +233,17 @@ async function uploadCloudFileToPath(file, targetPath = '/') {
     throw new Error('El archivo esta vacio. Vuelve a exportarlo o elige otro archivo.');
   }
   const currentPath = normalizeCloudPath(targetPath);
-  const { data: { user }, error: userError } = await supabase.auth.getUser();
-  if (userError || !user) {
-    throw new Error('Sesion de Supabase no disponible');
-  }
-
-  const storagePath = buildCloudStagingPath(user.id, file.name);
-  const { error: storageError } = await supabase.storage
-    .from(CLOUD_STAGING_BUCKET)
-    .upload(storagePath, file, {
-      contentType: file.type || 'application/octet-stream',
-      upsert: false,
-    });
-
-  if (storageError) {
-    throw new Error(`No se pudo preparar el archivo: ${storageError.message}`);
-  }
-
-  const response = await cloudApiFetch(`${CLOUD_FUNCTION_BASE}/cloud-upload`, {
+  const response = await cloudApiFetch(`${CLOUD_HIDDENROOM_URL.replace(/\/$/, '')}/api/upload?path=${encodeURIComponent(currentPath)}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      path: currentPath,
-      filename: file.name,
-      storage_path: storagePath,
-      size: file.size,
-      mime_type: file.type || 'application/octet-stream',
-    }),
+    headers: {
+      'X-File-Name': encodeURIComponent(file.name),
+      'Content-Type': file.type || 'application/octet-stream',
+    },
+    body: file,
   });
 
   if (!response.ok) {
     const error = await response.json().catch(() => null);
-    if (response.status >= 400 && response.status < 500) {
-      await supabase.storage.from(CLOUD_STAGING_BUCKET).remove([storagePath]).catch(() => {});
-    }
     throw new Error(error?.error || `No se pudo subir el archivo (${response.status})`);
   }
 
@@ -299,12 +262,12 @@ async function createCloudFolder(folderName, basePath = state.erpCloud.currentPa
 
 async function createCloudFolderAt(basePath, folderName) {
   if (!folderName) return null;
-  const response = await cloudApiFetch(`${CLOUD_FUNCTION_BASE}/cloud-folder`, {
+  const response = await cloudApiFetch(`${CLOUD_HIDDENROOM_URL.replace(/\/$/, '')}/api/folders`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       path: normalizeCloudPath(basePath),
-      folderName: folderName.trim(),
+      name: folderName.trim(),
     }),
   });
 
@@ -359,7 +322,7 @@ function buildCloudDownloadUrl(path, fileName) {
 
 async function deleteCloudFile(itemType, itemName) {
   const currentPath = normalizeCloudPath(state.erpCloud.currentPath);
-  const response = await cloudApiFetch(`${CLOUD_FUNCTION_BASE}/cloud-delete?path=${encodeURIComponent(currentPath)}&type=${encodeURIComponent(itemType)}&name=${encodeURIComponent(itemName)}`, {
+  const response = await cloudApiFetch(`${CLOUD_HIDDENROOM_URL.replace(/\/$/, '')}/api/item?path=${encodeURIComponent(currentPath)}&type=${encodeURIComponent(itemType)}&name=${encodeURIComponent(itemName)}`, {
     method: 'DELETE',
   });
 
@@ -423,6 +386,7 @@ const state = {
   /** Active folder in the client downloads library, or null at the root. */
   clientDownloads: {
     selectedFolder: null,
+    browser: null,
   },
 
   /** Fetched data cache, keyed by section */
@@ -907,14 +871,14 @@ const PORTAL_NAV_GROUPS = [
     title: 'Cliente',
     role: 'client',
     items: [
-      { label: 'Descargas', section: 'client-downloads', icon: 'download' },
-      { label: 'Sesiones', section: 'client-sessions', icon: 'calendar' },
-      { label: 'Transacciones', section: 'client-transactions', icon: 'receipt' },
-      { label: 'Contratos', section: 'client-contracts', icon: 'doc' },
       { label: 'Membresía', section: 'client-membership', icon: 'star' },
+      { label: 'Descargas', section: 'client-downloads', icon: 'download' },
+      { label: 'Transacciones', section: 'client-transactions', icon: 'receipt' },
+      { label: 'Premios', section: 'client-rewards', icon: 'gift' },
+      { label: 'Sesiones', section: 'client-sessions', icon: 'calendar' },
+      { label: 'Contratos', section: 'client-contracts', icon: 'doc' },
       { label: 'Tickets', section: 'client-tickets', icon: 'ticket' },
       { label: 'Tienda', section: 'client-store', icon: 'bag' },
-      { label: 'Premios', section: 'client-rewards', icon: 'star' },
       { label: 'Minijuegos', action: 'minigames', icon: 'grid' },
     ],
   },
@@ -1001,6 +965,38 @@ const SCRUM_COLUMNS = [
 const TASK_PRIORITIES = ['low', 'medium', 'high', 'urgent'];
 const AVAILABLE_ROLES = ['client', 'pr', 'collaborator', 'partner', 'admin'];
 const SECTION_LOADING_MIN_MS = 300;
+const CLIENT_HOME_PREFS_PREFIX = 'hr_dashboard_client_home_v1_';
+const CLIENT_HOME_SECTIONS = [
+  {
+    section: 'client-membership',
+    label: 'Membresía',
+    icon: 'star',
+    defaultScore: 40,
+    noveltyTerms: ['membres', 'ciclo', 'sesion', 'sesión'],
+  },
+  {
+    section: 'client-downloads',
+    label: 'Descargas',
+    icon: 'download',
+    defaultScore: 30,
+    noveltyTerms: ['descarg', 'contenido', 'archivo', 'material'],
+  },
+  {
+    section: 'client-transactions',
+    label: 'Transacciones',
+    icon: 'receipt',
+    defaultScore: 20,
+    noveltyTerms: ['transacc', 'pago', 'abono', 'saldo'],
+  },
+  {
+    section: 'client-rewards',
+    label: 'Premios',
+    icon: 'gift',
+    defaultScore: 10,
+    noveltyTerms: ['premio', 'recompensa', 'punto', 'ranking'],
+  },
+];
+const CLIENT_HOME_SECTION_KEYS = new Set(CLIENT_HOME_SECTIONS.map((item) => item.section));
 const SUGGESTED_PERMISSIONS = [
   'Kairen AI',
   'cloud.upload',
@@ -1467,6 +1463,73 @@ function writeDashboardPrefs(patch = {}) {
   }
 }
 
+function isClientOnlyUser() {
+  return state.roles.length === 1 && state.roles[0] === 'client';
+}
+
+function clientHomeStorageKey() {
+  const userKey = String(state.user?.id || state.user?.user_id || 'current').trim();
+  return CLIENT_HOME_PREFS_PREFIX + userKey;
+}
+
+function readClientHomePrefs() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(clientHomeStorageKey()) || '{}');
+    return {
+      visits: raw?.visits && typeof raw.visits === 'object' ? raw.visits : {},
+      lastVisitedAt: raw?.lastVisitedAt && typeof raw.lastVisitedAt === 'object' ? raw.lastVisitedAt : {},
+    };
+  } catch {
+    return { visits: {}, lastVisitedAt: {} };
+  }
+}
+
+function writeClientHomePrefs(prefs) {
+  try {
+    localStorage.setItem(clientHomeStorageKey(), JSON.stringify(prefs));
+  } catch {
+    // localStorage can fail in private or restricted contexts; keep the current view usable.
+  }
+}
+
+function recordClientSectionVisit(sectionKey) {
+  if (!isClientOnlyUser() || !CLIENT_HOME_SECTION_KEYS.has(sectionKey)) return;
+  const prefs = readClientHomePrefs();
+  prefs.visits[sectionKey] = Math.max(0, Number(prefs.visits[sectionKey] || 0)) + 1;
+  prefs.lastVisitedAt[sectionKey] = Date.now();
+  writeClientHomePrefs(prefs);
+}
+
+function normalizeClientHomeSignalText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function getClientHomeRanking() {
+  const prefs = readClientHomePrefs();
+  const notifications = Array.isArray(state.notifications) ? state.notifications : [];
+
+  return CLIENT_HOME_SECTIONS
+    .map((item, defaultIndex) => {
+      const visits = Math.max(0, Number(prefs.visits[item.section] || 0));
+      const hasNews = notifications.some((notification) => {
+        if (notification?.read) return false;
+        const message = normalizeClientHomeSignalText(notification.message);
+        return item.noveltyTerms.some((term) => message.includes(normalizeClientHomeSignalText(term)));
+      });
+
+      return {
+        ...item,
+        defaultIndex,
+        visits,
+        hasNews,
+        score: item.defaultScore + visits * 10 + (hasNews ? 100 : 0),
+      };
+    })
+    .sort((left, right) => right.score - left.score || left.defaultIndex - right.defaultIndex);
+}
 function persistedDataValue(key, fallback = '') {
   if (state.data[key] !== undefined) return state.data[key];
   const stored = readDashboardPrefs()[key];
@@ -1996,7 +2059,12 @@ function navigate(sectionKey) {
     return;
   }
 
+  if (isClientOnlyUser() && CLIENT_HOME_SECTION_KEYS.has(sectionKey)) {
+    recordClientSectionVisit(sectionKey);
+  }
+
   setState({ activeSection: sectionKey });
+  refreshClientOnlyBottomNav();
   persistActiveSection(sectionKey);
   updateSidebarActiveState(sectionKey);
   updateTopbarTitle(section.label);
@@ -2361,33 +2429,78 @@ function renderPortalMoreSheet(openKey = '') {
   `).join('');
 }
 
+function renderClientOnlyBottomNav() {
+  const iconBySection = {
+    'client-membership': 'star',
+    'client-downloads': 'download-simple',
+    'client-transactions': 'receipt',
+    'client-rewards': 'gift',
+  };
+
+  const priorityButtons = getClientHomeRanking()
+    .slice(0, 3)
+    .map((item) => {
+      const active = item.section === state.activeSection;
+      return '<button type="button" class="' + (active ? 'is-active' : '') + '" data-section="' + escapeAttr(item.section) + '"' + (active ? ' aria-current="page"' : '') + '>'
+        + '<span class="hr-icon--nav hr-portal-bottom-nav__icon ph ph-' + escapeAttr(iconBySection[item.section] || 'grid') + '" aria-hidden="true"></span>'
+        + escapeHTML(item.label)
+        + '</button>';
+    })
+    .join('');
+
+  return priorityButtons
+    + '<button type="button" data-portal-more aria-controls="hr-portal-more" aria-expanded="false">'
+    + '<span class="hr-icon--nav hr-portal-bottom-nav__icon ph ph-dots-three-outline" aria-hidden="true"></span>Más</button>';
+}
+
+function refreshClientOnlyBottomNav() {
+  if (!isClientOnlyUser()) return;
+  const nav = document.querySelector('.hr-portal-bottom-nav--client-only');
+  if (!nav) return;
+  nav.innerHTML = '<button type="button"' + (state.activeSection === 'overview' ? ' class="is-active" aria-current="page"' : '') + ' data-section="overview">'
+    + '<span class="hr-icon--nav hr-portal-bottom-nav__icon ph ph-house" aria-hidden="true"></span>Inicio</button>'
+    + renderClientOnlyBottomNav();
+}
+
 function renderPortalNavigation() {
   renderPortalSidebar();
   releasePortalMoreSheetState();
   document.querySelectorAll('.hr-portal-bottom-nav, .hr-portal-backdrop, .hr-portal-drawer')
     .forEach((node) => node.remove());
 
+  if (isClientOnlyUser()) {
+    document.body.insertAdjacentHTML('beforeend',
+      '<nav class="hr-portal-bottom-nav hr-portal-bottom-nav--client-only" aria-label="Navegación principal del portal">'
+      + '<button type="button"' + (state.activeSection === 'overview' ? ' class="is-active" aria-current="page"' : '') + ' data-section="overview">'
+      + '<span class="hr-icon--nav hr-portal-bottom-nav__icon ph ph-house" aria-hidden="true"></span>Inicio</button>'
+      + renderClientOnlyBottomNav()
+      + '</nav>'
+      + '<button class="hr-portal-backdrop" type="button" aria-label="Cerrar menú" hidden></button>'
+      + '<aside class="hr-portal-drawer" id="hr-portal-more" aria-label="Menú del portal" aria-hidden="true" hidden>'
+      + '<header><div><small>Navegación</small><strong data-portal-sheet-title>Todas las secciones</strong></div>'
+      + '<button type="button" data-portal-sheet-close aria-label="Cerrar menú">×</button></header>'
+      + '<div class="hr-portal-drawer__content">' + renderPortalMoreSheet() + '</div>'
+      + '</aside>');
+    return;
+  }
+
   const collaboratorEnabled = visiblePortalGroups().some((group) => group.key === 'collaborator');
   const erpEnabled = visiblePortalGroups().some((group) => group.key === 'erp');
-  document.body.insertAdjacentHTML('beforeend', `
-    <nav class="hr-portal-bottom-nav" aria-label="Navegación principal del portal">
-      <button type="button" data-section="overview"><span class="hr-icon--nav hr-portal-bottom-nav__icon ph ph-house" aria-hidden="true"></span>Inicio</button>
-      <button type="button" data-portal-group="client"><span class="hr-icon--nav hr-portal-bottom-nav__icon ph ph-user-circle" aria-hidden="true"></span>Cliente</button>
-      <button type="button" data-portal-group="collaborator"${collaboratorEnabled ? '' : ' disabled'}><span class="hr-icon--nav hr-portal-bottom-nav__icon ph ph-users-three" aria-hidden="true"></span>Colaborador</button>
-      <button type="button" data-portal-group="erp"${erpEnabled ? '' : ' disabled'}><span class="hr-icon--nav hr-portal-bottom-nav__icon ph ph-chart-bar" aria-hidden="true"></span>ERP</button>
-      <button type="button" data-portal-more aria-controls="hr-portal-more" aria-expanded="false"><span class="hr-icon--nav hr-portal-bottom-nav__icon ph ph-dots-three-outline" aria-hidden="true"></span>Más</button>
-    </nav>
-    <button class="hr-portal-backdrop" type="button" aria-label="Cerrar menú" hidden></button>
-    <aside class="hr-portal-drawer" id="hr-portal-more" aria-label="Menú del portal" aria-hidden="true" hidden>
-      <header>
-        <div><small>Navegación</small><strong data-portal-sheet-title>Todas las secciones</strong></div>
-        <button type="button" data-portal-sheet-close aria-label="Cerrar menú">×</button>
-      </header>
-      <div class="hr-portal-drawer__content">${renderPortalMoreSheet()}</div>
-    </aside>
-  `);
+  document.body.insertAdjacentHTML('beforeend',
+    '<nav class="hr-portal-bottom-nav" aria-label="Navegación principal del portal">'
+    + '<button type="button" data-section="overview"><span class="hr-icon--nav hr-portal-bottom-nav__icon ph ph-house" aria-hidden="true"></span>Inicio</button>'
+    + '<button type="button" data-portal-group="client"><span class="hr-icon--nav hr-portal-bottom-nav__icon ph ph-user-circle" aria-hidden="true"></span>Cliente</button>'
+    + '<button type="button" data-portal-group="collaborator"' + (collaboratorEnabled ? '' : ' disabled') + '><span class="hr-icon--nav hr-portal-bottom-nav__icon ph ph-users-three" aria-hidden="true"></span>Colaborador</button>'
+    + '<button type="button" data-portal-group="erp"' + (erpEnabled ? '' : ' disabled') + '><span class="hr-icon--nav hr-portal-bottom-nav__icon ph ph-chart-bar" aria-hidden="true"></span>ERP</button>'
+    + '<button type="button" data-portal-more aria-controls="hr-portal-more" aria-expanded="false"><span class="hr-icon--nav hr-portal-bottom-nav__icon ph ph-dots-three-outline" aria-hidden="true"></span>Más</button>'
+    + '</nav>'
+    + '<button class="hr-portal-backdrop" type="button" aria-label="Cerrar menú" hidden></button>'
+    + '<aside class="hr-portal-drawer" id="hr-portal-more" aria-label="Menú del portal" aria-hidden="true" hidden>'
+    + '<header><div><small>Navegación</small><strong data-portal-sheet-title>Todas las secciones</strong></div>'
+    + '<button type="button" data-portal-sheet-close aria-label="Cerrar menú">×</button></header>'
+    + '<div class="hr-portal-drawer__content">' + renderPortalMoreSheet() + '</div>'
+    + '</aside>');
 }
-
 function releasePortalMoreSheetState() {
   const sheet = document.getElementById('hr-portal-more');
   const backdrop = document.querySelector('.hr-portal-backdrop');
@@ -2560,13 +2673,14 @@ async function fetchNotifications() {
 async function loadAndRenderNotifications() {
   if (!NOTIFICATIONS_ENABLED) {
     document.getElementById('js-notifications-toggle')?.setAttribute('hidden', '');
-    document.getElementById('js-notifications-panel')?.setAttribute('hidden', '');
+    document.getElementById('hr-global-notifications')?.setAttribute('hidden', '');
     setState({ notifications: [] });
     return;
   }
 
   const notifications = await fetchNotifications();
   setState({ notifications });
+  refreshClientOnlyBottomNav();
 
   const unread = notifications.filter((n) => !n.read).length;
   const badge  = document.getElementById('js-notif-count');
@@ -2575,39 +2689,23 @@ async function loadAndRenderNotifications() {
     badge.hidden = unread === 0;
   }
 
-  const list = document.getElementById('js-notif-list');
+  const list = document.querySelector('[data-hr-notifications-list]');
   if (!list) return;
 
   if (notifications.length === 0) {
-    list.innerHTML = '<li class="db-notifications__empty">Sin notificaciones nuevas.</li>';
+    list.innerHTML = '<li class="hr-global-notifications__empty">Sin notificaciones nuevas.</li>';
     return;
   }
 
   list.innerHTML = notifications.map((n) => `
-    <li class="hr-notice hr-notice--${escapeAttr(n.type)} db-notifications__item db-notifications__item--${n.type}${n.read ? ' db-notifications__item--read' : ''}" data-notif-id="${n.id}">
-      <span class="hr-notice__dot db-notifications__dot" aria-hidden="true"></span>
-      <span class="hr-notice__message db-notifications__msg">${escapeHTML(n.message)}</span>
-      <time class="hr-notice__time db-notifications__time" datetime="${new Date(n.ts).toISOString()}">${relativeTime(n.ts)}</time>
+    <li class="hr-notice hr-notice--${escapeAttr(n.type)} hr-global-notifications__item${n.read ? ' is-read' : ''}" data-notif-id="${n.id}">
+      <span class="hr-notice__dot hr-global-notifications__dot" aria-hidden="true"></span>
+      <span class="hr-notice__message hr-global-notifications__message">${escapeHTML(n.message)}</span>
+      <time class="hr-notice__time hr-global-notifications__time" datetime="${new Date(n.ts).toISOString()}">${relativeTime(n.ts)}</time>
     </li>
   `).join('');
 }
 
-function attachNotificationListeners() {
-  const toggle = document.getElementById('js-notifications-toggle');
-  const panel  = document.getElementById('js-notifications-panel');
-  const close  = document.getElementById('js-notif-close');
-
-  toggle?.addEventListener('click', () => {
-    const open = panel?.hidden;
-    if (panel) panel.hidden = !open;
-    toggle.setAttribute('aria-expanded', String(open));
-  });
-
-  close?.addEventListener('click', () => {
-    if (panel) panel.hidden = true;
-    document.getElementById('js-notifications-toggle')?.setAttribute('aria-expanded', 'false');
-  });
-}
 
 
 /* ================================================================
@@ -2695,8 +2793,44 @@ function handleLogout() {
 ================================================================ */
 
 /* -- OVERVIEW ----------------------------------------------- */
+function renderClientOverview() {
+  const { user, roles } = state;
+  const sections = getClientHomeRanking();
+  const firstName = String(user?.display_name || user?.username || 'cliente')
+    .trim()
+    .split(/\s+/)[0];
+  const roleBadges = roles.map((role) => '<span class="db-badge db-badge--role db-badge--' + escapeAttr(role) + '">' + escapeHTML(role.toUpperCase()) + '</span>').join('');
+
+  return '<section class="db-section db-section--client-home hr-portal-section" aria-labelledby="section-client-home-title">'
+    + renderPortalSectionHeader('Cliente', 'Hola, ' + firstName, 'section-client-home-title')
+    + '<article class="db-card hr-card db-card--profile hr-profile-card db-client-home-profile" aria-label="Perfil de usuario">'
+    + '<div class="db-card__inner hr-profile-card__body">'
+    + '<div class="db-profile__avatar" aria-hidden="true">' + escapeHTML((user?.display_name ?? user?.email ?? '?')[0].toUpperCase()) + '</div>'
+    + '<div class="db-profile__info">'
+    + '<h2 class="db-profile__name">' + escapeHTML(user?.display_name ?? '-') + '</h2>'
+    + '<dl class="db-profile__meta">'
+    + '<div class="db-profile__row"><dt>ID</dt><dd>' + escapeHTML(String(user?.user_id ?? '-')) + '</dd></div>'
+    + '<div class="db-profile__row"><dt>Email</dt><dd>' + escapeHTML(user?.email ?? '-') + '</dd></div>'
+    + '<div class="db-profile__row"><dt>WhatsApp</dt><dd>' + escapeHTML(user?.whatsapp ?? '-') + '</dd></div>'
+    + '</dl>'
+    + '<div class="db-profile__roles" aria-label="Roles activos">' + roleBadges + '</div>'
+    + '</div></div></article>'
+    + '<div class="db-client-home-grid">'
+    + sections.map((item, index) => '<button class="db-client-home-card' + (item.hasNews ? ' has-news' : '') + '" type="button" data-section="' + escapeAttr(item.section) + '" aria-label="Abrir ' + escapeAttr(item.label) + '">'
+      + '<span class="db-client-home-card__icon" aria-hidden="true"><i class="ph ph-' + escapeAttr(item.icon) + '"></i></span>'
+      + '<span class="db-client-home-card__body">'
+      + '<span class="db-client-home-card__eyebrow">' + (item.hasNews ? 'Novedad' : 'Prioridad ' + (index + 1)) + '</span>'
+      + '<strong>' + escapeHTML(item.label) + '</strong>'
+      + '<small>' + (item.visits ? item.visits + ' visita' + (item.visits === 1 ? '' : 's') : 'Acceso recomendado') + '</small>'
+      + '</span>'
+      + '<i class="ph ph-arrow-up-right db-client-home-card__arrow" aria-hidden="true"></i>'
+      + '</button>').join('')
+    + '</div></section>';
+}
 function renderOverview() {
   const { user, roles } = state;
+
+  if (isClientOnlyUser()) return renderClientOverview();
 
   const roleBadges = roles.map((r) => `
     <span class="db-badge db-badge--role db-badge--${escapeHTML(r)}">${escapeHTML(r.toUpperCase())}</span>
@@ -2929,6 +3063,34 @@ function renderClientDownloadsFolders(folders = []) {
   `;
 }
 
+function isClientFolderDownload(item = {}) {
+  const href = String(item.storage_path || '').trim();
+  return String(item.type || '').toLowerCase() === 'folder' || href.includes('/api/download-folder');
+}
+
+function renderClientDownloadItem(item = {}) {
+  if (isClientFolderDownload(item)) {
+    return renderPortalResourceCard({
+      kind: 'folder',
+      title: item.name ?? 'Carpeta',
+      meta: item.notes ? `Carpeta · ${item.notes}` : 'Carpeta de contenido',
+      action: `<button class="hr-btn hr-btn--secondary" type="button" data-action="client-download-folder-open" data-download-reference="${escapeAttr(item.storage_path || '')}" data-download-name="${escapeAttr(item.name || 'Carpeta')}">Abrir carpeta</button>`,
+    });
+  }
+
+  return renderPortalResourceCard({
+    kind: 'file',
+    title: item.name ?? '-',
+    meta: `${item.type ?? 'Archivo'}${item.notes ? ` · ${item.notes}` : ''}`,
+    action: `${renderCloudPreviewAction({
+      reference: item.storage_path,
+      name: item.name,
+      type: item.type,
+      title: item.name,
+    })}${renderDownloadAction(item)}`,
+  });
+}
+
 function renderClientDownloadsFolder(folder) {
   return `
     <div id="js-downloads-body" class="hr-resource-browser db-downloads-browser">
@@ -2944,14 +3106,100 @@ function renderClientDownloadsFolder(folder) {
         </div>
       </div>
       <div class="hr-resource-list db-download-files" aria-label="Archivos de ${escapeAttr(folder.title)}">
-        ${folder.items.map((item) => renderPortalResourceCard({
-          kind: 'file', title: item.name ?? '-',
-          meta: `${item.type ?? 'Archivo'}${item.notes ? ` · ${item.notes}` : ''}`,
-          action: renderDownloadAction(item),
-        })).join('')}
+        ${folder.items.map((item) => renderClientDownloadItem(item)).join('')}
       </div>
     </div>
   `;
+}
+
+async function listClientDownloadFolder(path) {
+  const currentPath = normalizeCloudPath(path);
+  const response = await cloudApiFetch(`${CLOUD_HIDDENROOM_URL.replace(/\/$/, '')}/api/files?path=${encodeURIComponent(currentPath)}`);
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body?.error || `No se pudo abrir la carpeta (${response.status}).`);
+  return {
+    path: normalizeCloudPath(body?.path || currentPath),
+    folders: Array.isArray(body?.folders) ? body.folders : [],
+    files: Array.isArray(body?.files) ? body.files : [],
+  };
+}
+
+function parentCloudPath(path) {
+  const normalized = normalizeCloudPath(path);
+  if (normalized === '/') return '/';
+  const segments = normalized.slice(1).split('/').filter(Boolean);
+  segments.pop();
+  return normalizeCloudPath('/' + segments.join('/'));
+}
+
+function formatCloudFileSize(value) {
+  const bytes = Number(value);
+  if (!Number.isFinite(bytes)) return 'Archivo';
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let size = bytes;
+  let unitIndex = -1;
+  do { size /= 1024; unitIndex += 1; } while (size >= 1024 && unitIndex < units.length - 1);
+  return `${size.toFixed(size >= 10 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+async function renderClientDownloadBrowser(folder, browser) {
+  try {
+    const listing = await listClientDownloadFolder(browser.path);
+    const atRoot = normalizeCloudPath(browser.path) === normalizeCloudPath(browser.rootPath);
+    const backLabel = atRoot ? `Volver a ${folder.title}` : 'Subir un nivel';
+    const folderCards = listing.folders.map((folderName) => renderPortalResourceCard({
+      kind: 'folder',
+      title: folderName,
+      meta: 'Carpeta',
+      action: `<button class="hr-btn hr-btn--secondary" type="button" data-action="client-download-folder-open" data-download-reference="${escapeAttr(buildCloudFolderDownloadUrl(browser.path, folderName))}" data-download-name="${escapeAttr(folderName)}">Abrir</button>`,
+    })).join('');
+    const fileCards = listing.files.map((file) => renderPortalResourceCard({
+      kind: 'file',
+      title: file.name,
+      meta: `${file.size ? formatCloudFileSize(file.size) : 'Archivo'}${file.modified ? ` · ${formatDateTime(file.modified)}` : ''}`,
+      action: `${renderCloudPreviewAction({
+        reference: buildCloudDownloadUrl(browser.path, file.name),
+        name: file.name,
+        type: file.type || 'file',
+        title: file.name,
+      })}${renderDownloadAction({
+          name: file.name,
+          type: 'file',
+          storage_path: buildCloudDownloadUrl(browser.path, file.name),
+        })}`,
+    })).join('');
+    const cards = folderCards + fileCards;
+
+    return `
+      <div id="js-downloads-body" class="hr-resource-browser db-downloads-browser">
+        <button class="hr-btn hr-btn--secondary db-btn-secondary db-downloads-browser__back" type="button" data-action="client-download-folder-back" data-parent-path="${escapeAttr(atRoot ? '' : parentCloudPath(browser.path))}">
+          <i class="ph ph-arrow-left" aria-hidden="true"></i>
+          <span>${escapeHTML(backLabel)}</span>
+        </button>
+        <div class="hr-resource-browser__heading db-downloads-browser__heading">
+          <div>
+            <p class="section-label">Carpeta de descarga</p>
+            <h2>${escapeHTML(browser.name)}</h2>
+            <p>${listing.folders.length + listing.files.length} elementos</p>
+          </div>
+        </div>
+        <div class="hr-resource-list db-download-files" aria-label="Contenido de ${escapeAttr(browser.name)}">
+          ${cards || '<p class="db-empty">Esta carpeta no contiene archivos.</p>'}
+        </div>
+      </div>
+    `;
+  } catch (error) {
+    return `
+      <div id="js-downloads-body" class="hr-resource-browser db-downloads-browser">
+        <button class="hr-btn hr-btn--secondary db-btn-secondary db-downloads-browser__back" type="button" data-action="client-download-folder-back">
+          <i class="ph ph-arrow-left" aria-hidden="true"></i>
+          <span>Volver a ${escapeHTML(folder.title)}</span>
+        </button>
+        <p class="db-empty db-empty--error">${escapeHTML(error?.message || 'No se pudo abrir la carpeta.')}</p>
+      </div>
+    `;
+  }
 }
 
 async function renderClientDownloads() {
@@ -2967,7 +3215,10 @@ async function renderClientDownloads() {
   const folders = groupClientDownloadsByMonth(data || []);
   const selectedKey = state.clientDownloads?.selectedFolder;
   const selectedFolder = folders.find((folder) => folder.key === selectedKey) || null;
-  const body = selectedFolder ? renderClientDownloadsFolder(selectedFolder) : renderClientDownloadsFolders(folders);
+  const browser = state.clientDownloads?.browser;
+  const body = selectedFolder
+    ? (browser ? await renderClientDownloadBrowser(selectedFolder, browser) : renderClientDownloadsFolder(selectedFolder))
+    : renderClientDownloadsFolders(folders);
   return sectionShell('Cliente', 'Descargas', 'title-downloads', `
     <p class="db-section__intro">Tu biblioteca de contenido</p>
     ${body}
@@ -3009,6 +3260,149 @@ function renderDownloadAction(item) {
     '<svg class="db-download-action__icon" aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M5 21h14"></path></svg>' +
     '<span>' + escapeHTML(label) + '</span></a>';
 }
+
+function isPreviewableCloudAudio(name, type = '') {
+  const mime = String(type || '').toLowerCase().trim();
+  if (mime.startsWith('audio/')) return true;
+  return CLOUD_PREVIEW_AUDIO_EXTENSIONS.has(fileExtension(name));
+}
+
+function renderCloudPreviewAction({ reference = '', name = '', type = '', title = '' } = {}) {
+  const safeReference = String(reference || '').trim();
+  const safeName = String(name || '').trim();
+  let cloudRequest = null;
+  try { cloudRequest = cloudDownloadRequestFromHref(safeReference); } catch {}
+  const previewName = cloudRequest?.name || safeName;
+  if (!safeReference || !safeName || !cloudRequest || !isPreviewableCloudAudio(previewName, type)) return '';
+  return '<button class="hr-btn hr-btn--secondary db-preview-action" type="button" data-action="client-download-preview" data-preview-reference="' + escapeAttr(safeReference) + '" data-preview-title="' + escapeAttr(title || safeName) + '" aria-label="Reproducir vista previa de ' + escapeAttr(title || safeName) + '">' +
+    '<i class="ph ph-play-circle" aria-hidden="true"></i>' +
+    '<span>Vista previa</span></button>';
+}
+
+function closeCloudPreviewPlayer() {
+  const overlay = document.getElementById('js-cloud-preview-player');
+  const audio = overlay?.querySelector('[data-cloud-preview-audio]');
+  if (audio) {
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
+  }
+  if (overlay) {
+    overlay.hidden = true;
+    overlay.setAttribute('aria-hidden', 'true');
+  }
+  document.documentElement.classList.remove('hr-cloud-preview-open');
+}
+
+function openCloudPreviewPlayer({ src, title, fileName, downloadReference } = {}) {
+  if (!src) return;
+  let overlay = document.getElementById('js-cloud-preview-player');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'js-cloud-preview-player';
+    overlay.className = 'db-preview-player';
+    overlay.hidden = true;
+    overlay.setAttribute('aria-hidden', 'true');
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-labelledby', 'js-cloud-preview-player-title');
+    overlay.innerHTML = `
+      <div class="db-preview-player__surface">
+        <header class="db-preview-player__header">
+          <img class="db-preview-player__logo" src="/assets/img/white_logo.webp" alt="Hidden Room" />
+          <div>
+            <p class="section-label">Vista previa</p>
+            <h2 class="db-preview-player__title" id="js-cloud-preview-player-title"></h2>
+            <p class="db-preview-player__file" data-cloud-preview-file></p>
+          </div>
+          <button class="hr-icon-btn db-preview-player__close" type="button" data-cloud-preview-close aria-label="Cerrar reproductor" title="Cerrar reproductor">
+            <i class="ph ph-x" aria-hidden="true"></i>
+          </button>
+        </header>
+        <div class="db-preview-player__body">
+          <div class="db-preview-player__art" aria-hidden="true"><i class="ph ph-waveform"></i></div>
+          <audio data-cloud-preview-audio controls preload="metadata" controlsList="nodownload noplaybackrate"></audio>
+        </div>
+        <footer class="db-preview-player__footer">
+          <span>Contenido protegido · reproducción temporal</span>
+          <div class="db-preview-player__actions">
+            <button class="hr-btn hr-btn--primary" type="button" data-cloud-preview-download>
+              <i class="ph ph-download-simple" aria-hidden="true"></i>
+              <span>Descargar</span>
+            </button>
+            <button class="hr-btn hr-btn--secondary" type="button" data-cloud-preview-close>Cerrar</button>
+          </div>
+        </footer>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay || event.target.closest('[data-cloud-preview-close]')) closeCloudPreviewPlayer();
+      const downloadButton = event.target.closest('[data-cloud-preview-download]');
+      if (downloadButton) downloadCloudFileFromPortal(downloadButton);
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !overlay.hidden) closeCloudPreviewPlayer();
+    });
+  }
+
+  const audio = overlay.querySelector('[data-cloud-preview-audio]');
+  const titleElement = overlay.querySelector('.db-preview-player__title');
+  const fileElement = overlay.querySelector('[data-cloud-preview-file]');
+  const downloadButton = overlay.querySelector('[data-cloud-preview-download]');
+  if (titleElement) titleElement.textContent = title || 'Vista previa';
+  if (fileElement) fileElement.textContent = fileName || '';
+  if (downloadButton) {
+    downloadButton.dataset.cloudReference = downloadReference || '';
+    downloadButton.disabled = !downloadReference;
+  }
+  if (audio) {
+    audio.pause();
+    audio.src = src;
+    audio.load();
+  }
+  overlay.hidden = false;
+  overlay.setAttribute('aria-hidden', 'false');
+  document.documentElement.classList.add('hr-cloud-preview-open');
+  overlay.querySelector('[data-cloud-preview-close]')?.focus();
+  audio?.play().catch(() => {});
+}
+
+async function playCloudPreviewFromPortal(button) {
+  const request = cloudDownloadRequestFromHref(button?.dataset?.previewReference || '');
+  if (!request) {
+    showToast('El archivo no tiene una ruta Cloud válida.', 'error');
+    return;
+  }
+
+  button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
+  button.classList.add('is-loading');
+  try {
+    const previewEndpoint = `${CLOUD_HIDDENROOM_URL.replace(/\/$/, '')}/api/download-link?path=${encodeURIComponent(request.path)}&name=${encodeURIComponent(request.name)}&mode=view`;
+    const response = await cloudApiFetch(previewEndpoint);
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || !body?.url) {
+      throw new Error(body?.error || `No se pudo preparar la vista previa (${response.status}).`);
+    }
+
+    const previewUrl = new URL(body.url, CLOUD_HIDDENROOM_URL).href;
+    openCloudPreviewPlayer({
+      src: previewUrl,
+      title: button.dataset.previewTitle || request.name,
+      fileName: request.name,
+      downloadReference: button.dataset.previewReference,
+    });
+  } catch (error) {
+    console.error('[HR] cloud preview:', error);
+    showToast(error?.message || 'No se pudo reproducir la vista previa.', 'error');
+  } finally {
+    button.disabled = false;
+    button.removeAttribute('aria-busy');
+    button.classList.remove('is-loading');
+  }
+}
+
 function cloudDownloadRequestFromHref(href) {
   const raw = String(href || '').trim();
   if (!raw) return null;
@@ -3037,7 +3431,11 @@ function cloudDownloadRequestFromHref(href) {
   if (!name) return null;
   let pathSegments = normalizeCloudPath(pathValue).slice(1).split('/').filter(Boolean);
   if (pathSegments[0]?.toLowerCase() === 'files') pathSegments = pathSegments.slice(1);
-  if (!hasRole('admin') && pathSegments[0]?.toLowerCase() === 'users' && pathSegments.length >= 2) {
+  // View-as keeps the authenticated Cloud session as admin even when the
+  // effective Portal role is the selected client. Preserve /users/... paths
+  // in that context so legacy Cloud links resolve against the admin root.
+  const cloudSessionCanUseUserRoots = hasRole('admin') || Boolean(state.viewAs?.active);
+  if (!cloudSessionCanUseUserRoots && pathSegments[0]?.toLowerCase() === 'users' && pathSegments.length >= 2) {
     pathSegments = pathSegments.slice(2);
   }
   return {
@@ -4203,7 +4601,7 @@ async function renderErpCloud() {
           <button class="hr-btn hr-btn-primary" type="button" data-action="cloud-upload-file">Subir archivo</button>
           <button class="hr-btn hr-btn-primary" type="button" data-action="cloud-create-folder">Crear carpeta</button>
         </div>
-      <p class="hr-note">Los datos se cargan desde las funciones Supabase Edge: <code>cloud-list</code>, <code>cloud-upload</code>, <code>cloud-delete</code> y <code>cloud-folder</code>.</p>
+      <p class="hr-note">Los datos se cargan desde MysAuth Cloud en Debian.</p>
 
         <div class="hr-panel hr-card hr-stack" style="width:100%;">
           <p class="hr-eyebrow">Archivos</p>
@@ -6328,10 +6726,15 @@ function renderDownloadOpsForm(memberships = []) {
       </label>
       <label class="db-field" data-download-link-field><span>Ruta / link</span><input name="storage_path" data-download-storage-path required /></label>
       <label class="db-field" data-download-file-field hidden>
-        <span>Archivo</span>
-        <input name="download_file" type="file" data-download-file />
-        <button type="button" class="db-btn-secondary" data-download-cloud>Seleccionar desde Cloud</button>
-        <small class="db-field__hint" data-download-source>Se guardara en la carpeta downloads del usuario seleccionado.</small>
+        <span>Archivo o carpeta</span>
+        <div class="db-form__actions db-download-source-actions">
+          <input type="file" data-download-file hidden />
+          <input type="file" data-download-folder webkitdirectory directory multiple hidden />
+          <button type="button" class="db-btn-secondary" data-action="download-select-file">Seleccionar archivo</button>
+          <button type="button" class="db-btn-secondary" data-action="download-select-folder">Seleccionar carpeta</button>
+          <button type="button" class="db-btn-secondary" data-download-cloud>Seleccionar desde Cloud</button>
+        </div>
+        <small class="db-field__hint" data-download-source>La carpeta se guardara como carpeta real; sus archivos conservaran su estructura.</small>
       </label>
       <label class="db-field"><span>Notas</span><textarea name="notes" rows="3"></textarea></label>
       <div class="db-upload-progress" data-download-upload-progress hidden>
@@ -7791,7 +8194,7 @@ async function renderAdminTableEditor() {
     })).join('')
     : `<tr class="db-table__empty-row hr-table-empty"><td colspan="99" class="db-empty hr-table-empty">${suspiciousAdminEmpty ? 'No se pudieron validar tus permisos. Actualiza sesión.' : 'Sin filas disponibles.'}</td></tr>`;
   const membershipDashboardTable = isMembershipDashboard
-    ? renderMembershipDashboardTable(visibleData, { canEditMaterialDelivery: true })
+    ? renderMembershipDashboardTable(visibleData, { canEditMaterialDelivery: true, showScheduledDelivery: true })
     : '';
   const downloadsUserTable = isDownloadsUserView
     ? renderAdminDownloadsUserViewTable(rowsToRender)
@@ -8069,11 +8472,12 @@ function membershipCellClass(field, row) {
 
 function renderMembershipDashboardTable(rows = [], options = {}) {
   const deliveryByWeek = membershipDeliveryByWeek(rows);
+  const showScheduledDelivery = Boolean(options.showScheduledDelivery);
   const body = rows.length
     ? rows.map((row) => renderMembershipDashboardRow(row, deliveryByWeek.get(Number(row.semana ?? 0)), options)).join('')
     : `
       <tr class="db-table__empty-row hr-table-empty">
-        <td colspan="7" class="db-empty hr-table-empty">Sin datos de membresía.</td>
+        <td colspan="${showScheduledDelivery ? '8' : '7'}" class="db-empty hr-table-empty">Sin datos de membresía.</td>
       </tr>
     `;
 
@@ -8087,6 +8491,7 @@ function renderMembershipDashboardTable(rows = [], options = {}) {
             <th scope="col">Estado</th>
             <th scope="col">Saldo</th>
             <th scope="col">Fecha de saldo</th>
+            ${showScheduledDelivery ? '<th scope="col">Fecha de entrega programada</th>' : ''}
             <th scope="col">Fecha de entrega</th>
             <th scope="col">Notas</th>
           </tr>
@@ -8133,6 +8538,7 @@ function renderMembershipDashboardRow(row, delivery = null, options = {}) {
       <td class="${escapeAttr(membershipCellClass('estado', row).trim())}">${escapeHTML(row.estado ?? '-')}</td>
       <td class="${escapeAttr(membershipCellClass('saldo', row).trim())}">${formatMembershipRowBalance(row)}</td>
       <td>${escapeHTML(formatDisplayDateOnly(row.fecha_de_saldo))}</td>
+      ${options.showScheduledDelivery ? `<td>${escapeHTML(formatDisplayDateOnly(computedDelivery?.estimatedDelivery))}</td>` : ''}
       <td>${options.canEditMaterialDelivery ? renderMembershipDeliveryDateInput(row, computedDelivery, deliveryFormId, cycleNumber, deliveredAtText) : escapeHTML(deliveredAtText)}</td>
       <td>${options.canEditMaterialDelivery ? renderMembershipSessionNotesInput(row, sessionNotesFormId) : escapeHTML(displayNotes || '-')}</td>
     </tr>
@@ -8401,13 +8807,16 @@ function getDownloadCloudPicker(form) {
   const picker = createCloudSourcePicker({
     button,
     supabase,
-    cloudFunctionBase: CLOUD_FUNCTION_BASE,
+    cloudOrigin: CLOUD_HIDDENROOM_URL,
     allowFolders: true,
     title: 'Seleccionar entrega desde Cloud',
     onSelect: ({ sourceFile, source }) => {
       form.__hrCloudSource = source;
       form.__hrCloudFile = sourceFile || null;
+      form.__hrDownloadFiles = [];
+      form.__hrDownloadFolderName = '';
       const input = form.querySelector('[data-download-file]');
+      const folderInput = form.querySelector('[data-download-folder]');
       if (sourceFile && input) {
         const transfer = new DataTransfer();
         transfer.items.add(sourceFile);
@@ -8415,6 +8824,7 @@ function getDownloadCloudPicker(form) {
       } else if (input) {
         input.value = '';
       }
+      if (folderInput) folderInput.value = '';
       const label = form.querySelector('[data-download-source]');
       if (label) label.textContent = (source.kind === 'folder' ? 'Carpeta' : 'Archivo') + ' seleccionado desde Cloud: ' + source.name;
       updateDownloadMembershipFields(form);
@@ -8440,7 +8850,7 @@ function getBeatSaleCloudPicker(form) {
   const picker = createCloudSourcePicker({
     button,
     supabase,
-    cloudFunctionBase: CLOUD_FUNCTION_BASE,
+    cloudOrigin: CLOUD_HIDDENROOM_URL,
     allowFolders: false,
     title: 'Seleccionar beat desde Cloud',
     onSelect: ({ sourceFile, source }) => {
@@ -8481,7 +8891,7 @@ function updateDownloadMembershipFields(form) {
     storageInput.required = !fileMode;
     if (fileMode) storageInput.value = '';
   }
-  if (fileInput) fileInput.required = fileMode && !form.__hrCloudSource;
+  if (fileInput) fileInput.required = fileMode && !form.__hrCloudSource && !selectedDownloadFolderFiles(form).length;
 
   if (membershipFields) membershipFields.hidden = !linked;
   if (membershipInput) {
@@ -8535,6 +8945,35 @@ function slugifyStoreValue(value) {
 
 function fileBaseName(fileName) {
   return String(fileName || '').replace(/\.[^.]+$/, '');
+}
+
+function selectedDownloadFolderFiles(form) {
+  return Array.isArray(form?.__hrDownloadFiles)
+    ? form.__hrDownloadFiles.filter((file) => file && Number.isFinite(file.size) && file.size > 0)
+    : [];
+}
+
+function selectedDownloadFolderName(files = []) {
+  const relativePath = String(files[0]?.webkitRelativePath || '').replace(/\\/g, '/').trim();
+  const rootName = relativePath.split('/').filter(Boolean)[0] || '';
+  return rootName.replace(/[\u0000-\u001f\u007f]/g, '').trim();
+}
+
+function selectedDownloadRelativePath(file, rootName) {
+  const relativePath = String(file?.webkitRelativePath || '').replace(/\\/g, '/').trim();
+  const segments = relativePath.split('/').filter(Boolean);
+  if (!segments.length || segments[0] !== rootName) {
+    throw new Error('No se pudo leer la estructura de la carpeta seleccionada.');
+  }
+  const relativeSegments = segments.slice(1);
+  if (!relativeSegments.length || relativeSegments.some((segment) => (
+    segment === '.'
+    || segment === '..'
+    || /[\u0000-\u001f\u007f]/.test(segment)
+  ))) {
+    throw new Error('La carpeta contiene una ruta de archivo no válida.');
+  }
+  return relativeSegments.join('/');
 }
 
 function fileExtension(fileName) {
@@ -10118,8 +10557,10 @@ async function prepareDownloadValues(form, values) {
 
   if (sourceType === 'file') {
     const source = form.__hrCloudSource || null;
+    const localFolderFiles = selectedDownloadFolderFiles(form);
+    const localFolderName = selectedDownloadFolderName(localFolderFiles);
     const file = form.querySelector('[data-download-file]')?.files?.[0] || form.__hrCloudFile || null;
-    if (!file && !source) {
+    if (!file && !source && !localFolderFiles.length) {
       showToast('Selecciona un archivo o carpeta para subir a Cloud.', 'error');
       return false;
     }
@@ -10138,22 +10579,43 @@ async function prepareDownloadValues(form, values) {
       return false;
     }
     setDownloadUploadProgress(form, 8, 'Validando fuente');
-    if (source?.kind === 'folder') {
-      const targetFolderPath = joinCloudPath(targetRoot, source.name);
+    if (source?.kind === 'folder' || localFolderFiles.length) {
+      const folderName = source?.kind === 'folder' ? source.name : localFolderName;
+      if (!folderName) {
+        showToast('No se pudo identificar el nombre de la carpeta.', 'error');
+        return false;
+      }
+      if (localFolderFiles.length > 500) {
+        showToast('La carpeta supera el límite de 500 archivos.', 'error');
+        return false;
+      }
+      const targetFolderPath = joinCloudPath(targetRoot, folderName);
       await ensureCloudFolderPath(targetFolderPath);
       setDownloadUploadProgress(form, 24, 'Preparando carpeta');
-      const sourceFiles = await walkCloudSource(source, { supabase, cloudFunctionBase: CLOUD_FUNCTION_BASE });
+      const sourceFiles = source?.kind === 'folder'
+        ? await walkCloudSource(source, { supabase, cloudOrigin: CLOUD_HIDDENROOM_URL })
+        : localFolderFiles.map((localFile) => ({
+          file: localFile,
+          relativePath: selectedDownloadRelativePath(localFile, folderName),
+        }));
+      if (!sourceFiles.length) throw new Error('La carpeta seleccionada no contiene archivos.');
+      const ensuredDestinations = new Set([targetFolderPath]);
       for (let index = 0; index < sourceFiles.length; index += 1) {
         const sourceFile = sourceFiles[index];
-        const localFile = await cloudSourceToFile(sourceFile, { supabase, cloudOrigin: CLOUD_HIDDENROOM_URL });
+        const localFile = source?.kind === 'folder'
+          ? await cloudSourceToFile(sourceFile, { supabase, cloudOrigin: CLOUD_HIDDENROOM_URL })
+          : sourceFile.file;
         const relativeParent = sourceFile.relativePath.split('/').slice(0, -1).join('/');
         const destination = relativeParent ? joinCloudPath(targetFolderPath, relativeParent) : targetFolderPath;
-        await ensureCloudFolderPath(destination);
+        if (!ensuredDestinations.has(destination)) {
+          await ensureCloudFolderPath(destination);
+          ensuredDestinations.add(destination);
+        }
         await uploadCloudFileToPath(localFile, destination);
         setDownloadUploadProgress(form, 24 + Math.round(((index + 1) / Math.max(sourceFiles.length, 1)) * 54), 'Copiando carpeta');
       }
       values.type = 'folder';
-      values.storage_path = buildCloudFolderDownloadUrl(targetRoot, source.name);
+      values.storage_path = buildCloudFolderDownloadUrl(targetRoot, folderName);
     } else {
       setDownloadUploadProgress(form, 24, 'Preparando carpeta');
       await ensureCloudFolderPath(targetRoot);
@@ -12494,10 +12956,17 @@ function attachMainDelegation() {
   const main = document.getElementById('js-main');
 
   main?.addEventListener('click', (e) => {
+    const action = e.target.closest('[data-action]')?.dataset.action;
     const cloudFolderDownload = e.target.closest("[data-cloud-folder-download]");
     if (cloudFolderDownload) {
       e.preventDefault();
       downloadCloudFolderFromPortal(cloudFolderDownload);
+      return;
+    }
+
+    if (action === 'client-download-preview') {
+      const previewButton = e.target.closest('[data-preview-reference]');
+      if (previewButton) playCloudPreviewFromPortal(previewButton);
       return;
     }
 
@@ -12526,6 +12995,16 @@ function attachMainDelegation() {
       return;
     }
 
+    if (action === 'download-select-file') {
+      e.target.closest('form')?.querySelector('[data-download-file]')?.click();
+      return;
+    }
+
+    if (action === 'download-select-folder') {
+      e.target.closest('form')?.querySelector('[data-download-folder]')?.click();
+      return;
+    }
+
     const passwordToggle = e.target.closest('[data-action="toggle-password"]');
     if (passwordToggle) {
       const input = passwordToggle.closest('.db-password-field')?.querySelector('input');
@@ -12536,6 +13015,12 @@ function attachMainDelegation() {
         passwordToggle.innerHTML = '<span class="password-eye" aria-hidden="true"></span>';
         passwordToggle.setAttribute('aria-label', visible ? 'Ver contraseña' : 'Ocultar contraseña');
       }
+      return;
+    }
+
+    const clientHomeAction = e.target.closest('.db-client-home-card[data-section]');
+    if (clientHomeAction) {
+      navigate(clientHomeAction.dataset.section);
       return;
     }
 
@@ -12571,7 +13056,6 @@ function attachMainDelegation() {
     }
 
     const taskCard = e.target.closest('.db-task-card[data-task-id]');
-    const action = e.target.closest('[data-action]')?.dataset.action;
 
     if (action === 'view-as-cancel') {
       window.HiddenRoomViewAs?.cancelSelector?.();
@@ -12630,14 +13114,60 @@ function attachMainDelegation() {
     if (action === 'client-downloads-open-folder') {
       const folderKey = e.target.closest('[data-folder-key]')?.dataset.folderKey;
       if (folderKey) {
-        setState({ clientDownloads: { selectedFolder: folderKey } });
+        setState({ clientDownloads: { selectedFolder: folderKey, browser: null } });
         renderSection(state.activeSection);
       }
       return;
     }
 
     if (action === 'client-downloads-back') {
-      setState({ clientDownloads: { selectedFolder: null } });
+      setState({ clientDownloads: { selectedFolder: null, browser: null } });
+      renderSection(state.activeSection);
+      return;
+    }
+
+    if (action === 'client-download-folder-open') {
+      const button = e.target.closest('[data-download-reference]');
+      const reference = button?.dataset.downloadReference || '';
+      const request = cloudDownloadRequestFromHref(reference);
+      if (!request) {
+        showToast('La carpeta no tiene una ruta Cloud válida.', 'error');
+        return;
+      }
+      const folderKey = state.clientDownloads?.selectedFolder;
+      setState({
+        clientDownloads: {
+          selectedFolder: folderKey,
+          browser: {
+            name: button.dataset.downloadName || request.name,
+            rootPath: joinCloudPath(request.path, request.name),
+            path: joinCloudPath(request.path, request.name),
+          },
+        },
+      });
+      renderSection(state.activeSection);
+      return;
+    }
+
+    if (action === 'client-download-folder-back') {
+      const browser = state.clientDownloads?.browser;
+      if (!browser) return;
+      const atRoot = normalizeCloudPath(browser.path) === normalizeCloudPath(browser.rootPath);
+      if (atRoot) {
+        setState({ clientDownloads: { selectedFolder: state.clientDownloads?.selectedFolder || null, browser: null } });
+      } else {
+        const parentPath = parentCloudPath(browser.path);
+        setState({
+          clientDownloads: {
+            selectedFolder: state.clientDownloads?.selectedFolder || null,
+            browser: {
+              ...browser,
+              path: parentPath,
+              name: parentPath.split('/').filter(Boolean).pop() || browser.name,
+            },
+          },
+        });
+      }
       renderSection(state.activeSection);
       return;
     }
@@ -12832,13 +13362,39 @@ function attachMainDelegation() {
       if (label) label.textContent = "Selecciona un archivo de audio.";
     }
 
+    const downloadFolderInput = e.target.closest('[data-download-folder]');
+    if (downloadFolderInput) {
+      const form = downloadFolderInput.closest('form');
+      const files = [...(downloadFolderInput.files ?? [])];
+      form.__hrCloudSource = null;
+      form.__hrCloudFile = null;
+      form.__hrDownloadFiles = files;
+      form.__hrDownloadFolderName = selectedDownloadFolderName(files);
+      const fileInput = form.querySelector('[data-download-file]');
+      if (fileInput) fileInput.value = '';
+      const label = form.querySelector('[data-download-source]');
+      if (label) {
+        label.textContent = files.length
+          ? `Carpeta seleccionada: ${form.__hrDownloadFolderName || 'sin nombre'} (${files.length} archivos).`
+          : 'Selecciona un archivo o carpeta para subir a Cloud.';
+      }
+      updateDownloadMembershipFields(form);
+      return;
+    }
+
     const downloadFileInput = e.target.closest("[data-download-file]");
     if (downloadFileInput) {
       const form = downloadFileInput.closest("form");
       form.__hrCloudSource = null;
       form.__hrCloudFile = null;
+      form.__hrDownloadFiles = [];
+      form.__hrDownloadFolderName = '';
+      const folderInput = form.querySelector('[data-download-folder]');
+      if (folderInput) folderInput.value = '';
       const label = form.querySelector("[data-download-source]");
-      if (label) label.textContent = "Se guardara en la carpeta downloads del usuario seleccionado.";
+      if (label) label.textContent = downloadFileInput.files?.[0]?.name
+        ? `Archivo seleccionado: ${downloadFileInput.files[0].name}`
+        : "Selecciona un archivo o carpeta para subir a Cloud.";
       updateDownloadMembershipFields(form);
     }
 
@@ -13270,7 +13826,6 @@ async function init() {
 
   attachSidebarListeners();
   attachPortalMobileListeners();
-  attachNotificationListeners();
   attachUserMenuListeners();
   attachMainDelegation();
   attachRoutePersistenceListener();

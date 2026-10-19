@@ -37,12 +37,14 @@ async function headersFor(supabase, accept = "application/json") {
   return { Accept: accept, Authorization: `Bearer ${session.access_token}` };
 }
 
-async function listPath({ supabase, cloudFunctionBase, path }) {
-  const response = await fetch(`${cloudFunctionBase}/cloud-list?path=${encodeURIComponent(normalizeCloudPath(path))}`, { headers: await headersFor(supabase) });
+async function listPath({ supabase, cloudOrigin = DEFAULT_CLOUD_ORIGIN, path }) {
+  const origin = String(cloudOrigin || DEFAULT_CLOUD_ORIGIN).replace(/\/$/, "");
+  const response = await fetch(`${origin}/api/files?path=${encodeURIComponent(normalizeCloudPath(path))}`, { headers: await headersFor(supabase) });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body?.error || `No se pudo cargar Cloud (${response.status}).`);
   if (body?.status === "pending") throw new Error("Cloud está procesando la carpeta. Intenta de nuevo.");
-  return { path: normalizeCloudPath(body?.path || path), folders: (body?.folders || []).map((item) => String(item?.name || item)).filter(Boolean), files: (body?.files || []).map((item) => fileSource(path, item)).filter((item) => item.name) };
+  const listedPath = normalizeCloudPath(body?.path || path);
+  return { path: listedPath, folders: (body?.folders || []).map((item) => String(item?.name || item)).filter(Boolean), files: (body?.files || []).map((item) => fileSource(listedPath, item)).filter((item) => item.name) };
 }
 
 export async function cloudSourceToFile(source, { supabase, cloudOrigin = DEFAULT_CLOUD_ORIGIN } = {}) {
@@ -53,12 +55,12 @@ export async function cloudSourceToFile(source, { supabase, cloudOrigin = DEFAUL
   return new File([blob], source.name, { type: source.mimeType || blob.type || "application/octet-stream", lastModified: Date.now() });
 }
 
-export async function walkCloudSource(source, { supabase, cloudFunctionBase, maxFiles = 500 } = {}) {
+export async function walkCloudSource(source, { supabase, cloudOrigin = DEFAULT_CLOUD_ORIGIN, maxFiles = 500 } = {}) {
   if (!source || source.kind !== "folder") return [];
   const files = [];
   async function walk(path, relative = "") {
     if (files.length >= maxFiles) throw new Error(`La carpeta supera el límite de ${maxFiles} archivos.`);
-    const listing = await listPath({ supabase, cloudFunctionBase, path });
+    const listing = await listPath({ supabase, cloudOrigin, path });
     listing.files.forEach((file) => files.push({ ...file, relativePath: relative ? `${relative}/${file.name}` : file.name }));
     for (const folder of listing.folders) await walk(joinCloudPath(path, folder), relative ? `${relative}/${folder}` : folder);
   }
@@ -73,8 +75,8 @@ function installStyles() {
   document.head.append(style);
 }
 
-export function createCloudSourcePicker({ button, supabase, cloudFunctionBase, cloudOrigin = DEFAULT_CLOUD_ORIGIN, allowFolders = false, rootPath = "/", onSelect, onError, title = "Seleccionar desde Cloud" } = {}) {
-  if (!button || !supabase || !cloudFunctionBase) return null;
+export function createCloudSourcePicker({ button, supabase, cloudOrigin = DEFAULT_CLOUD_ORIGIN, allowFolders = false, rootPath = "/", onSelect, onError, title = "Seleccionar desde Cloud" } = {}) {
+  if (!button || !supabase || !cloudOrigin) return null;
   installStyles();
   const overlay = document.createElement("div"); overlay.className = "hr-cloud-picker"; overlay.hidden = true;
   overlay.innerHTML = `<section class="hr-cloud-picker__panel" role="dialog" aria-modal="true"><header class="hr-cloud-picker__head"><h2>${escapeHtml(title)}</h2><button type="button" data-cloud-picker-close aria-label="Cerrar">×</button></header><div class="hr-cloud-picker__body"><nav class="hr-cloud-picker__crumbs" aria-label="Ruta de Cloud"></nav><p class="hr-cloud-picker__status" role="status"></p><div class="hr-cloud-picker__list"></div><p class="hr-cloud-picker__selection">Nada seleccionado.</p></div><footer class="hr-cloud-picker__foot"><button type="button" data-cloud-picker-cancel>Cancelar</button><button type="button" class="hr-cloud-picker__select" data-cloud-picker-select disabled>Subir</button></footer></section>`;
@@ -86,10 +88,10 @@ export function createCloudSourcePicker({ button, supabase, cloudFunctionBase, c
   function renderCrumbs() { let path = "/"; const parts = currentPath === "/" ? [] : currentPath.slice(1).split("/"); crumbs.innerHTML = `<button type="button" data-cloud-path="/">Cloud</button>${parts.map((part) => { path = joinCloudPath(path, part); return `<span>/</span><button type="button" data-cloud-path="${escapeHtml(path)}">${escapeHtml(part)}</button>`; }).join("")}`; }
   function choose(item) { selected = item; selectButton.disabled = !item || (item.kind === "folder" && !allowFolders); selection.textContent = item ? `${item.kind === "folder" ? "Carpeta" : "Archivo"}: ${item.name}` : "Nada seleccionado."; list.querySelectorAll(".is-selected").forEach((row) => row.classList.remove("is-selected")); list.querySelector(`[data-kind="${item?.kind}"][data-name="${CSS.escape(item?.name || "")}"]`)?.classList.add("is-selected"); }
   function render(listing) { const folders = listing.folders.map((name) => `<button class="hr-cloud-picker__row" type="button" data-kind="folder" data-name="${escapeHtml(name)}"><span>📁</span><span><span class="hr-cloud-picker__name">${escapeHtml(name)}</span><span class="hr-cloud-picker__meta">Carpeta</span></span><span class="hr-cloud-picker__open" data-cloud-open-folder>Abrir</span></button>`).join(""); const files = listing.files.map((file) => `<button class="hr-cloud-picker__row" type="button" data-kind="file" data-name="${escapeHtml(file.name)}"><span>📄</span><span><span class="hr-cloud-picker__name">${escapeHtml(file.name)}</span><span class="hr-cloud-picker__meta">${escapeHtml(file.mimeType)} · ${escapeHtml(bytesLabel(file.size))}</span></span><span>›</span></button>`).join(""); list.innerHTML = folders + files || `<p class="hr-cloud-picker__status">Esta carpeta está vacía.</p>`; }
-  async function load(path = currentPath) { if (loading) return; loading = true; currentPath = normalizeCloudPath(path); choose(null); renderCrumbs(); list.innerHTML = ""; setStatus("Cargando Cloud…"); try { render(await listPath({ supabase, cloudFunctionBase, path: currentPath })); setStatus(""); } catch (error) { list.innerHTML = ""; setStatus(error?.message || "No se pudo cargar Cloud.", true); onError?.(error); } finally { loading = false; } }
+  async function load(path = currentPath) { if (loading) return; loading = true; currentPath = normalizeCloudPath(path); choose(null); renderCrumbs(); list.innerHTML = ""; setStatus("Cargando Cloud…"); try { render(await listPath({ supabase, cloudOrigin, path: currentPath })); setStatus(""); } catch (error) { list.innerHTML = ""; setStatus(error?.message || "No se pudo cargar Cloud.", true); onError?.(error); } finally { loading = false; } }
   const open = () => { overlay.hidden = false; load(pickerRoot); };
   button.addEventListener("click", open); overlay.querySelector("[data-cloud-picker-close]").addEventListener("click", close); overlay.querySelector("[data-cloud-picker-cancel]").addEventListener("click", close);
   overlay.addEventListener("click", (event) => { if (event.target === overlay) return close(); const crumb = event.target.closest("[data-cloud-path]"); if (crumb) return load(crumb.dataset.cloudPath); const row = event.target.closest(".hr-cloud-picker__row"); if (!row) return; const item = row.dataset.kind === "folder" ? folderSource(currentPath, row.dataset.name) : fileSource(currentPath, { name: row.dataset.name }); if (event.target.closest("[data-cloud-open-folder]") || (event.detail > 1 && item.kind === "folder")) return load(joinCloudPath(currentPath, item.name)); choose(item); });
-  selectButton.addEventListener("click", async () => { if (!selected || loading) return; loading = true; selectButton.disabled = true; setStatus("Preparando selección…"); try { await onSelect?.({ ...selected, sourceFile: selected.kind === "file" ? await cloudSourceToFile(selected, { supabase, cloudOrigin }) : null }); close(); } catch (error) { setStatus(error?.message || "No se pudo usar la selección.", true); onError?.(error); selectButton.disabled = false; } finally { loading = false; } });
+  selectButton.addEventListener("click", async () => { if (!selected || loading) return; loading = true; selectButton.disabled = true; setStatus("Preparando selección…"); try { await onSelect?.({ ...selected, source: selected, sourceFile: selected.kind === "file" ? await cloudSourceToFile(selected, { supabase, cloudOrigin }) : null }); close(); } catch (error) { setStatus(error?.message || "No se pudo usar la selección.", true); onError?.(error); selectButton.disabled = false; } finally { loading = false; } });
   return { open, close, destroy: () => { close(); overlay.remove(); } };
 }

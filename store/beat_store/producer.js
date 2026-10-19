@@ -1,5 +1,6 @@
 
-import { beatCardMarkup as sharedBeatCardMarkup } from "./beat-card.js?v=20261002-runtime-assets-v1";
+import { beatCardMarkup as sharedBeatCardMarkup } from "./beat-card.js?v=20261018-license-request-v10";
+import { beatLicenseAssignmentIsSelectable, beatLicenseModalMarkup } from "./license-modal.js?v=20261018-license-request-v10";
 
 const SUPABASE_URL = "https://rpcunbkstadgngqrjafp.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_7v_FIgTjWjJgtT1YHIAYSw_bRBmQjZO";
@@ -10,8 +11,6 @@ const supabase = await window.HiddenRoomSupabase.getClient();
 const profileSlug = new URLSearchParams(window.location.search).get("producer") || "";
 const grid = document.getElementById("producer-beat-grid");
 const modal = document.getElementById("beat-license-modal");
-const modalTitle = document.getElementById("beat-license-modal-title");
-const modalSubtitle = document.getElementById("beat-license-modal-subtitle");
 const modalContent = document.getElementById("beat-license-modal-content");
 const avatarActions = document.getElementById("producer-avatar-actions");
 const avatarInput = document.getElementById("producer-avatar-file");
@@ -76,7 +75,7 @@ async function fetchProducerProfile(slug) {
 async function fetchProducerBeats(profile) {
   const { data, error } = await supabase
     .from("store_products")
-    .select("id, slug, name, description, category, price, currency, image_url, beat_cover_path, beat_thumb_path, file_url, producer, producer_profile_id, beat_genre, beat_bpm, beat_key, beat_duration_seconds, beat_bpm_autodetected, beat_key_autodetected, beat_original_path, beat_preview_path, beat_preview_status, is_active, stock, featured, created_at")
+    .select("id, slug, name, description, category, price, currency, image_url, beat_cover_path, beat_thumb_path, file_url, producer, producer_profile_id, beat_genre, beat_bpm, beat_key, beat_duration_seconds, beat_bpm_autodetected, beat_key_autodetected, beat_original_path, beat_mp3_path, beat_stems_path, beat_preview_path, beat_preview_status, is_active, stock, featured, created_at")
     .eq("category", "beats")
     .eq("is_active", true)
     .order("featured", { ascending: false })
@@ -92,7 +91,7 @@ async function fetchBeatLicenseAssignments(beatIds) {
     .from("beat_license_assignments")
     .select("id, beat_id, license_id, price, is_enabled, beat_licenses(id, name, description, terms, stream_limit, unlimited_streams, format, is_active)")
     .in("beat_id", beatIds)
-    .eq("is_enabled", true);
+;
   if (error) return [];
   return data ?? [];
 }
@@ -137,7 +136,7 @@ function beatCardMarkup(product) {
     ? Math.min(...licensePrices)
     : (Number.isFinite(productPrice) && productPrice > 0 ? productPrice : null);
   const priceLabel = startingPrice === null
-    ? "Precio por confirmar"
+    ? "Aún no disponible"
     : `Desde ${formatPrice(startingPrice, product.currency)}`;
   return sharedBeatCardMarkup({
     id: escapeHtml(product.id),
@@ -305,7 +304,7 @@ function toggleBeatPreview(productId) {
   const previewUrl = previewUrlForProduct(product);
   if (!product || !previewUrl) return;
   if (window.HiddenRoomBeatPlayer?.src === previewUrl && window.HiddenRoomBeatPlayer?.isPlaying) {
-    window.dispatchEvent(new CustomEvent("hr:beat-preview-toggle", { detail: { action: "pause" } }));
+    window.dispatchEvent(new CustomEvent("hr:beat-preview-toggle", { detail: { source: "beat-store", action: "pause" } }));
     return;
   }
   playBeat(productId);
@@ -326,6 +325,7 @@ function playBeat(productId) {
 
 function beatPlayerDetailForProduct(product) {
   return {
+    source: "beat-store",
     src: previewUrlForProduct(product),
     title: product.name || "Beat",
     detail: producerDisplayName(state.profile.display_name),
@@ -549,8 +549,6 @@ function setAvatarStatus(message, isError = false) {
 function openLicensesModal(productId) {
   const product = state.products.find((candidate) => candidate.id === productId);
   if (!product) return;
-  modalTitle.textContent = product.name;
-  modalSubtitle.textContent = producerDisplayName(state.profile.display_name);
   modalContent.innerHTML = beatLicensesContentMarkup(product);
   if (modal.parentElement !== document.body) document.body.appendChild(modal);
   modal.hidden = false;
@@ -576,9 +574,9 @@ function handleModalClick(event) {
 
 function addLicenseToCart(productId, licenseId) {
   const product = state.products.find((candidate) => candidate.id === productId);
-  const assignment = state.assignments.find((candidate) => candidate.beat_id === productId && candidate.license_id === licenseId && candidate.is_enabled !== false && candidate.beat_licenses?.is_active !== false);
+  const assignment = state.assignments.find((candidate) => candidate.beat_id === productId && candidate.license_id === licenseId);
   const license = assignment?.beat_licenses;
-  if (!product || !assignment || !license) return false;
+  if (!product || !assignment || !beatLicenseAssignmentIsSelectable(product, assignment) || !license) return false;
 
   let cart = [];
   try {
@@ -614,34 +612,13 @@ function addLicenseToCart(productId, licenseId) {
 }
 
 function beatLicensesContentMarkup(product) {
-  const licenses = state.assignments
-    .filter((assignment) => assignment.beat_id === product.id && assignment.beat_licenses?.is_active !== false)
-    .map((assignment) => ({
-      id: assignment.license_id,
-      name: assignment.beat_licenses?.name || "Licencia",
-      description: assignment.beat_licenses?.description || "Licencia disponible para este beat.",
-      price: Number(assignment.price),
-      streams: streamLimitLabel(assignment.beat_licenses),
-      format: assignment.beat_licenses?.format || "",
-      terms: assignment.beat_licenses?.terms || "",
-    }));
-  if (!licenses.length) return '<p class="beat-license-empty">Este beat todavía no tiene licencias habilitadas.</p>';
-  return `<div class="beat-license-list">${licenses.map((license) => `
-    <article class="beat-license-option">
-      <header><div><h5>${escapeHtml(license.name)}</h5><p>${escapeHtml(license.description)}</p></div><strong>${escapeHtml(formatPrice(license.price, product.currency))}</strong></header>
-      <dl><div><dt>Límite</dt><dd>${escapeHtml(license.streams)}</dd></div>${license.format ? `<div><dt>Formato</dt><dd>${escapeHtml(license.format)}</dd></div>` : ""}</dl>
-      ${license.terms ? `<p class="beat-license-terms">${escapeHtml(license.terms)}</p>` : ""}
-      <div class="beat-license-actions"><button class="primary-button" type="button" data-buy-license="${escapeHtml(product.id)}" data-license-id="${escapeHtml(license.id)}">Comprar ahora</button><button class="secondary-button" type="button" data-add-license="${escapeHtml(product.id)}" data-license-id="${escapeHtml(license.id)}">Añadir al carrito</button></div>
-    </article>`).join("")}</div>`;
+  return beatLicenseModalMarkup({
+    product,
+    assignments: state.assignments,
+    targetId: product?.id,
+    includeStemsPlaceholder: true,
+  });
 }
-
-function streamLimitLabel(license) {
-  if (!license) return "Por confirmar";
-  if (license.unlimited_streams) return "Ilimitados";
-  const limit = Number(license.stream_limit);
-  return Number.isFinite(limit) ? `${new Intl.NumberFormat("es-MX").format(limit)} streams` : "Por confirmar";
-}
-
 function socialLinks(raw) {
   const links = raw && typeof raw === "object" ? raw : {};
   return Object.entries(links)

@@ -5,7 +5,7 @@ export function beatCardMarkup({
   coverMarkup,
   metaMarkup,
   optionsMarkup = "",
-  priceLabel = "Precio por confirmar",
+  priceLabel = "Aún no disponible",
   canBuy = true,
 }) {
   return `

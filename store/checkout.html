@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Space+Grotesk:wght@400;500;600;700&family=Unbounded:wght@400;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="../styles.css?v=20261014-view-as-drag-v1">
+  <link rel="stylesheet" href="../styles.css?v=20261019-saved-cards-v2">
 
 </head>
 <body class="store-page hr-page" data-page="checkout" data-hr-chrome data-hr-context="store">
@@ -23,7 +23,7 @@
     <div class="checkout-layout hr-grid">
       <div class="checkout-flow">
         <form id="checkout-form" class="checkout-form hr-card hr-panel hr-stack">
-        <p id="checkout-account-notice" class="account-notice"></p>
+        <h2 class="checkout-form__title">Datos del comprador</h2>
         <div class="field hr-field">
           <label class="hr-label" for="customer-name">Nombre completo</label>
           <input id="customer-name" class="hr-input" name="name" autocomplete="name" required maxlength="120">
@@ -39,7 +39,7 @@
         <p id="checkout-error" class="form-error hr-error" role="alert" aria-live="assertive"></p>
         <button id="checkout-button" class="primary-button hr-btn hr-btn-primary hr-btn-block" type="submit">Continuar al pago</button>
         <p class="secure-note hr-help">Hidden Room no recibe ni almacena los datos de tu tarjeta. El formulario seguro lo procesa Mercado Pago.</p>
-        <p class="checkout-policy-note hr-help">Al continuar confirmaras el resumen mostrado. Terminos, privacidad y politica de reembolsos publicos: pendientes de publicar. <a href="https://wa.me/525542881737" target="_blank" rel="noopener noreferrer">Soporte por WhatsApp</a>.</p>
+        <p class="checkout-policy-note hr-help">Al continuar confirmaras el resumen mostrado. <a href="https://wa.me/525542881737" target="_blank" rel="noopener noreferrer">Soporte por WhatsApp</a>.</p>
         </form>
         <section id="payment-panel" class="payment-panel hr-card hr-panel hr-stack" hidden>
           <div class="payment-panel__heading">
@@ -49,6 +49,7 @@
             </div>
             <button id="payment-back" class="secondary-button hr-btn" type="button">Editar datos</button>
           </div>
+          <p class="checkout-save-card">Se guarda de forma segura en Mercado Pago. Hidden Room no posee datos de tu tarjeta.</p>
           <div id="cardPaymentBrick_container"></div>
           <p id="payment-status" class="secure-note hr-help" aria-live="polite"></p>
         </section>
@@ -59,12 +60,11 @@
 
   <footer class="store-footer">
     <span>Pago procesado por Mercado Pago.</span>
-    <span class="store-footer__policies">No hay paginas publicas de terminos, privacidad o reembolsos disponibles todavia.</span>
     <a href="https://wa.me/525542881737" target="_blank" rel="noopener noreferrer">Soporte por WhatsApp</a>
   </footer>
-  <script src="../site.js?v=20261015-view-as-readonly-v1"></script>
+  <script src="../site.js?v=20261018-producer-handle-v1"></script>
   <script src="../analytics/analytics.js?v=20261002-runtime-assets-v1"></script>
   <script src="payment-config.js?v=20260808-mp-test"></script>
-  <script type="module" src="store.js?v=20261015-view-as-readonly-v1"></script>
+  <script type="module" src="store.js?v=20261019-saved-cards-v2"></script>
 </body>
 </html>

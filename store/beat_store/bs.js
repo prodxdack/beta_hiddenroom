@@ -1,5 +1,6 @@
 
-import { beatCardMarkup as sharedBeatCardMarkup } from "./beat-card.js?v=20261002-runtime-assets-v1";
+import { beatCardMarkup as sharedBeatCardMarkup } from "./beat-card.js?v=20261018-license-request-v10";
+import { beatLicenseAssignmentIsSelectable, beatLicenseModalMarkup } from "./license-modal.js?v=20261018-license-request-v10";
 
 const SUPABASE_URL = "https://rpcunbkstadgngqrjafp.supabase.co";
 import { createCloudSourcePicker } from '../../assets/js/cloud-source-picker.js';
@@ -14,7 +15,7 @@ const CLOUD_FUNCTION_BASE = `${SUPABASE_URL}/functions/v1`;
 const supabase = await window.HiddenRoomSupabase.getClient();
 const hrBeatStoreLifecycle = new AbortController();
 window.HiddenRoomApp?.register(() => hrBeatStoreLifecycle.abort());
-const state = { products: [], adminProducts: [], beats: [], items: [], searchIndex: new Map(), genreIndex: new Map(), renderVersion: 0, renderedKey: "", licenses: [], assignments: [], producerProfiles: [], beatUploadUsers: [], beatUploadPermissions: [], beatUploadPermissionsError: null, mercadoPagoConfig: null, mercadoPagoConfigError: null, durationDetections: new Set(), isAdmin: false, canEditOwnBeats: false, currentUserId: null, currentUsername: "", hasBeatMetadata: true, hasBeatLicenses: true, hasBeatPreviews: true, hasBeatDeliveryPaths: true, hasBeatAutodetectFlags: true };
+const state = { products: [], adminProducts: [], beats: [], items: [], searchIndex: new Map(), genreIndex: new Map(), renderVersion: 0, renderedKey: "", licenses: [], assignments: [], producerProfiles: [], beatUploadUsers: [], beatUploadPermissions: [], beatUploadPermissionsError: null, mercadoPagoConfig: null, mercadoPagoConfigError: null, globalPlayerBeatId: "", globalPlayerSettingError: null, durationDetections: new Set(), isAdmin: false, canEditOwnBeats: false, currentUserId: null, currentUsername: "", hasBeatMetadata: true, hasBeatLicenses: true, hasBeatPreviews: true, hasBeatDeliveryPaths: true, hasBeatAutodetectFlags: true };
 
 const grid = document.getElementById("beat-grid");
 const searchInput = document.getElementById("beat-search");
@@ -41,6 +42,9 @@ const adminList = document.getElementById("beat-admin-products");
 const adminTabButtons = [...document.querySelectorAll("[data-admin-tab]")];
 const adminTabPanels = [...document.querySelectorAll("[data-admin-panel]")];
 const adminStatus = document.getElementById("beat-admin-status");
+const globalPlayerSelect = document.getElementById("beat-global-player-select");
+const globalPlayerSaveButton = document.getElementById("beat-global-player-save");
+const globalPlayerStatus = document.getElementById("beat-global-player-status");
 const adminError = document.getElementById("beat-admin-error");
 const cancelEditButton = document.getElementById("beat-cancel-edit");
 const beatUploadInput = document.getElementById("beat-upload-file");
@@ -66,8 +70,8 @@ const beatMercadoPagoForm = document.getElementById("beat-mercadopago-form");
 const beatMercadoPagoStatus = document.getElementById("beat-mercadopago-status");
 const beatMercadoPagoError = document.getElementById("beat-mercadopago-error");
 const beatLicenseModal = document.getElementById("beat-license-modal");
-const beatLicenseModalTitle = document.getElementById("beat-license-modal-title");
-const beatLicenseModalSubtitle = document.getElementById("beat-license-modal-subtitle");
+
+
 const beatLicenseModalContent = document.getElementById("beat-license-modal-content");
 let beatSearchTimer = 0;
 let beatFilterUrlTimer = 0;
@@ -90,9 +94,11 @@ async function initBeatStore() {
   updateCartCount();
   if (beatFilterPanel && beatFilterPanel.parentElement !== document.body) document.body.appendChild(beatFilterPanel);
   state.isAdmin = await currentUserIsAdmin();
-  const [products, beats, licenses, producerProfiles, beatUploadAccess, mercadoPagoConfig] = await Promise.all([fetchBeatProducts(state.isAdmin), fetchCloudBeats(), fetchBeatLicenses(state.isAdmin), fetchProducerProfiles(state.isAdmin), fetchBeatUploadAccess(state.isAdmin), fetchMercadoPagoConfig(state.isAdmin)]);
+  const [products, beats, licenses, producerProfiles, beatUploadAccess, mercadoPagoConfig, globalPlayerSetting] = await Promise.all([fetchBeatProducts(state.isAdmin), fetchCloudBeats(), fetchBeatLicenses(state.isAdmin), fetchProducerProfiles(state.isAdmin), fetchBeatUploadAccess(state.isAdmin), fetchMercadoPagoConfig(state.isAdmin), fetchGlobalBeatPlayerSetting()]);
   state.products = products;
   state.adminProducts = state.isAdmin ? products : [];
+  state.globalPlayerBeatId = globalPlayerSetting.id;
+  state.globalPlayerSettingError = globalPlayerSetting.error;
   state.beats = beats;
   state.licenses = licenses;
   state.producerProfiles = producerProfiles;
@@ -101,7 +107,7 @@ async function initBeatStore() {
   state.beatUploadPermissionsError = beatUploadAccess.error;
   state.mercadoPagoConfig = mercadoPagoConfig.data;
   state.mercadoPagoConfigError = mercadoPagoConfig.error;
-  state.assignments = await fetchBeatLicenseAssignments(products.map((product) => product.id), state.isAdmin);
+  state.assignments = await fetchBeatLicenseAssignments(products.map((product) => product.id), true);
   state.items = mergeProductsAndBeats(products, beats);
   buildBeatSearchIndex();
   renderGenreOptions();
@@ -206,6 +212,7 @@ async function initBeatStore() {
   adminTabButtons.forEach((button) => button.addEventListener("click", () => setAdminTab(button.dataset.adminTab, true), { signal: hrBeatStoreLifecycle.signal }));
   adminForm?.addEventListener("change", handleBeatLicenseAssignmentChange);
   adminList?.addEventListener("click", handleAdminListClick);
+  globalPlayerSaveButton?.addEventListener("click", handleGlobalBeatPlayerSave, { signal: hrBeatStoreLifecycle.signal });
   beatUploadPermissionsList?.addEventListener("click", handleBeatUploadPermissionClick);
   beatUploadPermissionsSearch?.addEventListener("input", handleBeatUploadPermissionsSearch);
   beatMercadoPagoForm?.addEventListener("submit", handleMercadoPagoConfigSubmit);
@@ -553,6 +560,17 @@ function isMissingBeatMetadataError(error) {
   return error?.code === "42703" || ["beat_genre", "beat_bpm", "beat_key", "beat_duration_seconds", "producer_user_id", "producer_profile_id"].some((column) => message.includes(column));
 }
 
+async function fetchGlobalBeatPlayerSetting() {
+  const { data, error } = await supabase
+    .from("beat_store_settings")
+    .select("global_player_beat_id")
+    .eq("id", 1)
+    .maybeSingle();
+  return {
+    id: String(data?.global_player_beat_id || "").trim(),
+    error: error || null,
+  };
+}
 async function fetchBeatLicenses(includeInactive = false) {
   if (!state.hasBeatLicenses) return [];
   let query = supabase
@@ -962,7 +980,7 @@ function beatCardMarkup(item) {
     ? Math.min(...licensePrices)
     : (Number.isFinite(productPrice) && productPrice > 0 ? productPrice : null);
   const priceLabel = startingPrice === null
-    ? "Precio por confirmar"
+    ? "Aún no disponible"
     : `Desde ${formatPrice(startingPrice, product?.currency)}`;
 
   return sharedBeatCardMarkup({
@@ -1008,57 +1026,16 @@ function beatCardOptionsMarkup(item) {
 
 function beatLicensesContentMarkup(item) {
   if (!item?.product) return '<p class="beat-license-empty">Licencias no disponibles para este beat.</p>';
-  const licenses = availableBeatLicenses(item);
-  return `
-    <div class="beat-license-list">
-      ${licenses.map((license) => `
-        <article class="beat-license-option">
-          <header>
-            <div>
-              <h5>${escapeHtml(license.name)}</h5>
-              <p>${escapeHtml(license.description)}</p>
-            </div>
-            <strong>${escapeHtml(formatPrice(license.price, item.product.currency))}</strong>
-          </header>
-          <dl>
-            <div><dt>Límite</dt><dd>${escapeHtml(license.streams)}</dd></div>
-            ${license.format ? `<div><dt>Formato</dt><dd>${escapeHtml(license.format)}</dd></div>` : ""}
-          </dl>
-          ${license.terms ? `<p class="beat-license-terms">${escapeHtml(license.terms)}</p>` : ""}
-          <div class="beat-license-actions">
-            <button class="primary-button" type="button" data-buy-license="${escapeHtml(item.id)}" data-license-id="${escapeHtml(license.id)}">Comprar ahora</button>
-            <button class="secondary-button" type="button" data-add-license="${escapeHtml(item.id)}" data-license-id="${escapeHtml(license.id)}">Añadir al carrito</button>
-          </div>
-        </article>
-      `).join("")}
-      ${stemsComingSoonMarkup()}
-    </div>`;
-}
-
-// TODO(stems): Remove this always-visible placeholder once producer stems upload,
-// protected entitlements and fulfillment are implemented end to end.
-function stemsComingSoonMarkup() {
-  return `
-    <article class="beat-license-option beat-license-option--disabled" aria-disabled="true">
-      <header>
-        <div>
-          <h5>Stems</h5>
-          <p>Esta licencia estará disponible próximamente.</p>
-        </div>
-        <strong>PRÓXIMAMENTE</strong>
-      </header>
-      <dl>
-        <div><dt>Estado</dt><dd>Bloqueada</dd></div>
-        <div><dt>Formato</dt><dd>Stems</dd></div>
-      </dl>
-      <div class="beat-license-actions">
-        <button class="secondary-button" type="button" disabled aria-disabled="true">Próximamente</button>
-      </div>
-    </article>`;
+  return beatLicenseModalMarkup({
+    product: item.product,
+    assignments: state.assignments,
+    targetId: item.id,
+    includeStemsPlaceholder: true,
+  });
 }
 function availableBeatLicenses(item) {
   return state.assignments
-    .filter((assignment) => assignment.beat_id === item.product?.id && assignment.is_enabled !== false && assignment.beat_licenses?.is_active !== false)
+    .filter((assignment) => assignment.beat_id === item.product?.id && beatLicenseAssignmentIsSelectable(item.product, assignment))
     .map((assignment) => ({
       id: assignment.license_id,
       assignmentId: assignment.id,
@@ -1158,7 +1135,7 @@ function handleGridClick(event) {
 }
 
 async function shareBeat(itemId) {
-  const item = state.items.find((candidate) => candidate.id === itemId);
+  const item = state.items.find((candidate) => candidate.id === itemId || candidate.product?.id === itemId);
   const slug = String(item?.product?.slug || "").trim();
   if (!item || !slug) {
     showNotice("Este beat no tiene un enlace público.", true);
@@ -1224,7 +1201,7 @@ async function copyTextToClipboard(value) {
 }
 
 function addBeatLicenseToCart(itemId, licenseId) {
-  const item = state.items.find((candidate) => candidate.id === itemId);
+  const item = state.items.find((candidate) => candidate.id === itemId || candidate.product?.id === itemId);
   const license = availableBeatLicenses(item).find((candidate) => candidate.id === licenseId);
   const product = item?.product;
   if (!product || !license) return;
@@ -1249,7 +1226,7 @@ function addBeatLicenseToCart(itemId, licenseId) {
     license_description: license.description,
     license_format: license.format,
     license_terms: license.terms,
-    beat_producer: productProducer(item),
+    beat_producer: producerDisplayName(productProducer(item)),
     quantity: 1,
   });
   localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
@@ -1261,12 +1238,12 @@ function addBeatLicenseToCart(itemId, licenseId) {
 }
 
 function openBeatLicensesModal(itemId, trigger = null) {
-  const item = state.items.find((candidate) => candidate.id === itemId);
+  const item = state.items.find((candidate) => candidate.id === itemId || candidate.product?.id === itemId);
   if (!item || !beatLicenseModal || !beatLicenseModalContent) return;
-  beatLicenseModalTitle.textContent = itemTitle(item);
-  beatLicenseModalSubtitle.textContent = productProducer(item) || "Productor por confirmar";
+
+
   beatLicenseModalContent.innerHTML = beatLicensesContentMarkup(item);
-  beatLicenseModalContent.insertAdjacentHTML("afterbegin", '<p class="beat-license-comparison-note">Compara precio, limite de streams, formato y los terminos registrados antes de elegir.</p>');
+
   beatLicenseModalContent.querySelectorAll(".beat-license-terms").forEach((terms) => {
     const details = document.createElement("details");
     const summary = document.createElement("summary");
@@ -1328,11 +1305,11 @@ function handleBeatLicenseModalKeydown(event) {
 }
 
 function toggleBeatPreview(itemId) {
-  const item = state.items.find((candidate) => candidate.id === itemId);
+  const item = state.items.find((candidate) => candidate.id === itemId || candidate.product?.id === itemId);
   const previewUrl = previewUrlForItem(item);
   if (!item || !previewUrl) return;
   if (window.HiddenRoomBeatPlayer?.src === previewUrl && window.HiddenRoomBeatPlayer?.isPlaying) {
-    window.dispatchEvent(new CustomEvent("hr:beat-preview-toggle", { detail: { action: "pause" } }));
+    window.dispatchEvent(new CustomEvent("hr:beat-preview-toggle", { detail: { source: "beat-store", action: "pause" } }));
     return;
   }
   playBeat(itemId);
@@ -1379,7 +1356,7 @@ function syncBeatCardPlayState(event) {
 }
 
 function playBeat(itemId) {
-  const item = state.items.find((candidate) => candidate.id === itemId);
+  const item = state.items.find((candidate) => candidate.id === itemId || candidate.product?.id === itemId);
   const previewUrl = previewUrlForItem(item);
   if (!item || !previewUrl) return;
   const visibleIds = [...document.querySelectorAll("[data-play-beat]")]
@@ -1393,7 +1370,7 @@ function playBeat(itemId) {
   const detail = beatPlayerDetailForItem(item);
   const producer = productProducer(item);
   const producerProfile = producerProfileForProduct(item.product);
-  detail.detail = producer || "Productor por confirmar";
+  detail.detail = producerDisplayName(producer);
   detail.producerSlug = producerProfile?.is_active === false ? "" : producerProfile?.slug || "";
   window.dispatchEvent(new CustomEvent("hr:beat-preview", {
     detail: {
@@ -1408,9 +1385,10 @@ function beatPlayerDetailForItem(item) {
   const producer = productProducer(item);
   const producerProfile = producerProfileForProduct(item.product);
   return {
+    source: "beat-store",
     src: previewUrlForItem(item),
     title: beatDisplayTitle(item),
-    detail: producer || "Productor por confirmar",
+    detail: producerDisplayName(producer),
     cover: coverUrlForItem(item),
     beatId: item.id,
     slug: item.product?.slug || "",
@@ -1461,7 +1439,7 @@ function beatRelativeFile(value) {
   return clean;
 }
 function addBeatToCart(itemId) {
-  const item = state.items.find((candidate) => candidate.id === itemId);
+  const item = state.items.find((candidate) => candidate.id === itemId || candidate.product?.id === itemId);
   if (!item?.product || !productCanBePurchased(item.product)) return;
   const cart = getCart();
   const existing = cart.find((candidate) => candidate.id === item.product.id);
@@ -1501,6 +1479,82 @@ function setupBeatCloudPickers() {
     });
   });
 }
+function globalBeatPlayerItemForProduct(product) {
+  return state.items.find((item) => item?.product?.id === product.id || item?.id === product.id) || null;
+}
+
+function renderGlobalBeatPlayerSetting() {
+  if (!globalPlayerSelect || !globalPlayerStatus || !state.isAdmin) return;
+  const candidates = state.adminProducts.filter((product) => {
+    if (!product.is_active || product.beat_preview_status === "error") return false;
+    return Boolean(previewUrlForItem(globalBeatPlayerItemForProduct(product)));
+  });
+  const options = candidates.map((product) => {
+    const producer = producerDisplayName(product.producer);
+    return '<option value="' + escapeHtml(product.id) + '">' + escapeHtml(product.name) + " · " + escapeHtml(producer) + "</option>";
+  });
+  globalPlayerSelect.innerHTML = ['<option value="">Sin beat seleccionado</option>', ...options].join("");
+  globalPlayerSelect.value = candidates.some((product) => String(product.id) === state.globalPlayerBeatId)
+    ? state.globalPlayerBeatId
+    : "";
+  const missingMigration = Boolean(state.globalPlayerSettingError);
+  globalPlayerSelect.disabled = missingMigration;
+  if (globalPlayerSaveButton) globalPlayerSaveButton.disabled = missingMigration;
+  globalPlayerStatus.classList.toggle("is-error", missingMigration);
+  if (missingMigration) {
+    globalPlayerStatus.textContent = "Aplica la migración beat_store_global_player para activar esta configuración.";
+  } else if (!candidates.length) {
+    globalPlayerStatus.textContent = "No hay beats activos con preview MP3 listo.";
+  } else if (globalPlayerSelect.value) {
+    globalPlayerStatus.textContent = "Este beat se cargará para todos los visitantes.";
+  } else {
+    globalPlayerStatus.textContent = "Selecciona un beat activo con preview MP3 listo.";
+  }
+}
+
+async function handleGlobalBeatPlayerSave() {
+  if (!state.isAdmin || !globalPlayerSelect || !globalPlayerStatus) return;
+  const beatId = String(globalPlayerSelect.value || "").trim();
+  const product = state.adminProducts.find((candidate) => String(candidate.id) === beatId);
+  const item = product ? globalBeatPlayerItemForProduct(product) : null;
+  if (beatId && (!product || !product.is_active || !previewUrlForItem(item))) {
+    globalPlayerStatus.textContent = "Selecciona un beat activo con preview MP3 listo.";
+    globalPlayerStatus.classList.add("is-error");
+    return;
+  }
+
+  if (globalPlayerSaveButton) globalPlayerSaveButton.disabled = true;
+  globalPlayerStatus.classList.remove("is-error");
+  globalPlayerStatus.textContent = "Guardando configuración...";
+  const { data, error } = await supabase
+    .from("beat_store_settings")
+    .update({ global_player_beat_id: beatId || null })
+    .eq("id", 1)
+    .select("id")
+    .maybeSingle();
+
+  if (error || !data) {
+    globalPlayerStatus.textContent = error?.message || "No se pudo guardar la configuración.";
+    globalPlayerStatus.classList.add("is-error");
+    if (globalPlayerSaveButton) globalPlayerSaveButton.disabled = false;
+    return;
+  }
+
+  state.globalPlayerBeatId = beatId;
+  state.globalPlayerSettingError = null;
+  renderGlobalBeatPlayerSetting();
+  if (item) {
+    const detail = beatPlayerDetailForItem(item);
+    const queue = state.items
+      .filter((candidate) => previewUrlForItem(candidate))
+      .map(beatPlayerDetailForItem)
+      .filter(Boolean);
+    window.dispatchEvent(new CustomEvent("hr:beat-player-default", {
+      detail: { ...detail, queue },
+    }));
+  }
+  showNotice(beatId ? "Beat global actualizado para todos los visitantes." : "Beat global retirado.");
+}
 function initializeAdminPanel() {
   if (!state.isAdmin || !adminPanel) return;
   if (adminFormSlot && adminForm && adminForm.parentElement !== adminFormSlot) adminFormSlot.append(adminForm);
@@ -1513,6 +1567,7 @@ function initializeAdminPanel() {
   setupBeatCloudPickers();
   resetBeatLicenseForm();
   renderAdminProducts();
+  renderGlobalBeatPlayerSetting();
   renderBeatLicenseAdmin();
   renderBeatUploadPermissions();
   renderMercadoPagoConfig();
@@ -1713,7 +1768,7 @@ function renderAdminProducts() {
           ${adminBeatAssetBadges(product)}
         </div>
         <h3>${escapeHtml(product.name)}</h3>
-        <p>${escapeHtml(product.slug)} / ${escapeHtml(product.producer || "Sin productor")} / stock ${escapeHtml(product.stock ?? "ilimitado")}</p>${adminProductMetaText(product) ? `<p class="beat-admin-row__music">${escapeHtml(adminProductMetaText(product))}</p>` : ""}
+        <p>${escapeHtml(product.slug)} / ${escapeHtml(product.producer ? producerDisplayName(product.producer) : "Sin productor")} / stock ${escapeHtml(product.stock ?? "ilimitado")}</p>${adminProductMetaText(product) ? `<p class="beat-admin-row__music">${escapeHtml(adminProductMetaText(product))}</p>` : ""}
       </div>
       <div class="admin-actions">
         <button class="secondary-button" type="button" data-edit-beat="${escapeHtml(product.id)}">Editar</button>
@@ -2508,9 +2563,12 @@ async function reloadBeatStore(options = {}) {
   const products = await fetchBeatProducts(state.isAdmin);
   state.products = products;
   state.adminProducts = state.isAdmin ? products : [];
+  const globalPlayerSetting = await fetchGlobalBeatPlayerSetting();
+  state.globalPlayerBeatId = globalPlayerSetting.id;
+  state.globalPlayerSettingError = globalPlayerSetting.error;
   state.licenses = await fetchBeatLicenses(state.isAdmin);
   state.producerProfiles = await fetchProducerProfiles(state.isAdmin);
-  state.assignments = await fetchBeatLicenseAssignments(products.map((product) => product.id), state.isAdmin);
+  state.assignments = await fetchBeatLicenseAssignments(products.map((product) => product.id), true);
   const beatUploadAccess = await fetchBeatUploadAccess(state.isAdmin);
   state.beatUploadUsers = beatUploadAccess.users;
   state.beatUploadPermissions = beatUploadAccess.permissions;
@@ -2523,6 +2581,7 @@ async function reloadBeatStore(options = {}) {
   renderGenreOptions();
   renderBeats();
   renderAdminProducts();
+  renderGlobalBeatPlayerSetting();
   renderBeatLicenseAdmin();
   renderBeatUploadPermissions();
   renderMercadoPagoConfig();
@@ -2685,7 +2744,7 @@ function producerStorageName(value) {
 
 function producerDisplayName(value) {
   const clean = producerStorageName(value);
-  if (!clean || clean === "Productor por confirmar") return clean || "Productor por confirmar";
+  if (!clean || ["Productor por confirmar", "Productor", "Sin productor", "Tu cuenta"].includes(clean)) return clean || "Productor por confirmar";
   return `@${clean}`;
 }
 function uniqueProducerSlug(name) {

@@ -2656,6 +2656,19 @@ html.hr-scroll-locked {
   background: var(--hr-red);
 }
 
+.hr-nav__notification-count--number {
+  width: auto;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--hr-red);
+  color: var(--hr-text);
+  font: 500 9px var(--hr-font-mono);
+  line-height: 1;
+}
 .hr-nav__notification-icon {
   display: block;
   width: 19px;
@@ -13904,7 +13917,7 @@ body.hr-beat-player-fullscreen-open .hr-beat-player {
   height: auto !important;
   padding: 12px !important;
   border: 1px solid rgba(240, 236, 228, .18) !important;
-  border-radius: 0 !important;
+  border-radius: 14px !important;
   background: linear-gradient(180deg, rgba(14, 14, 14, .96), rgba(4, 4, 4, .96)) !important;
   box-shadow: 0 18px 70px rgba(0, 0, 0, .44) !important;
   overflow: visible !important;
@@ -15187,4 +15200,211 @@ body span[data-hr-copy-segment] {
   body.db-body .hr-copy-editor {
     top: calc(var(--hr-nav-height-mobile, 64px) + 12px) !important;
   }
+}
+
+
+/* Shared responsive header component: greeting, avatar, notifications, menu. */
+#hr-global-nav .hr-nav__mobile-controls {
+  display: contents;
+}
+
+@media (max-width: 620px) {
+  #hr-global-nav .hr-nav__mobile-controls {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-self: end;
+    gap: 6px;
+  }
+
+  #hr-global-nav .hr-nav__actions {
+    position: static;
+    min-width: 0;
+    max-width: none;
+    width: auto;
+    flex: 0 1 auto;
+    gap: 4px;
+    overflow: visible;
+  }
+
+  #hr-global-nav .hr-nav__account {
+    width: min(36vw, 138px);
+    max-width: 138px;
+    flex-direction: row-reverse;
+    justify-content: flex-start;
+    gap: 7px;
+    order: 1;
+  }
+
+  #hr-global-nav .hr-nav__notifications {
+    order: 2;
+  }
+
+  #hr-global-nav .hr-nav__mobile-toggle {
+    position: static;
+    top: auto;
+    right: auto;
+    flex: 0 0 34px;
+    width: 34px;
+    height: 34px;
+  }
+}
+
+/* Fullscreen player: the brand mark is intentionally mobile-only. */
+@media (max-width: 620px) {
+  .hr-beat-player-fullscreen__visualizer {
+    position: relative;
+  }
+
+  .hr-beat-player-fullscreen__visualizer::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 8px;
+    z-index: 2;
+    width: 48px;
+    height: 40px;
+    background: url("/assets/img/white_logo.webp") center / contain no-repeat;
+    opacity: .92;
+    pointer-events: none;
+    transform: translateY(-50%);
+  }
+
+  .hr-beat-player-fullscreen__visualizer canvas {
+    position: absolute;
+    inset: 0;
+  }
+}
+
+/* Keep the global volume control consistent with Beat Store on every route. */
+.hr-beat-player__volume {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 24px;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.hr-beat-player__volume::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--red) 0 var(--hr-volume-progress, 100%), rgba(240, 236, 228, .2) var(--hr-volume-progress, 100%) 100%);
+}
+
+.hr-beat-player__volume::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border: 2px solid var(--red);
+  border-radius: 50%;
+  background: var(--white);
+}
+
+.hr-beat-player__volume::-moz-range-track {
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(240, 236, 228, .2);
+}
+
+.hr-beat-player__volume::-moz-range-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--red);
+}
+
+.hr-beat-player__volume::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--red);
+  border-radius: 50%;
+  background: var(--white);
+}
+
+/* Final volume control isolation: keep the bottom player stable across routes. */
+#hr-beat-player input.hr-beat-player__volume {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  height: 24px !important;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent !important;
+  box-sizing: border-box;
+}
+
+#hr-beat-player input.hr-beat-player__volume::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 4px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--red) 0 var(--hr-volume-progress, 100%), rgba(240, 236, 228, .2) var(--hr-volume-progress, 100%) 100%) !important;
+}
+
+#hr-beat-player input.hr-beat-player__volume::-webkit-slider-thumb {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border: 2px solid var(--red) !important;
+  border-radius: 50%;
+  background: var(--white) !important;
+}
+
+#hr-beat-player input.hr-beat-player__volume::-moz-range-track {
+  width: 100%;
+  height: 4px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(240, 236, 228, .2) !important;
+}
+
+#hr-beat-player input.hr-beat-player__volume::-moz-range-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--red) !important;
+}
+
+#hr-beat-player input.hr-beat-player__volume::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--red) !important;
+  border-radius: 50%;
+  background: var(--white) !important;
+}
+
+/* Final mute button alignment: center the speaker icon in the bottom player. */
+#hr-beat-player .hr-beat-player__mute {
+  display: grid !important;
+  place-items: center !important;
+  align-content: center;
+  justify-content: center;
+  min-width: 42px;
+  width: 42px;
+  height: 34px;
+  padding: 0 !important;
+  line-height: 0 !important;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+#hr-beat-player .hr-beat-player__mute .hr-player-icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  flex: 0 0 18px;
 }

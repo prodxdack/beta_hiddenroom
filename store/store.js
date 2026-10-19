@@ -279,6 +279,12 @@ function productCardMarkup(product) {
     </article>`;
 }
 
+function producerDisplayName(value) {
+  const clean = String(value || "").trim().replace(/^@+/, "");
+  if (!clean || ["Productor por confirmar", "Productor", "Sin productor", "Tu cuenta"].includes(clean)) return clean || "Productor por confirmar";
+  return "@" + clean;
+}
+
 async function renderProduct() {
   const container = document.getElementById("product-detail");
   const slug = new URLSearchParams(window.location.search).get("slug")?.trim();
@@ -303,7 +309,7 @@ async function renderProduct() {
   if (product.category === "beats") {
     const { data: beatDetails } = await supabase
       .from("store_products")
-      .select("beat_cover_path, beat_preview_path, beat_preview_status, beat_genre, beat_bpm, beat_key, producer, publication_status")
+      .select("beat_cover_path, beat_preview_path, beat_preview_status, beat_genre, beat_bpm, beat_key, producer, publication_status, beat_original_path, beat_mp3_path, beat_stems_path")
       .eq("id", product.id)
       .maybeSingle();
     if (beatDetails) Object.assign(product, beatDetails);
@@ -324,7 +330,7 @@ async function renderProduct() {
   const beatPreview = product.category === "beats" ? previewUrlForStoreBeat(product.beat_preview_path, product.beat_preview_status) : "";
   const productDescription = String(product.description || "").trim();
   const productDescriptionMarkup = productDescription ? `<p class="product-description">${escapeHtml(productDescription)}</p>` : "";
-  const beatPriceLabel = product.category === "beats" ? beatLicenseStartingPriceLabel(beatAssignments, product.currency) : "";
+  const beatPriceLabel = product.category === "beats" ? beatLicenseStartingPriceLabel(beatAssignments, product.currency, product) : "";
   if (product.category === "beats") {
     container.innerHTML = renderBeatProductMarkup(product, beatAssignments, beatPreview, beatPriceLabel, productDescriptionMarkup);
   } else {
@@ -346,14 +352,15 @@ async function renderProduct() {
     const previewButton = event.target.closest("[data-beat-preview-detail]");
     if (previewButton && beatPreview) {
       if (window.HiddenRoomBeatPlayer?.src === beatPreview && window.HiddenRoomBeatPlayer?.isPlaying) {
-        window.dispatchEvent(new CustomEvent("hr:beat-preview-toggle", { detail: { action: "pause" } }));
+        window.dispatchEvent(new CustomEvent("hr:beat-preview-toggle", { detail: { source: "beat-store", action: "pause" } }));
         return;
       }
       window.dispatchEvent(new CustomEvent("hr:beat-preview", {
         detail: {
+          source: "beat-store",
           src: beatPreview,
           title: product.name,
-          detail: product.producer || "Productor por confirmar",
+          detail: producerDisplayName(product.producer),
           cover: productImageUrl(product.beat_cover_path || product.image_url),
           beatId: product.id,
           slug: product.slug || "",
@@ -368,7 +375,7 @@ async function renderProduct() {
     const button = event.target.closest("[data-beat-license-detail]");
     if (!button) return;
     const assignment = beatAssignments.find((candidate) => candidate.license_id === button.dataset.licenseId);
-    if (assignment) addBeatLicenseToCart(product, assignment);
+    if (assignment && beatLicenseIsSelectable(product, assignment)) addBeatLicenseToCart(product, assignment);
   });
 
   const detailPreviewButtons = [...container.querySelectorAll("[data-beat-preview-detail]")];
@@ -391,7 +398,7 @@ async function renderProduct() {
 }
 
 function renderBeatProductMarkup(product, assignments, previewUrl, priceLabel, productDescriptionMarkup) {
-  const producer = product.producer || "Productor por confirmar";
+  const producer = producerDisplayName(product.producer);
   const genre = product.beat_genre || "Género por confirmar";
   const bpm = product.beat_bpm || "BPM por confirmar";
   const key = product.beat_key || "Tonalidad por confirmar";
@@ -401,7 +408,7 @@ function renderBeatProductMarkup(product, assignments, previewUrl, priceLabel, p
   const licensesMarkup = assignments.length
     ? `<div class="beat-detail-license-list">${assignments.map((assignment) => {
       const license = assignment.beat_licenses;
-      return `<article class="beat-detail-license"><div class="beat-detail-license__main"><div class="beat-detail-license__heading"><h3>${escapeHtml(license?.name || "Licencia")}</h3><strong>${escapeHtml(formatPrice(assignment.price, product.currency))}</strong></div><p class="beat-detail-license__description">${escapeHtml(license?.description || "Licencia para este beat.")}</p><div class="beat-detail-license__meta"><span>${escapeHtml(license?.format || "Formato por confirmar")}</span><span>${escapeHtml(streamLimitLabel(license))}</span></div>${license?.terms ? `<details class="beat-detail-license__terms"><summary>Ver términos</summary><p>${escapeHtml(license.terms)}</p></details>` : ""}</div><button class="primary-button beat-detail-license__button" type="button" data-beat-license-detail="${escapeHtml(product.id)}" data-license-id="${escapeHtml(assignment.license_id)}">Seleccionar</button></article>`;
+      const selectable = beatLicenseIsSelectable(product, assignment); const unavailableLabel = selectable ? "" : `<span class="beat-detail-license__availability">No disponible: archivo pendiente</span>`; return `<article class="beat-detail-license${selectable ? "" : " beat-detail-license--unavailable"}"><div class="beat-detail-license__main"><div class="beat-detail-license__heading"><h3>${escapeHtml(license?.name || "Licencia")}</h3><strong>${escapeHtml(formatPrice(assignment.price, product.currency))}</strong></div><p class="beat-detail-license__description">${escapeHtml(license?.description || "Licencia para este beat.")}</p><div class="beat-detail-license__meta"><span>${escapeHtml(license?.format || "Formato por confirmar")}</span><span>${escapeHtml(streamLimitLabel(license))}</span></div>${unavailableLabel}${license?.terms ? `<details class="beat-detail-license__terms"><summary>Ver términos</summary><p>${escapeHtml(license.terms)}</p></details>` : ""}</div><button class="primary-button beat-detail-license__button" type="button" data-beat-license-detail="${escapeHtml(product.id)}" data-license-id="${escapeHtml(assignment.license_id)}" ${selectable ? "" : "disabled aria-disabled=\"true\""}>${selectable ? "Seleccionar" : "No disponible"}</button></article>`;
     }).join("")}</div>`
     : `<p class="beat-detail-empty">No hay licencias disponibles para este beat.</p>`;
 
@@ -421,9 +428,18 @@ async function fetchDetailBeatLicenses(beatId) {
   const { data } = await supabase
     .from("beat_license_assignments")
     .select("beat_id, license_id, price, is_enabled, beat_licenses(id, name, description, terms, format, stream_limit, unlimited_streams, is_active)")
-    .eq("beat_id", beatId)
-    .eq("is_enabled", true);
+    .eq("beat_id", beatId);
   return (data || []).filter((assignment) => assignment.beat_licenses?.is_active !== false);
+}
+
+function beatLicenseIsSelectable(product, assignment) {
+  if (!assignment?.is_enabled || !assignment?.beat_licenses?.is_active) return false;
+  const format = String(assignment.beat_licenses.format || "").trim().toLowerCase();
+  const hasExtension = (value, extension) => String(value || "").trim().toLowerCase().endsWith(extension);
+  if (format.includes("wav") && !hasExtension(product.beat_original_path, ".wav")) return false;
+  if (format.includes("mp3") && !hasExtension(product.beat_mp3_path, ".mp3")) return false;
+  if (format.includes("stem") && !hasExtension(product.beat_stems_path, ".zip")) return false;
+  return true;
 }
 
 function previewUrlForStoreBeat(value, status) {
@@ -439,18 +455,20 @@ function streamLimitLabel(license) {
   return Number.isFinite(Number(license.stream_limit)) ? `${new Intl.NumberFormat("es-MX").format(Number(license.stream_limit))} streams` : "Límite por confirmar";
 }
 
-function beatLicenseStartingPriceLabel(assignments, currency = "MXN") {
+function beatLicenseStartingPriceLabel(assignments, currency = "MXN", product = null) {
   const prices = assignments
+    .filter((assignment) => !product || beatLicenseIsSelectable(product, assignment))
     .map((assignment) => Number(assignment.price))
     .filter((price) => Number.isFinite(price) && price >= 0);
-  if (!prices.length) return "Licencias por confirmar";
+  if (!prices.length) return "Aún no disponible";
   return `Licencias desde ${formatPrice(Math.min(...prices), currency)} ${currency || "MXN"}`;
 }
 
 function addBeatLicenseToCart(product, assignment) {
+  if (!beatLicenseIsSelectable(product, assignment)) return;
   const license = assignment.beat_licenses;
   const cart = getCart().filter((item) => cartIdentity(item) !== `${product.id}::${assignment.license_id}`);
-  cart.push({ id: product.id, beat_id: product.id, license_id: assignment.license_id, license_price: Number(assignment.price), license_name: license?.name || "Licencia", license_description: license?.description || "", license_format: license?.format || "", license_terms: license?.terms || "", beat_producer: product.producer || "", quantity: 1 });
+  cart.push({ id: product.id, beat_id: product.id, license_id: assignment.license_id, license_price: Number(assignment.price), license_name: license?.name || "Licencia", license_description: license?.description || "", license_format: license?.format || "", license_terms: license?.terms || "", beat_producer: producerDisplayName(product.producer), quantity: 1 });
   saveCart(cart); showNotice("Licencia agregada al carrito");
 }
 
@@ -473,7 +491,7 @@ async function renderCart() {
         <div>
           <span class="product-category">${escapeHtml(categoryLabel(item.category))}</span>
           <h2>${escapeHtml(item.name)}</h2>
-          ${item.license_id ? `<p class="cart-license-detail"><strong>${escapeHtml(item.license_name || "Licencia")}</strong>${item.beat_producer ? ` · ${escapeHtml(item.beat_producer)}` : ""}</p>` : ""}
+          ${item.license_id ? `<p class="cart-license-detail"><strong>${escapeHtml(item.license_name || "Licencia")}</strong>${item.beat_producer ? ` · ${escapeHtml(producerDisplayName(item.beat_producer))}` : ""}</p>` : ""}
           <p>${formatPrice(item.price, item.currency)} por unidad</p>
           ${item.license_id ? '<p class="cart-digital-note">Licencia digital · cantidad fija</p>' : `<div class="quantity-control" aria-label="Cantidad de ${escapeHtml(item.name)}">
             <button type="button" data-quantity="${escapeHtml(item.id)}" data-change="-1" aria-label="Reducir cantidad">−</button>
@@ -510,12 +528,33 @@ async function renderCart() {
   }
 }
 
+async function fetchSavedPaymentCards() {
+  if (!currentSession?.user) return { customerId: null, cards: [] };
+  const { data } = await supabase.auth.getSession();
+  const accessToken = data.session?.access_token;
+  if (!accessToken) return { customerId: null, cards: [] };
+
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/saved-cards`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      apikey: SUPABASE_ANON_KEY,
+    },
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    console.warn("No se pudieron cargar las tarjetas guardadas", result.error || response.status);
+    return { customerId: null, cards: [] };
+  }
+  return {
+    customerId: String(result.customer_id || "").trim() || null,
+    cards: Array.isArray(result.cards) ? result.cards : [],
+  };
+}
 async function initializeCheckout() {
   const form = document.getElementById("checkout-form");
   const summary = document.getElementById("checkout-summary");
   const errorElement = document.getElementById("checkout-error");
   const button = document.getElementById("checkout-button");
-  const accountNotice = document.getElementById("checkout-account-notice");
   const paymentPanel = document.getElementById("payment-panel");
   const paymentStatus = document.getElementById("payment-status");
   const paymentBack = document.getElementById("payment-back");
@@ -523,6 +562,7 @@ async function initializeCheckout() {
 
   let items = [];
   let paymentForm = null;
+  let savedPaymentProfile = { customerId: null, cards: [] };
   if (viewAs?.active) {
     button.disabled = true;
     errorElement.textContent = "El checkout esta bloqueado durante Ver como. Vuelve a tu vista para comprar.";
@@ -549,10 +589,18 @@ async function initializeCheckout() {
   }
 
   if (currentSession?.user) {
-    document.getElementById("customer-email").value = currentSession.user.email ?? "";
-    accountNotice.innerHTML = 'Esta compra quedará guardada en <a href="orders.html">Mis compras</a>.';
-  } else {
-    accountNotice.innerHTML = 'Inicia sesión para guardar tus compras y descargas en tu cuenta. <a href="../portal/" data-store-login>Iniciar sesión</a>';
+    const nameInput = document.getElementById("customer-name");
+    const emailInput = document.getElementById("customer-email");
+    const phoneInput = document.getElementById("customer-phone");
+    const { data: shopProfileRows, error: shopProfileError } = await supabase.rpc("get_my_shop_checkout_data");
+    if (shopProfileError) {
+      console.warn("No se pudo cargar el perfil de checkout", shopProfileError);
+    }
+    const shopProfile = Array.isArray(shopProfileRows) ? shopProfileRows[0] : shopProfileRows;
+    nameInput.value = shopProfile?.shop_name ?? "";
+    emailInput.value = shopProfile?.shop_email ?? currentSession.user.email ?? "";
+    phoneInput.value = shopProfile?.shop_phone ?? "";
+    savedPaymentProfile = await fetchSavedPaymentCards();
   }
 
   summary.innerHTML = items.length ? orderSummaryMarkup(items, false) : emptyCartMarkup();
@@ -601,6 +649,13 @@ async function initializeCheckout() {
         publicKey: MP_PUBLIC_KEY,
         amount: Math.round(total * 100) / 100,
         containerId: "cardPaymentBrick_container",
+        payer: {
+          email: customerData.email,
+          ...(savedPaymentProfile.customerId ? {
+            customerId: savedPaymentProfile.customerId,
+            cardsIds: savedPaymentProfile.cards.map((card) => card.id),
+          } : {}),
+        },
         onReady: () => {
           paymentStatus.textContent = "Formulario listo.";
         },
@@ -611,7 +666,7 @@ async function initializeCheckout() {
         onSubmit: async (cardData) => {
           paymentStatus.textContent = "Procesando pago...";
           try {
-            const result = await createMercadoPagoOrder(customerData, items, cardData);
+            const result = await createMercadoPagoOrder(customerData, items, cardData, Boolean(currentSession?.user));
             if (["approved", "paid", "authorized"].includes(result.status)) {
               trackStoreEvent("payment_result", { provider: "mercadopago", result: "approved" });
               clearCart();
@@ -637,7 +692,7 @@ async function initializeCheckout() {
 }
 
 
-export async function createMercadoPagoOrder(customerData, cartItems, cardData) {
+export async function createMercadoPagoOrder(customerData, cartItems, cardData, saveCard = false) {
   const viewAs = await Promise.resolve(window.HiddenRoomViewAs?.ready?.());
   if (viewAs?.active) throw new Error("El checkout esta bloqueado durante Ver como.");
   const { data } = await supabase.auth.getSession();
@@ -654,6 +709,7 @@ export async function createMercadoPagoOrder(customerData, cartItems, cardData) 
       customer: customerData,
       items: cartItems.map((item) => ({ id: item.id, quantity: item.quantity, beat_id: item.beat_id, license_id: item.license_id })),
       card: cardData,
+      save_card: Boolean(saveCard),
     }),
   });
 
@@ -763,7 +819,7 @@ function orderSummaryMarkup(items, includeButton) {
     ${items.map((item) => `
       <div class="summary-line">
         ${item.license_id ? `<details class="summary-license-details"><summary>Detalles de la licencia</summary><p>${item.license_snapshot?.format ? `Formato: ${escapeHtml(item.license_snapshot.format)}. ` : ""}${item.license_snapshot?.terms ? escapeHtml(item.license_snapshot.terms) : ""}</p></details>` : ""}
-        <span><strong>${escapeHtml(item.name)}</strong>${item.license_id ? `<small class="summary-license">${escapeHtml(item.license_name || "Licencia digital")}${item.beat_producer ? ` · ${escapeHtml(item.beat_producer)}` : ""}</small>` : ""} × ${item.quantity}</span>
+        <span><strong>${escapeHtml(item.name)}</strong>${item.license_id ? `<small class="summary-license">${escapeHtml(item.license_name || "Licencia digital")}${item.beat_producer ? ` · ${escapeHtml(producerDisplayName(item.beat_producer))}` : ""}</small>` : ""} × ${item.quantity}</span>
         <span>${formatPrice(Number(item.price) * item.quantity, item.currency)}</span>
       </div>`).join("")}
     <div class="summary-line summary-total">

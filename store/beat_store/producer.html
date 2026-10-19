@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Space+Grotesk:wght@400;500;600;700&family=Unbounded:wght@400;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="../../styles.css?v=20261014-view-as-drag-v1">
+  <link rel="stylesheet" href="../../styles.css?v=20261018-global-volume-control-v3">
 
 </head>
 <body class="store-page beat-store-page producer-page hr-page" data-page="beat-producer" data-hr-chrome data-hr-context="store">
@@ -64,16 +64,14 @@
   <div id="store-notice" class="notice hr-toast" role="status" aria-live="polite"></div>
   <div id="beat-license-modal" class="beat-license-modal" hidden>
     <div class="beat-license-modal__backdrop" data-license-modal-close></div>
-    <section class="beat-license-modal__panel" role="dialog" aria-modal="true" aria-labelledby="beat-license-modal-title">
+    <section class="beat-license-modal__panel" role="dialog" aria-modal="true" aria-label="Seleccionar una opción">
       <button class="beat-license-modal__close" type="button" data-license-modal-close aria-label="Cerrar">X</button>
-      <p class="eyebrow hr-eyebrow" id="beat-license-modal-subtitle">Productor</p>
-      <h3 id="beat-license-modal-title">Licencias</h3>
       <div id="beat-license-modal-content"></div>
     </section>
   </div>
 
-  <script src="../../site.js?v=20261015-view-as-readonly-v1"></script>
+  <script src="../../site.js?v=20261018-producer-handle-v1"></script>
   <script src="/spa.js?v=20261004-site-copy-editor-v1"></script>
-  <script type="module" src="producer.js?v=20261004-global-player-next-v6"></script>
+  <script type="module" src="producer.js?v=20261018-license-request-v11"></script>
 </body>
 </html>

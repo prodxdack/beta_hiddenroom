@@ -1,0 +1,337 @@
+.topbar-actions {
+  position: relative;
+}
+
+.menu-button {
+  position: relative;
+}
+
+.cloud-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 20;
+  display: grid;
+  min-width: 220px;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--line2);
+  border-radius: 14px;
+  background: #151923f5;
+  box-shadow: 0 18px 50px #0009;
+  transform-origin: top right;
+  animation: cloud-menu-in .18s ease-out both;
+}
+
+.cloud-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 39px;
+  padding: 0 11px;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+  font-size: .78rem;
+  font-weight: 800;
+  transition: background .18s ease, color .18s ease, transform .18s ease;
+}
+
+.cloud-menu-item:hover,
+.cloud-menu-item.active {
+  background: var(--redsoft);
+  color: var(--text);
+  transform: translateX(2px);
+}
+
+.cloud-menu-item i {
+  width: 18px;
+  color: var(--teal);
+  font-size: 1.1rem;
+  text-align: center;
+}
+
+.cloud-menu-item.danger:hover {
+  background: #ff7b841a;
+  color: var(--danger);
+}
+
+.cloud-menu-item.danger i {
+  color: var(--danger);
+}
+
+.cloud-menu-divider {
+  height: 1px;
+  margin: 5px 3px;
+  background: var(--line);
+}
+
+.favorite-button {
+  color: var(--muted);
+}
+
+.favorite-button:hover,
+.favorite-button.is-favorite {
+  border-color: #e0525d77;
+  background: var(--redsoft);
+  color: var(--danger);
+}
+
+.custom-file-card .card-menu {
+  opacity: 1;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  margin-inline: -8px;
+  padding: 10px 8px;
+  background: linear-gradient(180deg, #090b10f5 72%, #090b1000);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+.favorite-button {
+  display: grid;
+  flex: 0 0 27px;
+  place-items: center;
+  padding: 0;
+  line-height: 1;
+}
+
+.favorite-button .ph {
+  display: block;
+  margin: 0;
+  line-height: 1;
+}
+
+.search-actions-trigger {
+  display: grid;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 30px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--line2);
+  border-radius: 7px;
+  background: #090b1094;
+  color: var(--muted);
+  transition: border-color .18s ease, background .18s ease, color .18s ease, transform .18s ease;
+}
+
+.search-actions-trigger:hover,
+.search-actions-trigger:focus-visible,
+.search-actions-trigger[aria-expanded="true"] {
+  border-color: var(--teal);
+  background: #42c5b41f;
+  color: var(--teal);
+  transform: translateY(-1px);
+}
+
+.cloud-action-menu {
+  position: fixed;
+  z-index: 220;
+  display: grid;
+  min-width: 190px;
+  gap: 3px;
+  padding: 7px;
+  border: 1px solid var(--line2);
+  border-radius: 12px;
+  background: #151923f7;
+  box-shadow: 0 18px 48px #000b;
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  animation: cloud-menu-in .16s ease-out both;
+}
+
+.cloud-action-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: .78rem;
+  font-weight: 800;
+  text-align: left;
+  transition: background .18s ease, color .18s ease, transform .18s ease;
+}
+
+.cloud-action-item:hover:not(:disabled),
+.cloud-action-item:focus-visible {
+  background: var(--redsoft);
+  color: var(--text);
+  transform: translateX(2px);
+}
+
+.cloud-action-item i {
+  width: 18px;
+  color: var(--teal);
+  font-size: 1.05rem;
+  text-align: center;
+}
+
+.cloud-action-item.danger i,
+.cloud-action-item.danger:hover:not(:disabled),
+.cloud-action-item.danger:focus-visible {
+  color: var(--danger);
+}
+
+.cloud-action-item:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.selection-mode-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  position: relative;
+  width: 40px;
+  min-width: 40px;
+  padding: 0;
+  white-space: nowrap;
+}
+
+.selection-mode-button .selection-label {
+  display: none;
+}
+
+.selection-mode-button.active {
+  border-color: var(--teal);
+  background: #42c5b41f;
+  color: var(--teal);
+}
+
+.selection-count {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: inline-grid;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  place-items: center;
+  border-radius: 99px;
+  background: var(--teal);
+  color: #07100f;
+  font-size: .65rem;
+}
+
+.file-card[data-selectable],
+.list-row[data-selectable] {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.file-card[data-selectable] {
+  position: relative;
+}
+
+.selection-mark {
+  position: absolute;
+  top: 9px;
+  left: 9px;
+  z-index: 2;
+  display: none;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border: 1px solid var(--line2);
+  border-radius: 6px;
+  background: #090b10d9;
+  color: var(--muted);
+  font-size: .78rem;
+  pointer-events: none;
+}
+
+.selection-active .selection-mark {
+  display: grid;
+}
+
+.file-card.is-selected,
+.list-row.is-selected {
+  border-color: var(--teal);
+  box-shadow: 0 0 0 2px #42c5b452, 0 12px 28px #0004;
+}
+
+.file-card.is-selected .selection-mark {
+  border-color: var(--teal);
+  background: var(--teal);
+  color: #07100f;
+}
+
+.list-row.is-selected .list-name {
+  color: var(--teal);
+}
+
+@keyframes cloud-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (max-width: 520px) {
+  .cloud-menu {
+    right: -2px;
+    min-width: 205px;
+  }
+
+  .selection-mode-button {
+    grid-column: auto;
+    width: 40px;
+    min-width: 40px;
+  }
+}
+
+.cloud-app {
+  padding-top: 78px;
+}
+
+.cloud-app > .topbar {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 100;
+  width: 100%;
+  margin: 0;
+  padding: 12px clamp(16px, 3vw, 32px);
+  border-bottom: 1px solid #ffffff12;
+  background: #090b10e8;
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+
+@media (max-width: 720px) {
+  .cloud-app {
+    padding-top: 72px;
+  }
+
+  .cloud-app > .topbar {
+    padding: 10px 16px;
+  }
+
+  .toolbar {
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
+  }
+
+  .search kbd {
+    display: none;
+  }
+
+  .search-actions-trigger {
+    flex-basis: 36px;
+    width: 36px;
+    height: 32px;
+  }
+}

@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Space+Grotesk:wght@400;500;600;700&family=Unbounded:wght@400;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="../../styles.css?v=20261017-safari-beat-close-v1">
+  <link rel="stylesheet" href="../../styles.css?v=20261018-global-volume-control-v3">
   <link rel="stylesheet" href="producer-ready.css?v=20261002-beat-admin-full-width-v1">
 
 </head>
@@ -148,6 +148,23 @@
         </nav>
 
         <div id="beat-admin-beats-tab" class="beat-admin__tab-panel" role="tabpanel" aria-labelledby="beat-admin-tab-beats" data-admin-panel="beats">
+          <section class="beat-admin__global-player hr-card hr-panel" aria-labelledby="beat-global-player-title">
+            <div>
+              <p class="eyebrow hr-eyebrow">Reproductor global</p>
+              <h3 id="beat-global-player-title">Beat por defecto del sitio</h3>
+              <p>El beat seleccionado se cargará automáticamente en el reproductor inferior para todos los visitantes.</p>
+            </div>
+            <div class="beat-admin__global-player-controls">
+              <label class="field hr-field" for="beat-global-player-select">
+                <span class="hr-label">Beat activo</span>
+                <select class="hr-input" id="beat-global-player-select">
+                  <option value="">Sin beat seleccionado</option>
+                </select>
+              </label>
+              <button id="beat-global-player-save" class="primary-button hr-btn hr-btn-primary" type="button">Guardar beat global</button>
+            </div>
+            <p id="beat-global-player-status" class="beat-admin__global-player-status" role="status" aria-live="polite"></p>
+          </section>
           <div class="admin-layout hr-grid">
           <form id="beat-admin-form" class="checkout-form admin-form producer-ready-form new-beat-form beat-admin__form hr-card hr-panel">
             <input id="beat-product-id" type="hidden">
@@ -316,13 +333,8 @@
 
   <div id="beat-license-modal" class="beat-license-modal" hidden>
     <div class="beat-license-modal__backdrop" data-license-modal-close></div>
-    <section class="beat-license-modal__dialog hr-panel" role="dialog" aria-modal="true" aria-labelledby="beat-license-modal-title">
-      <button class="beat-license-modal__close" type="button" data-license-modal-close aria-label="Cerrar licencias">X</button>
-      <div class="beat-license-modal__header">
-        <p class="eyebrow hr-eyebrow">Licencias disponibles</p>
-        <h2 id="beat-license-modal-title">Licencias</h2>
-        <p id="beat-license-modal-subtitle"></p>
-      </div>
+    <section class="beat-license-modal__dialog hr-panel" role="dialog" aria-modal="true" aria-label="Seleccionar una opción">
+      <button class="beat-license-modal__close" type="button" data-license-modal-close aria-label="Cerrar ventana">X</button>
       <div id="beat-license-modal-content" class="beat-license-modal__content"></div>
     </section>
   </div>
@@ -330,9 +342,9 @@
 
   <footer class="hr-universal-footer" aria-label="Pie de página"></footer>
 
-<script src="../../site.js?v=20261017-safari-beat-player-v1"></script>
+<script src="../../site.js?v=20261018-producer-handle-v1"></script>
   <script src="../../analytics/analytics.js?v=20261002-runtime-assets-v1"></script>
-<script type="module" src="bs.js?v=20261015-view-as-readonly-v1"></script>
+<script type="module" src="bs.js?v=20261018-license-request-v11"></script>
 <script src="/spa.js?v=20261004-site-copy-editor-v1"></script>
 </body>
 </html>

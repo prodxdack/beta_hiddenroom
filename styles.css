@@ -1834,7 +1834,7 @@ body.hr-has-beat-player {
 .hr-btn-danger:hover { background: #ff7474; }
 
 .hr-btn-cyan,
-.hr-btn--media { border-color: var(--hr-cyan); background: var(--hr-cyan); color: var(--hr-bg); }
+.hr-btn--media { border-color: rgba(255, 255, 255, .08); background: var(--hr-cyan); color: var(--hr-bg); }
 .hr-btn-cyan:hover,
 .hr-btn--media:hover { background: var(--hr-cyan-hover); }
 
@@ -3752,7 +3752,7 @@ body[data-hr-chrome] .success-brand {
 
 .beat-results-toolbar { align-items: center; justify-content: space-between; min-height: 44px; gap: 12px; }
 .beat-results-status { min-height: 1.4em; color: var(--hr-muted); font-size: .88rem; }
-.beat-card.is-active { border-color: var(--hr-cyan); }
+.beat-card.is-active { border-color: rgba(255, 255, 255, .08); }
 .beat-card.is-active .beat-card__cover-play { color: var(--hr-cyan); }
 .summary-license,
 .cart-license-detail,
@@ -4004,12 +4004,12 @@ body.hr-has-beat-player {
 }
 
 .beat-card.is-active {
-  background: linear-gradient(90deg, rgba(219, 1, 0, .12), rgba(17, 17, 17, .76) 32%);
-  box-shadow: inset 2px 0 0 var(--red);
+  background: rgba(17, 17, 17, .76);
+  box-shadow: none;
 }
 
 .beat-card.is-active .beat-card__cover {
-  border-color: rgba(219, 1, 0, .74);
+  border-color: rgba(255, 255, 255, .12);
 }
 
 @media (max-width: 620px) {
@@ -10278,6 +10278,7 @@ body.beat-admin-mode .beat-admin {
 .beat-license-option {
   padding: 12px;
   border: 1px solid rgba(240, 236, 228, .14);
+  border-radius: 12px;
   background: rgba(0, 0, 0, .18);
   display: grid;
   gap: 10px;
@@ -10286,12 +10287,42 @@ body.beat-admin-mode .beat-admin {
 .beat-license-option--disabled {
   border-color: rgba(255, 255, 255, .08);
   background: rgba(3, 3, 3, .24);
+}
+
+.beat-license-option--disabled > header,
+.beat-license-option--disabled > dl,
+.beat-license-option--disabled > .beat-license-option__reason,
+.beat-license-option--disabled > .beat-license-terms {
   filter: grayscale(1);
   opacity: .48;
 }
 
+.beat-license-option--disabled .beat-license-actions {
+  filter: none;
+  opacity: 1;
+}
+
 .beat-license-option--disabled .beat-license-actions button {
   cursor: not-allowed;
+}
+.beat-license-option__status {
+  margin: 0;
+  color: #b06a70 !important;
+  font: 700 10px/1.2 var(--hr-font-mono, var(--font-mono));
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.beat-license-option__reason {
+  margin: 0;
+  color: var(--hr-muted, var(--white-dim)) !important;
+  font-size: 10px;
+}
+
+.beat-license-option__request {
+  width: max-content;
+  color: #b06a70 !important;
+  border-color: #b06a70 !important;
 }
 
 .beat-license-option header {
@@ -14412,9 +14443,9 @@ body.hr-beat-player-fullscreen-open .hr-beat-player {
 }
 
 .beat-store-page .beat-grid .beat-card.is-active {
-  border-color: rgba(219, 1, 0, .62);
+  border-color: rgba(255, 255, 255, .07);
   background: #0e0e0e;
-  box-shadow: inset 2px 0 0 var(--red), 0 12px 28px rgba(0, 0, 0, .2);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, .2);
 }
 
 .beat-store-page .beat-grid .beat-card__cover {
@@ -16729,7 +16760,7 @@ html:has(body.hr-has-global-nav) {
   height: auto !important;
   padding: 12px !important;
   border: 1px solid rgba(240, 236, 228, .18) !important;
-  border-radius: 0 !important;
+  border-radius: 14px !important;
   background: linear-gradient(180deg, rgba(14, 14, 14, .96), rgba(4, 4, 4, .96)) !important;
   box-shadow: 0 18px 70px rgba(0, 0, 0, .44) !important;
   overflow: visible !important;
@@ -17444,7 +17475,7 @@ body.hr-beat-player-fullscreen-open .hr-global-drawer {
 .beat-store-page .beat-card__options summary:hover,
 .beat-store-page .beat-card__options summary:focus-visible,
 .beat-store-page .beat-card__options[open] summary {
-  border-color: var(--hr-cyan);
+  border-color: rgba(255, 255, 255, .08);
   background: rgba(0, 194, 198, .18);
   color: var(--white);
   outline: none;
@@ -18218,4 +18249,248 @@ body span[data-hr-copy-segment] {
   border: 2px solid var(--red);
   border-radius: 50%;
   background: var(--white);
+}
+
+/* Shared responsive header component: greeting, avatar, notifications, menu. */
+#hr-global-nav .hr-nav__mobile-controls {
+  display: contents;
+}
+
+@media (max-width: 620px) {
+  #hr-global-nav .hr-nav__mobile-controls {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-self: end;
+    gap: 6px;
+  }
+
+  #hr-global-nav .hr-nav__actions {
+    position: static;
+    min-width: 0;
+    max-width: none;
+    width: auto;
+    flex: 0 1 auto;
+    gap: 4px;
+    overflow: visible;
+  }
+
+  #hr-global-nav .hr-nav__account {
+    width: min(36vw, 138px);
+    max-width: 138px;
+    flex-direction: row-reverse;
+    justify-content: flex-start;
+    gap: 7px;
+    order: 1;
+  }
+
+  #hr-global-nav .hr-nav__notifications {
+    order: 2;
+  }
+
+  #hr-global-nav .hr-nav__mobile-toggle {
+    position: static;
+    top: auto;
+    right: auto;
+    flex: 0 0 34px;
+    width: 34px;
+    height: 34px;
+  }
+}
+.hr-nav__notification-count--number {
+  width: auto;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--hr-red);
+  color: var(--hr-text);
+  font: 500 9px var(--hr-font-mono);
+  line-height: 1;
+}
+/* Beat Store playback marker: keep the active indicator below the card. */
+.beat-store-page .beat-grid .beat-card.is-active {
+  border-color: rgba(255, 255, 255, .07);
+  border-bottom: 2px solid #db0100;
+  background: #0e0e0e;
+  box-shadow: 0 3px 0 #db0100 !important;
+}
+.beat-license-modal__dialog,
+.beat-license-modal__panel {
+  border-radius: 18px;
+}
+
+/* Beat Store: keep the terms disclosure compact inside license cards. */
+.beat-license-option details > summary {
+  display: inline-flex;
+  align-items: center;
+  width: max-content;
+  padding: 2px 0;
+  color: var(--hr-muted);
+  font: 500 9px/1.2 var(--hr-font-mono);
+  letter-spacing: .04em;
+  cursor: pointer;
+}
+
+/* Fullscreen player: the brand mark is intentionally mobile-only. */
+@media (max-width: 620px) {
+  .hr-beat-player-fullscreen__visualizer {
+    position: relative;
+  }
+
+  .hr-beat-player-fullscreen__visualizer::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 8px;
+    z-index: 2;
+    width: 48px;
+    height: 40px;
+    background: url("/assets/img/white_logo.webp") center / contain no-repeat;
+    opacity: .92;
+    pointer-events: none;
+    transform: translateY(-50%);
+  }
+
+  .hr-beat-player-fullscreen__visualizer canvas {
+    position: absolute;
+    inset: 0;
+  }
+}
+
+/* Final volume control isolation: keep the bottom player stable across routes. */
+#hr-beat-player input.hr-beat-player__volume {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  height: 24px !important;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent !important;
+  box-sizing: border-box;
+}
+
+#hr-beat-player input.hr-beat-player__volume::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 4px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--red) 0 var(--hr-volume-progress, 100%), rgba(240, 236, 228, .2) var(--hr-volume-progress, 100%) 100%) !important;
+}
+
+#hr-beat-player input.hr-beat-player__volume::-webkit-slider-thumb {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border: 2px solid var(--red) !important;
+  border-radius: 50%;
+  background: var(--white) !important;
+}
+
+#hr-beat-player input.hr-beat-player__volume::-moz-range-track {
+  width: 100%;
+  height: 4px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(240, 236, 228, .2) !important;
+}
+
+#hr-beat-player input.hr-beat-player__volume::-moz-range-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--red) !important;
+}
+
+#hr-beat-player input.hr-beat-player__volume::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--red) !important;
+  border-radius: 50%;
+  background: var(--white) !important;
+}
+
+/* Final mute button alignment: center the speaker icon in the bottom player. */
+#hr-beat-player .hr-beat-player__mute {
+  display: grid !important;
+  place-items: center !important;
+  align-content: center;
+  justify-content: center;
+  min-width: 42px;
+  width: 42px;
+  height: 34px;
+  padding: 0 !important;
+  line-height: 0 !important;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+#hr-beat-player .hr-beat-player__mute .hr-player-icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  flex: 0 0 18px;
+}
+/* Compact checkout rhythm: keep payment content above the fold. */
+body[data-page="checkout"] .page-shell {
+  padding-block: 28px 72px;
+  gap: 0;
+}
+
+body[data-page="checkout"] .back-link {
+  margin-bottom: 12px;
+}
+
+body[data-page="checkout"] .page-title {
+  margin-bottom: 36px;
+  gap: 0;
+}
+
+body[data-page="checkout"] .page-title h1 {
+  font-size: clamp(48px, 5vw, 56px);
+  line-height: .95;
+}
+
+body[data-page="checkout"] .checkout-layout {
+  gap: clamp(24px, 4vw, 56px);
+}
+
+body[data-page="checkout"] .checkout-form__title {
+  margin: 0;
+  color: var(--hr-text);
+  font: 700 18px/1.1 var(--hr-font-display);
+  letter-spacing: -.02em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 600px) {
+  body[data-page="checkout"] .page-shell {
+    padding-block: 24px 56px;
+  }
+
+  body[data-page="checkout"] .page-title {
+    margin-bottom: 32px;
+  }
+
+  body[data-page="checkout"] .page-title h1 {
+    font-size: clamp(40px, 11vw, 48px);
+  }
+
+  body[data-page="checkout"] .checkout-layout {
+    gap: 24px;
+  }
+}
+
+.checkout-save-card {
+  margin: 0;
+  color: var(--hr-muted);
+  font-size: 12px;
+  line-height: 1.45;
 }

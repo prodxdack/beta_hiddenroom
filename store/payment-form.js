@@ -8,6 +8,7 @@ export class PaymentForm {
     onSubmit,
     onReady = () => {},
     onError = () => {},
+    payer = null,
   }) {
     this.publicKey = publicKey;
     this.amount = Number(amount);
@@ -15,6 +16,7 @@ export class PaymentForm {
     this.onSubmit = onSubmit;
     this.onReady = onReady;
     this.onError = onError;
+    this.payer = payer;
     this.controller = null;
   }
 
@@ -29,6 +31,7 @@ export class PaymentForm {
     this.controller = await mercadoPago.bricks().create("cardPayment", this.containerId, {
       initialization: {
         amount: this.amount,
+        ...(this.payer ? { payer: this.payer } : {}),
       },
       customization: {
         visual: {

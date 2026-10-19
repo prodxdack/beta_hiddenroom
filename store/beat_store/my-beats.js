@@ -32,7 +32,7 @@ async function init() {
   state.user = account;
   state.profile = profile;
   newLink.hidden = false;
-  const producerName = profile?.display_name || account?.display_name || account?.username || 'Tu cuenta';
+  const producerName = producerDisplayName(profile?.display_name || account?.display_name || account?.username || 'Tu cuenta');
   introElement.textContent = `${producerName} · beats propios`;
   await loadProducts();
   listElement.addEventListener('click', handleAction);
@@ -58,6 +58,11 @@ async function handleAction(event) {
   button.disabled = true;
   try { const { error } = await supabase.rpc('submit_beat_for_review', { p_beat_id: button.dataset.submit }); if (error) throw new Error(error.message); await loadProducts(); statusElement.textContent = 'Beat enviado a revisión.'; }
   catch (error) { showError(error.message || 'No se pudo enviar el beat.'); button.disabled = false; }
+}
+
+function producerDisplayName(value) {
+  const clean = String(value || "").trim().replace(/^@+/, "");
+  return clean && !["Productor por confirmar", "Productor", "Sin productor", "Tu cuenta"].includes(clean) ? "@" + clean : clean || "Productor por confirmar";
 }
 
 function renderEmpty(message) { listElement.innerHTML = `<div class="producer-ready-panel"><h2>Sin beats todavía</h2><p>${escapeHtml(message)}</p></div>`; }

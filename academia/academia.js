@@ -1,4 +1,4 @@
-import { cloudSourceToFile, createCloudSourcePicker, joinCloudPath, walkCloudSource } from "../assets/js/cloud-source-picker.js";
+import { cloudSourceToFile, createCloudSourcePicker, joinCloudPath, walkCloudSource } from "../assets/js/cloud-source-picker.js?v=20261018-debian-cloud-picker-v2";
 
 const state = {
   supabase: null,
@@ -810,7 +810,7 @@ function buildAcademiaFolderDownloadUrl(parentPath, folderName) { return `${CLOU
 async function uploadAcademiaCloudFolder(source, targetBasePath) {
   const targetFolderPath = joinCloudPath(targetBasePath, source.name);
   await ensureAcademiaCloudFolderPath(targetFolderPath);
-  const files = await walkCloudSource(source, { supabase: state.supabase, cloudFunctionBase: CLOUD_FUNCTION_BASE });
+  const files = await walkCloudSource(source, { supabase: state.supabase, cloudOrigin: CLOUD_HIDDENROOM_URL });
   let totalSize = 0;
   for (const sourceFile of files) {
     const file = await cloudSourceToFile(sourceFile, { supabase: state.supabase, cloudOrigin: CLOUD_HIDDENROOM_URL });
@@ -824,7 +824,7 @@ function bindAcademiaCloudPickers() {
   destroyAcademiaCloudPickers();
   document.querySelectorAll("form[data-admin-form=content] [data-content-cloud]").forEach((button) => {
     const form = button.closest("form"); const input = form?.querySelector("[data-content-file]"); if (!form || !input) return;
-    const picker = createCloudSourcePicker({ button, supabase: state.supabase, cloudFunctionBase: CLOUD_FUNCTION_BASE, allowFolders: true, title: "Seleccionar contenido desde Cloud", rootPath: "/academia", onSelect: ({ sourceFile, source }) => {
+    const picker = createCloudSourcePicker({ button, supabase: state.supabase, cloudOrigin: CLOUD_HIDDENROOM_URL, allowFolders: true, title: "Seleccionar contenido desde Cloud", rootPath: "/academia", onSelect: ({ sourceFile, source }) => {
       form.__hrCloudSource = source; form.__hrCloudFile = sourceFile || null;
       if (sourceFile) { const transfer = new DataTransfer(); transfer.items.add(sourceFile); input.files = transfer.files; } else input.value = "";
       const label = form.querySelector("[data-content-source]"); if (label) label.textContent = `${source.kind === "folder" ? "Carpeta" : "Archivo"} seleccionado desde Cloud: ${source.name}`;

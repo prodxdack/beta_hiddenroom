@@ -72,7 +72,7 @@ export function productAdminMarkup(product) {
   const status = product.is_active ? "Activo" : "Inactivo";
   const format = product.is_digital ? "Digital" : "Fisico";
   const flags = [status, product.featured ? "Featured" : "", format].filter(Boolean).join(" / ");
-  const producer = product.producer ? " / " + escapeHtml(product.producer) : "";
+  const producer = product.producer ? " / " + escapeHtml(producerDisplayName(product.producer)) : "";
   return [
     "<article class=\"admin-product-row\">",
     "<div>",
@@ -88,6 +88,11 @@ export function productAdminMarkup(product) {
     "</div>",
     "</article>",
   ].join("");
+}
+
+function producerDisplayName(value) {
+  const clean = String(value || "").trim().replace(/^@+/, "");
+  return clean && !["Productor por confirmar", "Productor", "Sin productor", "Tu cuenta"].includes(clean) ? "@" + clean : clean || "Productor por confirmar";
 }
 
 function formatPrice(value, currency = "MXN") {
