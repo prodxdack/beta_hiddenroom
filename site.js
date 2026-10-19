@@ -611,6 +611,10 @@ async function refreshGlobalCopyEditorPage() {
   const refreshId = ++hrCopyEditorState.refreshId;
   hrCopyEditorState.pagePath = copyEditorPagePath();
   hrCopyEditorState.entries = collectGlobalCopyEntries();
+  if (!hrCopyEditorState.canEdit) {
+    applyGlobalCopyEditorState();
+    return;
+  }
   await loadGlobalCopyOverrides(hrCopyEditorState.entries, hrCopyEditorState.pagePath);
   if (refreshId !== hrCopyEditorState.refreshId) return;
   applyGlobalCopyEditorState();
@@ -623,7 +627,9 @@ function setGlobalCopyEditorAccess(visible) {
   if (!hrCopyEditorState.canEdit) {
     hrCopyEditorState.active = false;
     applyGlobalCopyEditorState();
+    return;
   }
+  refreshGlobalCopyEditorPage();
 }
 
 async function saveGlobalCopyEditor() {
