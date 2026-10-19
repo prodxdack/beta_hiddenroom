@@ -412,6 +412,8 @@ let globalSessionSnapshot = null;
 
 const HR_COPY_EDITOR_CANDIDATE_SELECTOR = "h1,h2,h3,h4,h5,h6,p,a,button,li,dt,dd,blockquote,figcaption,legend,summary,span,small";
 const HR_COPY_EDITOR_IGNORE_SELECTOR = "#hr-global-nav,#hr-beat-player,#hr-beat-player-fullscreen,#posts-grid,#editorial-grid,#featured-grid,#post-content,#related-grid,#product-grid,#beat-grid,#product-detail,#cart-items,#cart-summary,#orders-list,#tickets-list,#ticket-result,#studio-request-result,#studio-price,script,style,noscript,svg,canvas,video,audio,iframe,input,textarea,select,option,[aria-hidden=\"true\"],[data-hr-copy-ignore],[data-hr-session],[data-hr-drawer-session],.site-status,.site-version,#cursor,#cursorRing";
+const HR_SITE_TEXT_OVERRIDES_ENABLED = false;
+
 const hrCopyEditorState = {
   root: null,
   toggle: null,
@@ -590,6 +592,7 @@ function beginGlobalCopyInlineEdit(entry, event) {
 }
 
 async function loadGlobalCopyOverrides(entries, pagePath) {
+  if (!HR_SITE_TEXT_OVERRIDES_ENABLED) return;
   try {
     const supabase = await getHiddenRoomSupabaseClient();
     const { data, error } = await supabase
@@ -621,7 +624,7 @@ async function refreshGlobalCopyEditorPage() {
 }
 
 function setGlobalCopyEditorAccess(visible) {
-  hrCopyEditorState.canEdit = Boolean(visible);
+  hrCopyEditorState.canEdit = HR_SITE_TEXT_OVERRIDES_ENABLED && Boolean(visible);
   if (!hrCopyEditorState.root) return;
   hrCopyEditorState.root.hidden = !hrCopyEditorState.canEdit;
   if (!hrCopyEditorState.canEdit) {
@@ -633,6 +636,7 @@ function setGlobalCopyEditorAccess(visible) {
 }
 
 async function saveGlobalCopyEditor() {
+  if (!HR_SITE_TEXT_OVERRIDES_ENABLED) return;
   if (!hrCopyEditorState.canEdit || !hrCopyEditorState.entries.length) return;
   if (hrCopyEditorState.quickSave) hrCopyEditorState.quickSave.disabled = true;
   setCopyEditorStatus("Guardando…");
