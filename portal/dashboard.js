@@ -82,7 +82,8 @@ const TRANSACTION_CONCEPT_OPTIONS = [
   'PERSONALIZADO',
 ];
 const EVENT_FINANCE_CONCEPT_OPTIONS = ['VENUE APARTADO', 'VENUE LIQUIDACIÓN', 'FLYER', 'OTRO'];
-const CLOUD_HIDDENROOM_URL = 'https://cloud.hiddenroom.mx/';
+const CLOUD_HIDDENROOM_URL = 'https://cloud.mysauth.com/';
+const CLOUD_PUBLIC_HOSTS = new Set(['cloud.mysauth.com', 'cloud.hiddenroom.mx']);
 const CLOUD_FUNCTION_BASE = `${SUPABASE_URL}/functions/v1`;
 const INSTAGRAM_SCRAPER_URL = 'http://127.0.0.1:4317';
 const INSTAGRAM_SCRAPER_STORAGE_KEY = 'hr_instagram_scraper_last_result';
@@ -3243,7 +3244,7 @@ function isCloudDownloadUrl(value) {
   if (!value) return false;
   try {
     const url = new URL(String(value), window.location.origin);
-    return url.hostname === 'cloud.hiddenroom.mx';
+    return CLOUD_PUBLIC_HOSTS.has(url.hostname);
   } catch {
     return false;
   }
@@ -3429,7 +3430,7 @@ function cloudDownloadRequestFromHref(href) {
     return null;
   }
 
-  const isCloudUrl = url.hostname === 'cloud.hiddenroom.mx';
+  const isCloudUrl = CLOUD_PUBLIC_HOSTS.has(url.hostname);
   const queryPath = url.searchParams.get('path');
   const queryName = url.searchParams.get('name');
   let pathValue = queryPath;
@@ -4558,7 +4559,7 @@ async function renderErpInfrastructure() {
   const samples = serverStatus?.samples ?? [];
 
   return sectionShell('ERP', 'Servidor Mysauth', 'title-erp-infrastructure', `
-    <p class="db-section__summary">Estado real del Debian de MysAuth Cloud. Las metricas se leen desde <code>cloud.hiddenroom.mx/api/server-status</code> con sesion admin; no hay SSH ni secretos en el navegador.</p>
+    <p class="db-section__summary">Estado real del Debian de MysAuth Cloud. Las metricas se leen desde <code>cloud.mysauth.com/api/server-status</code> con sesion admin; no hay SSH ni secretos en el navegador.</p>
     ${errorMessage ? `<p class="db-empty db-empty--error">${escapeHTML(errorMessage)}</p>` : ''}
     <div class="db-grid db-grid--3col db-grid--server-status">
       ${renderServerStatusCard('Estado', statusLabel)}
@@ -4597,7 +4598,7 @@ async function renderErpCloud() {
         <div>
           <p class="hr-eyebrow">Cloud Hidden Room</p>
           <h2 class="hr-title">Administración de archivos y almacenamiento del servidor Mysauth.</h2>
-          <p>Estado: Online · Dominio: cloud.hiddenroom.mx</p>
+          <p>Estado: Online · Dominio: cloud.mysauth.com</p>
         </div>
         <div class="hr-stack hr-stack-sm">
           <a class="hr-btn hr-btn-primary" href="${escapeHTML(CLOUD_HIDDENROOM_URL)}" target="_blank" rel="noopener noreferrer">Abrir Cloud</a>

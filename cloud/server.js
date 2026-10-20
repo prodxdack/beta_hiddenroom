@@ -19,7 +19,7 @@ sharp.concurrency(Number(process.env.SHARP_CONCURRENCY || 1));
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const CLOUD_ROOT = process.env.CLOUD_HIDDENROOM_ROOT || process.env.CLOUD_ROOT;
-const CLOUD_HIDDENROOM_URL = process.env.CLOUD_HIDDENROOM_URL || 'https://cloud.hiddenroom.mx';
+const CLOUD_HIDDENROOM_URL = process.env.CLOUD_HIDDENROOM_URL || 'https://cloud.mysauth.com';
 const PORT = Number(process.env.CLOUD_PORT || process.env.PORT || 3001);
 const MAX_UPLOAD_BYTES = Number(process.env.CLOUD_MAX_UPLOAD_BYTES || 100 * 1024 * 1024);
 const FFMPEG_PATH = process.env.FFMPEG_PATH || resolveFfmpegStaticPath() || 'ffmpeg';
