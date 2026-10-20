@@ -251,6 +251,33 @@ function cloudPreviewMimeType(name) {
   return CLOUD_PREVIEW_MIME_TYPES[path.extname(String(name || '')).toLowerCase()] || null;
 }
 
+async function detectCloudPreviewMimeType(name, filePath) {
+  const named = cloudPreviewMimeType(name);
+  if (named) return named;
+  let handle;
+  try {
+    handle = await fsp.open(filePath, 'r');
+    const header = Buffer.alloc(32);
+    await handle.read(header, 0, header.length, 0);
+    if (header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff) return 'image/jpeg';
+    if (header.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+    if (header.toString('ascii', 0, 4) === 'GIF8') return 'image/gif';
+    if (header.toString('ascii', 0, 4) === 'RIFF' && header.toString('ascii', 8, 12) === 'WEBP') return 'image/webp';
+    if (header[0] === 0x42 && header[1] === 0x4d) return 'image/bmp';
+    if ((header[0] === 0x49 && header[1] === 0x49 && header[2] === 0x2a && header[3] === 0x00) || (header[0] === 0x4d && header[1] === 0x4d && header[2] === 0x00 && header[3] === 0x2a)) return 'image/tiff';
+    if (header.toString('ascii', 4, 8) === 'ftyp') {
+      const brand = header.toString('ascii', 8, 12).toLowerCase();
+      if (brand === 'avif' || brand === 'avis') return 'image/avif';
+      if (brand === 'heic' || brand === 'heix' || brand === 'hevc' || brand === 'hevx') return 'image/heic';
+    }
+  } catch {
+    return null;
+  } finally {
+    await handle?.close().catch(() => {});
+  }
+  return null;
+}
+
 function normalizeCloudPath(input) {
   if (!input || input === '/') return '/';
   let normalized = String(input).replace(/\\/g, '/').replace(/\/+/g, '/');
@@ -2329,7 +2356,7 @@ async function downloadAcademiaFile(user, req, res, url) {
 }
 async function streamCloudDownloadFile(req, res, name, child, url) {
   const mode = url.searchParams.get('mode') === 'view' ? 'view' : 'download';
-  const contentType = mode === 'view' ? cloudPreviewMimeType(name) : null;
+  const contentType = mode === 'view' ? await detectCloudPreviewMimeType(name, child) : null;
   const isInline = mode === 'view' && Boolean(contentType);
   const stats = await fsp.stat(child);
   if (!stats.isFile()) throw new Error('El elemento no es archivo.');
@@ -2358,7 +2385,7 @@ async function downloadFile(user, req, res, url) {
 async function streamSharedFile(req, res, url) {
   const shared = await resolveSharedFile(url.searchParams.get('token'));
   const mode = url.searchParams.get('mode') === 'download' ? 'download' : 'view';
-  const contentType = mode === 'view' ? cloudPreviewMimeType(shared.name) : null;
+  const contentType = mode === 'view' ? await detectCloudPreviewMimeType(shared.name, shared.child) : null;
   const isInline = mode === 'view' && Boolean(contentType);
   const encoded = encodeURIComponent(shared.name).replace(/['()]/g, escape).replace(/\*/g, '%2A');
   const safeName = shared.name.replace(/["\r\n]/g, '_');
@@ -2377,7 +2404,7 @@ async function renderSharedPreviewPage(req, res, url) {
   const token = encodeURIComponent(String(rawToken));
   const previewUrl = `/api/shared-file?token=${token}&mode=view`;
   const downloadUrl = `/api/shared-file?token=${token}&mode=download`;
-  const mime = cloudPreviewMimeType(shared.name) || '';
+  const mime = await detectCloudPreviewMimeType(shared.name, shared.child) || '';
   const robots = shared.privacy === 'public' ? 'index,follow' : 'noindex';
   let viewer = `<p class="share-note">Este formato no tiene vista previa integrada. <a href="${downloadUrl}">Descargar archivo</a>.</p>`;
   if (mime.startsWith('image/')) viewer = `<img class="share-image" src="${previewUrl}" alt="${escapeHtml(shared.name)}" />`;
