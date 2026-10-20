@@ -41,7 +41,13 @@ button.danger { color: var(--danger); }
 .message { min-height: 22px; margin: 0; color: var(--muted); }
 .message.error { color: var(--danger); }
 .table-wrap { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; min-width: 760px; }
+table { width: 100%; border-collapse: collapse; min-width: 980px; }
+.privacy-cell { min-width: 230px; }
+.privacy-select { width: 100%; max-width: 250px; border: 1px solid var(--line); background: #0c0e12; color: var(--text); padding: 8px; }
+.share-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; align-items: center; }
+.share-actions a { color: var(--accent); }
+.share-actions button { min-height: 32px; padding: 6px 9px; font-size: .82rem; }
+.privacy-hint { display: block; margin-top: 7px; color: var(--muted); line-height: 1.35; }
 th, td { padding: 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
 th { color: var(--muted); font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; }
 td.name { font-weight: 700; }

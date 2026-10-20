@@ -213,6 +213,8 @@ async function listCloudFiles(path = state.erpCloud.currentPath) {
           size: it.size || it.sizeText || '',
           modified: it.modified || it.mtime || '',
           url: it.url || '',
+          privacy: it.privacy || 'private',
+          share_url: it.share_url || it.shareUrl || null,
         });
       }
     }
@@ -254,6 +256,17 @@ async function uploadCloudFileToPath(file, targetPath = '/') {
     fileName: file.name,
     url: cloudUploadResultUrl(payload) || buildCloudFileFallbackUrl(currentPath, file.name),
   };
+}
+
+async function updateCloudFileSharing(pathValue, fileName, privacy) {
+  const response = await cloudApiFetch(`${CLOUD_HIDDENROOM_URL.replace(/\/$/, '')}/api/file-sharing`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: normalizeCloudPath(pathValue), name: fileName, privacy }),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body?.error || `No se pudo actualizar la privacidad (${response.status})`);
+  return body;
 }
 
 async function createCloudFolder(folderName, basePath = state.erpCloud.currentPath) {
@@ -507,19 +520,21 @@ function renderCloudFolderList(node, currentPath) {
   })).join('');
 }
 
-function renderCloudFileList(node) {
+function renderCloudFileList(node, currentPath = state.erpCloud.currentPath) {
   const files = Array.isArray(node && node.files) ? node.files : [];
   if (!files.length) return `<p>No hay archivos en esta carpeta.</p>`;
 
-  return files.map((file) => renderPortalResourceCard({
-    kind: 'file',
-    title: file.name,
-    meta: `${file.type} · ${file.size} · ${file.modified}`,
-    action: `
-      <button class="hr-btn" type="button" data-action="cloud-copy-link" data-url="${escapeHTML(file.url)}">Copiar enlace</button>
-      <button class="hr-btn" type="button" data-action="cloud-delete-item" data-item-type="file" data-item-name="${escapeHTML(file.name)}">Eliminar</button>
-    `,
-  })).join('');
+  return files.map((file) => {
+    const privacy = file.privacy || 'private';
+    const shareControls = `<label class="db-field db-cloud-share-control"><span>Privacidad</span><select data-action="cloud-set-privacy" data-path="${escapeAttr(currentPath)}" data-item-name="${escapeAttr(file.name)}"><option value="private" ${privacy === 'private' ? 'selected' : ''}>Privado</option><option value="public" ${privacy === 'public' ? 'selected' : ''}>Público</option><option value="link" ${privacy === 'link' ? 'selected' : ''}>Cualquiera con el enlace</option></select></label>`;
+    const shareActions = file.share_url ? `<div class="db-cloud-share-actions"><a class="hr-btn hr-btn--secondary" href="${escapeAttr(file.share_url)}" target="_blank" rel="noopener noreferrer">Vista previa</a><button class="hr-btn hr-btn--secondary" type="button" data-action="cloud-copy-link" data-url="${escapeAttr(file.share_url)}">Copiar enlace</button></div>` : '';
+    return renderPortalResourceCard({
+      kind: 'file',
+      title: file.name,
+      meta: `${file.type} · ${file.size} · ${file.modified}`,
+      action: `${shareControls}${shareActions}<button class="hr-btn" type="button" data-action="cloud-delete-item" data-item-type="file" data-item-name="${escapeHTML(file.name)}">Eliminar</button>`,
+    });
+  }).join('');
 }
 
 /* ================================================================
@@ -4601,7 +4616,7 @@ async function renderErpCloud() {
 
         <div class="hr-panel hr-card hr-stack" style="width:100%;">
           <p class="hr-eyebrow">Archivos</p>
-          ${renderCloudFileList(cloudFiles)}
+          ${renderCloudFileList(cloudFiles, currentPath)}
         </div>
       </div>
 
@@ -13349,6 +13364,15 @@ function attachMainDelegation() {
       return;
     }
 
+    const cloudPrivacySelect = e.target.closest('select[data-action="cloud-set-privacy"]');
+    if (cloudPrivacySelect) {
+      cloudPrivacySelect.disabled = true;
+      updateCloudFileSharing(cloudPrivacySelect.dataset.path, cloudPrivacySelect.dataset.itemName, cloudPrivacySelect.value)
+        .then(() => renderSection(state.activeSection))
+        .catch((err) => showToast(err.message || 'No se pudo actualizar la privacidad.', 'error'))
+        .finally(() => { cloudPrivacySelect.disabled = false; });
+      return;
+    }
     const beatSaleInput = e.target.closest('input[name="beat_file"]');
     if (beatSaleInput) {
       const form = beatSaleInput.closest("form");

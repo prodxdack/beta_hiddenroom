@@ -97,24 +97,49 @@ function rowTemplate(item, type) {
   const writeActions = state.meta?.canUpload ? `
         <button type="button" data-action="rename" data-type="${type}" data-name="${escapeHtml(item.name)}">Renombrar</button>
         <button class="danger" type="button" data-action="delete" data-type="${type}" data-name="${escapeHtml(item.name)}">Eliminar</button>` : '';
+  const privacy = item.privacy || 'private';
+  const sharingCell = !isFolder && state.meta?.canManageSharing ? `
+        <select class="privacy-select" data-action="privacy" data-name="${escapeHtml(item.name)}" aria-label="Privacidad de ${escapeHtml(item.name)}">
+          <option value="private" ${privacy === 'private' ? 'selected' : ''}>Privado</option>
+          <option value="public" ${privacy === 'public' ? 'selected' : ''}>Público</option>
+          <option value="link" ${privacy === 'link' ? 'selected' : ''}>Cualquiera con el enlace</option>
+        </select>
+        ${item.share_url ? `<div class="share-actions"><a href="${escapeHtml(item.share_url)}" target="_blank" rel="noopener noreferrer">Vista previa</a><button type="button" data-action="copy-share" data-url="${escapeHtml(item.share_url)}">Copiar enlace</button></div>` : '<small class="privacy-hint">Selecciona una opción para generar enlace.</small>'}` : (isFolder ? '-' : 'Privado');
   return `
     <tr>
       <td class="name">${escapeHtml(item.name)}</td>
       <td>${isFolder ? 'Carpeta' : 'Archivo'}</td>
       <td>${isFolder ? '-' : escapeHtml(formatSize(item.size))}</td>
       <td>${escapeHtml(formatDate(item.modified))}</td>
+      <td class="privacy-cell">${sharingCell}</td>
       <td><div class="row-actions">
         ${isFolder ? `<button type="button" data-action="open" data-name="${escapeHtml(item.name)}">Abrir</button>` : `<button type="button" data-action="download" data-name="${escapeHtml(item.name)}">Descargar</button>`}
         ${writeActions}
       </div></td>
     </tr>`;
 }
+
+async function setFileSharing(name, privacy) {
+  if (!state.meta?.canManageSharing) return;
+  await apiJson('/api/file-sharing', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: state.path, name, privacy }),
+  });
+  setMessage(privacy === 'private' ? 'Archivo privado.' : 'Enlace de preview generado.');
+  await loadFiles();
+}
+
+async function copyShareLink(url) {
+  await navigator.clipboard.writeText(url);
+  setMessage('Enlace copiado.');
+}
 function renderFiles(data) {
   const folders = Array.isArray(data.folders) ? data.folders : [];
   const files = Array.isArray(data.files) ? data.files : [];
   renderBreadcrumb();
   if (!folders.length && !files.length) {
-    fileBody.innerHTML = '<tr><td class="empty" colspan="5">No hay archivos en esta carpeta.</td></tr>';
+    fileBody.innerHTML = '<tr><td class="empty" colspan="6">No hay archivos en esta carpeta.</td></tr>';
     return;
   }
   fileBody.innerHTML = [...folders.map((folder) => rowTemplate(folder, 'folder')), ...files.map((file) => rowTemplate(file, 'file'))].join('');
@@ -245,5 +270,14 @@ fileBody.addEventListener('click', (event) => {
   if (action === 'download') downloadFile(name).catch((err) => setMessage(err.message, true));
   if (action === 'rename') renameItem(type, name).catch((err) => setMessage(err.message, true));
   if (action === 'delete') deleteItem(type, name).catch((err) => setMessage(err.message, true));
+  if (action === 'copy-share') copyShareLink(button.dataset.url).catch(() => setMessage('No se pudo copiar el enlace.', true));
+});
+fileBody.addEventListener('change', (event) => {
+  const select = event.target.closest('select[data-action="privacy"]');
+  if (!select) return;
+  select.disabled = true;
+  setFileSharing(select.dataset.name, select.value)
+    .catch((err) => setMessage(err.message || 'No se pudo actualizar la privacidad.', true))
+    .finally(() => { select.disabled = false; });
 });
 showAppIfSession().catch((err) => { loginView.hidden = false; appView.hidden = true; setActionsEnabled(false); loginMessage.textContent = err.message; });
