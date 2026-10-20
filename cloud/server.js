@@ -294,6 +294,18 @@ function safeChildName(raw) {
   return name;
 }
 
+function preserveFileExtension(originalName, requestedName) {
+  const original = safeChildName(originalName);
+  const requested = safeChildName(requestedName);
+  const dot = original.lastIndexOf('.');
+  const extension = dot > 0 && dot < original.length - 1 ? original.slice(dot) : '';
+  if (!extension) return requested;
+  const requestedDot = requested.lastIndexOf('.');
+  const stem = requestedDot > 0 ? requested.slice(0, requestedDot) : requested;
+  if (!stem) throw new Error('El nombre debe incluir texto antes de la extensión.');
+  return safeChildName(stem + extension);
+}
+
 function parseRoles(rawRoles) {
   return String(rawRoles || '').split(',').map((role) => role.trim().toLowerCase()).filter(Boolean);
 }
@@ -1595,11 +1607,12 @@ async function renameItem(user, req, res) {
   const body = await readJson(req);
   const baseRoot = getCloudBaseRoot(user);
   const fromInfo = await resolveSafeChild(baseRoot, body.path, body.name, { mustExist: true });
-  const toInfo = await resolveSafeChild(baseRoot, body.path, body.newName, { mustExist: false });
   const itemType = String(body.type || '').toLowerCase();
   const stats = await fsp.stat(fromInfo.child);
   if (itemType === 'folder' && !stats.isDirectory()) throw new Error('El origen no es carpeta.');
   if (itemType === 'file' && !stats.isFile()) throw new Error('El origen no es archivo.');
+  const targetName = itemType === 'file' ? preserveFileExtension(fromInfo.name, body.newName) : safeChildName(body.newName);
+  const toInfo = await resolveSafeChild(baseRoot, body.path, targetName, { mustExist: false });
   await fsp.access(toInfo.child).then(() => { throw new Error('Ya existe un elemento con ese nombre.'); }).catch((err) => { if (err && err.code !== 'ENOENT') throw err; });
   await fsp.rename(fromInfo.child, toInfo.child);
   const state = await readCloudState(baseRoot);

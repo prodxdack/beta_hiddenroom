@@ -15,6 +15,13 @@ const breadcrumb = document.getElementById('breadcrumb');
 const fileInput = document.getElementById('file-input');
 const uploadButton = document.querySelector('.upload-button');
 const folderButton = document.getElementById('folder-button');
+const shareDialog = document.getElementById('share-dialog');
+const shareDialogTitle = document.getElementById('share-dialog-title');
+const shareDialogLinkPanel = document.getElementById('share-link-panel');
+const shareDialogLinkInput = document.getElementById('share-link-input');
+const shareDialogCopyButton = document.getElementById('share-copy-button');
+const shareDialogSaveButton = document.getElementById('share-dialog-save');
+let shareDialogState = { name: '', privacy: 'private', shareUrl: '' };
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char]));
@@ -92,6 +99,9 @@ function renderBreadcrumb() {
   }
   breadcrumb.innerHTML = items.map((item) => `<button type="button" data-path="${escapeHtml(item.path)}">${escapeHtml(item.label)}</button>`).join('');
 }
+function privacyLabel(value) {
+  return { private: 'Privado', public: 'Público', link: 'Cualquiera con el enlace' }[value] || 'Privado';
+}
 function rowTemplate(item, type) {
   const isFolder = type === 'folder';
   const writeActions = state.meta?.canUpload ? `
@@ -99,12 +109,9 @@ function rowTemplate(item, type) {
         <button class="danger" type="button" data-action="delete" data-type="${type}" data-name="${escapeHtml(item.name)}">Eliminar</button>` : '';
   const privacy = item.privacy || 'private';
   const sharingCell = !isFolder && state.meta?.canManageSharing ? `
-        <select class="privacy-select" data-action="privacy" data-name="${escapeHtml(item.name)}" aria-label="Privacidad de ${escapeHtml(item.name)}">
-          <option value="private" ${privacy === 'private' ? 'selected' : ''}>Privado</option>
-          <option value="public" ${privacy === 'public' ? 'selected' : ''}>Público</option>
-          <option value="link" ${privacy === 'link' ? 'selected' : ''}>Cualquiera con el enlace</option>
-        </select>
-        ${item.share_url ? `<div class="share-actions"><a href="${escapeHtml(item.share_url)}" target="_blank" rel="noopener noreferrer">Vista previa</a><button type="button" data-action="copy-share" data-url="${escapeHtml(item.share_url)}">Copiar enlace</button></div>` : '<small class="privacy-hint">Selecciona una opción para generar enlace.</small>'}` : (isFolder ? '-' : 'Privado');
+        <button class="share-button" type="button" data-action="share" data-name="${escapeHtml(item.name)}">Compartir</button>
+        <span class="privacy-status">Estado: ${escapeHtml(privacyLabel(privacy))}</span>
+        ${item.share_url ? `<div class="share-actions"><a href="${escapeHtml(item.share_url)}" target="_blank" rel="noopener noreferrer">Vista previa</a><button type="button" data-action="copy-share" data-url="${escapeHtml(item.share_url)}">Copiar enlace</button></div>` : '<small class="privacy-hint">Sin enlace compartido.</small>'}` : (isFolder ? '-' : 'Privado');
   return `
     <tr>
       <td class="name">${escapeHtml(item.name)}</td>
@@ -120,19 +127,40 @@ function rowTemplate(item, type) {
 }
 
 async function setFileSharing(name, privacy) {
-  if (!state.meta?.canManageSharing) return;
-  await apiJson('/api/file-sharing', {
+  if (!state.meta?.canManageSharing) return null;
+  return apiJson('/api/file-sharing', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path: state.path, name, privacy }),
   });
-  setMessage(privacy === 'private' ? 'Archivo privado.' : 'Enlace de preview generado.');
-  await loadFiles();
 }
-
 async function copyShareLink(url) {
-  await navigator.clipboard.writeText(url);
+  if (!url) return;
+  try { await navigator.clipboard.writeText(url); } catch {
+    const input = document.createElement('textarea'); input.value = url; input.setAttribute('readonly', ''); input.style.position = 'fixed'; input.style.opacity = '0'; document.body.append(input); input.select(); document.execCommand('copy'); input.remove();
+  }
   setMessage('Enlace copiado.');
+}
+function updateShareDialogLink() {
+  const url = shareDialogState.shareUrl || '';
+  shareDialogLinkPanel.hidden = !url; shareDialogCopyButton.disabled = !url; shareDialogLinkInput.value = url;
+}
+function openShareDialog(name, privacy = 'private', shareUrl = '') {
+  shareDialogState = { name, privacy: privacy || 'private', shareUrl: shareUrl || '' };
+  shareDialogTitle.textContent = name;
+  shareDialog.querySelectorAll('input[name="share-privacy"]').forEach((input) => { input.checked = input.value === shareDialogState.privacy; });
+  updateShareDialogLink(); shareDialog.showModal();
+}
+function closeShareDialog() { if (shareDialog.open) shareDialog.close(); }
+async function saveShareDialog() {
+  const selected = shareDialog.querySelector('input[name="share-privacy"]:checked');
+  const privacy = selected?.value || 'private'; shareDialogSaveButton.disabled = true;
+  try {
+    const data = await setFileSharing(shareDialogState.name, privacy);
+    shareDialogState.privacy = privacy; shareDialogState.shareUrl = data?.share_url || ''; updateShareDialogLink();
+    await loadFiles(); setMessage(privacy === 'private' ? 'Archivo privado.' : 'Privacidad guardada. Enlace listo para copiar.');
+  } catch (err) { setMessage(err.message || 'No se pudo actualizar la privacidad.', true); }
+  finally { shareDialogSaveButton.disabled = false; }
 }
 function renderFiles(data) {
   const folders = Array.isArray(data.folders) ? data.folders : [];
@@ -191,8 +219,13 @@ async function uploadFiles(fileList) {
 }
 async function renameItem(type, name) {
   if (!state.meta?.canUpload) return;
-  const newName = prompt('Nuevo nombre', name);
-  if (!newName || newName === name) return;
+  const dot = type === 'file' ? name.lastIndexOf('.') : -1;
+  const extension = dot > 0 && dot < name.length - 1 ? name.slice(dot) : '';
+  const stem = extension ? name.slice(0, -extension.length) : name;
+  const enteredName = prompt(extension ? 'Nuevo nombre (se conservará ' + extension + ')' : 'Nuevo nombre', stem);
+  if (!enteredName || enteredName.trim() === stem) return;
+  const trimmedName = enteredName.trim();
+  const newName = extension && !trimmedName.toLowerCase().endsWith(extension.toLowerCase()) ? trimmedName + extension : trimmedName;
   await apiJson('/api/rename', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: state.path, type, name, newName }) });
   await loadFiles();
 }
@@ -270,14 +303,16 @@ fileBody.addEventListener('click', (event) => {
   if (action === 'download') downloadFile(name).catch((err) => setMessage(err.message, true));
   if (action === 'rename') renameItem(type, name).catch((err) => setMessage(err.message, true));
   if (action === 'delete') deleteItem(type, name).catch((err) => setMessage(err.message, true));
+  if (action === 'share') {
+    const item = (state.entries?.files || []).find((entry) => entry.name === name);
+    openShareDialog(name, item?.privacy || 'private', item?.share_url || '');
+  }
   if (action === 'copy-share') copyShareLink(button.dataset.url).catch(() => setMessage('No se pudo copiar el enlace.', true));
 });
-fileBody.addEventListener('change', (event) => {
-  const select = event.target.closest('select[data-action="privacy"]');
-  if (!select) return;
-  select.disabled = true;
-  setFileSharing(select.dataset.name, select.value)
-    .catch((err) => setMessage(err.message || 'No se pudo actualizar la privacidad.', true))
-    .finally(() => { select.disabled = false; });
-});
+shareDialog.querySelectorAll('input[name="share-privacy"]').forEach((input) => input.addEventListener('change', updateShareDialogLink));
+document.getElementById('share-dialog-close').addEventListener('click', closeShareDialog);
+document.getElementById('share-dialog-cancel').addEventListener('click', closeShareDialog);
+shareDialogCopyButton.addEventListener('click', () => copyShareLink(shareDialogLinkInput.value).catch(() => setMessage('No se pudo copiar el enlace.', true)));
+shareDialogSaveButton.addEventListener('click', () => saveShareDialog());
+shareDialog.addEventListener('click', (event) => { if (event.target === shareDialog) closeShareDialog(); });
 showAppIfSession().catch((err) => { loginView.hidden = false; appView.hidden = true; setActionsEnabled(false); loginMessage.textContent = err.message; });
