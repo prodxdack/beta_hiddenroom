@@ -9,6 +9,7 @@ const os = require('os');
 const path = require('path');
 const { execFile } = require('child_process');
 const { URL } = require('url');
+const { createLocalApiProxy } = require('./local-api-proxy');
 const sharp = require('sharp');
 
 const APP_DIR = __dirname;
@@ -18,9 +19,17 @@ sharp.concurrency(Number(process.env.SHARP_CONCURRENCY || 1));
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const CLOUD_LOCAL_API_INTERNAL_URL = String(process.env.CLOUD_LOCAL_API_INTERNAL_URL || "").replace(/\/+$/, "");
 const CLOUD_ROOT = process.env.CLOUD_HIDDENROOM_ROOT || process.env.CLOUD_ROOT;
-const CLOUD_HIDDENROOM_URL = process.env.CLOUD_HIDDENROOM_URL || 'https://cloud.mysauth.com';
+const CLOUD_HIDDENROOM_URL = process.env.CLOUD_HIDDENROOM_URL || 'https://cloud.hiddenroom.mx';
+const MYSAUTH_LOGO_URL = 'https://hiddenroom.mx/assets/img/mysauth-logo.webp';
+const CLOUD_STATE_FILE = '.mysauth-cloud-state.json';
+const CLOUD_TRASH_DIR = '.trash';
+const CLOUD_TRASH_MANIFEST = '.manifest.json';
+const CLOUD_SHARE_PRIVACIES = new Set(['public','link']);
+const CLOUD_SHARE_TOKEN_BYTES = 24;
 const PORT = Number(process.env.CLOUD_PORT || process.env.PORT || 3001);
+const BIND_HOST = process.env.CLOUD_BIND_HOST || '0.0.0.0';
 const MAX_UPLOAD_BYTES = Number(process.env.CLOUD_MAX_UPLOAD_BYTES || 100 * 1024 * 1024);
 const FFMPEG_PATH = process.env.FFMPEG_PATH || resolveFfmpegStaticPath() || 'ffmpeg';
 const BEAT_PREVIEW_MAX_UPLOAD_BYTES = Number(process.env.BEAT_PREVIEW_MAX_UPLOAD_BYTES || MAX_UPLOAD_BYTES);
@@ -43,9 +52,6 @@ const BEAT_UPLOAD_PERMISSION = 'beats.upload';
 const DOWNLOAD_TOKEN_TTL_MS = Number(process.env.CLOUD_DOWNLOAD_TOKEN_TTL_MS || 2 * 60 * 1000);
 const BEAT_PERMISSION_KEYS = ['beat.store', 'beats.store', 'store.beats', 'store.beat', 'beat_store', 'beats', 'Beat Store', 'module.beats', 'module.beat-store'];
 const BEAT_STORE_DIR = 'beats_store';
-const CLOUD_SHARE_STATE_FILE = '.cloud-share-state.json';
-const CLOUD_SHARE_PRIVACIES = new Set(['public', 'link']);
-const CLOUD_SHARE_TOKEN_BYTES = 24;
 const BEAT_AUDIO_EXTENSIONS = new Set(['.mp3', '.wav', '.m4a', '.ogg', '.flac', '.aac', '.aif', '.aiff']);
 const BEAT_UPLOAD_AUDIO_EXTENSIONS = new Set(['.wav']);
 const BEAT_PREVIEW_AUDIO_EXTENSIONS = new Set(['.mp3']);
@@ -166,12 +172,6 @@ function sendPublicJson(res, status, body) { send(res, status, JSON.stringify(bo
 function fail(res, status, message) { sendJson(res, status, { success: false, error: message }); }
 function failPublic(res, status, message) { sendPublicJson(res, status, { success: false, error: message }); }
 
-function escapeHtml(value) {
-  return String(value ?? '').replace(/[&<>"']/g, (char) => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  }[char]));
-}
-
 function base64UrlEncode(value) {
   return Buffer.from(value).toString('base64url');
 }
@@ -250,7 +250,6 @@ function streamFile(req, res, filePath, stats, headers = {}) {
 function cloudPreviewMimeType(name) {
   return CLOUD_PREVIEW_MIME_TYPES[path.extname(String(name || '')).toLowerCase()] || null;
 }
-
 async function detectCloudPreviewMimeType(name, filePath) {
   const named = cloudPreviewMimeType(name);
   if (named) return named;
@@ -278,6 +277,7 @@ async function detectCloudPreviewMimeType(name, filePath) {
   return null;
 }
 
+
 function normalizeCloudPath(input) {
   if (!input || input === '/') return '/';
   let normalized = String(input).replace(/\\/g, '/').replace(/\/+/g, '/');
@@ -292,18 +292,6 @@ function safeChildName(raw) {
   const name = String(raw || '').trim();
   if (!name || name === '.' || name === '..' || name.includes('/') || name.includes('\\') || /[\u0000-\u001f\u007f]/.test(name)) throw new Error('Nombre no permitido.');
   return name;
-}
-
-function preserveFileExtension(originalName, requestedName) {
-  const original = safeChildName(originalName);
-  const requested = safeChildName(requestedName);
-  const dot = original.lastIndexOf('.');
-  const extension = dot > 0 && dot < original.length - 1 ? original.slice(dot) : '';
-  if (!extension) return requested;
-  const requestedDot = requested.lastIndexOf('.');
-  const stem = requestedDot > 0 ? requested.slice(0, requestedDot) : requested;
-  if (!stem) throw new Error('El nombre debe incluir texto antes de la extensión.');
-  return safeChildName(stem + extension);
 }
 
 function parseRoles(rawRoles) {
@@ -376,7 +364,36 @@ async function hasBeatStoreDownload(userId) {
 async function requireCloudUser(req) {
   const token = getBearerToken(req);
   if (!token) { const err = new Error('Sesión requerida.'); err.status = 401; throw err; }
-
+  if (!token.includes('.')) {
+    if (!CLOUD_LOCAL_API_INTERNAL_URL) { const err = new Error('La sesión local de Cloud no está habilitada.'); err.status = 401; throw err; }
+    let response;
+    try {
+      response = await fetch(CLOUD_LOCAL_API_INTERNAL_URL + '/auth/validate', {
+        headers: { Authorization: 'Bearer ' + token, Accept: 'application/json' },
+        signal: AbortSignal.timeout(5000),
+      });
+    } catch { const err = new Error('El servicio local de sesiones Cloud no está disponible.'); err.status = 503; throw err; }
+    const body = await response.json().catch(() => null);
+    const identity = body?.identity;
+    if (!response.ok || !identity?.authSubject || !identity?.businessUserId || !identity?.rootSlug) {
+      const err = new Error(body?.error || 'Sesión local de Cloud inválida.'); err.status = response.status === 403 ? 403 : 401; throw err;
+    }
+    const roles = Array.isArray(identity.roles) ? identity.roles : [];
+    const permissions = Array.isArray(identity.permissions) ? identity.permissions : [];
+    const isAdmin = isAdminRole(roles);
+    const user = {
+      id: identity.authSubject,
+      profile: { id: identity.authSubject, user_id: String(identity.businessUserId), username: String(identity.rootSlug), display_name: String(identity.rootSlug), email: null, roles: roles.join(',') },
+      roles, permissions, isAdmin, localSession: true, localToken: token,
+      isAcademiaAdmin: permissionsInclude(permissions, ['academia.admin']),
+      isApprovedProducer: false,
+      hasBeatStore: isAdmin || permissionsInclude(permissions, BEAT_PERMISSION_KEYS),
+      canUpload: isAdmin || permissionsInclude(permissions, [CLOUD_UPLOAD_PERMISSION]),
+      canUploadBeats: isAdmin || permissionsInclude(permissions, [BEAT_UPLOAD_PERMISSION]),
+    };
+    if (!isAdmin) await ensureUserCloudFolder(user);
+    return user;
+  }
   const userData = await supabaseFetch('/auth/v1/user', {
     headers: { Authorization: `Bearer ${token}`, apikey: SERVICE_ROLE_KEY, Accept: 'application/json' },
   });
@@ -451,183 +468,88 @@ async function readCloudState(baseRoot) {
   try {
     const raw = await fsp.readFile(cloudStatePath(baseRoot), 'utf8');
     const parsed = JSON.parse(raw);
-    return { favorites: Array.isArray(parsed?.favorites) ? parsed.favorites : [] };
+    return { favorites: Array.isArray(parsed?.favorites) ? parsed.favorites : [], shares: Array.isArray(parsed?.shares) ? parsed.shares : [] };
   } catch (err) {
-    if (err?.code === 'ENOENT' || err instanceof SyntaxError) return { favorites: [] };
+    if (err?.code === 'ENOENT' || err instanceof SyntaxError) return { favorites: [], shares: [] };
     throw err;
   }
 }
 
 async function writeCloudState(baseRoot, state) {
   const favorites = Array.isArray(state?.favorites) ? state.favorites : [];
-  await writeAtomicCloudFile(cloudStatePath(baseRoot), JSON.stringify({ version: 1, favorites }, null, 2));
-}
-function cloudShareStatePath(baseRoot) {
-  const resolvedRoot = path.resolve(baseRoot);
-  const statePath = path.resolve(resolvedRoot, CLOUD_SHARE_STATE_FILE);
-  assertInsideRoot(resolvedRoot, statePath);
-  return statePath;
-}
-
-function cloudShareKey(requestedPath, name) {
-  return normalizeCloudPath(requestedPath) + '\u0000' + safeChildName(name);
-}
-
-function cloudShareFullPath(requestedPath, name) {
-  const normalized = normalizeCloudPath(requestedPath);
-  return normalized === '/' ? `/${safeChildName(name)}` : `${normalized}/${safeChildName(name)}`;
-}
-
-function cloudShareUrl(token) {
-  return `${CLOUD_HIDDENROOM_URL.replace(/\/$/, '')}/share/${encodeURIComponent(token)}`;
-}
-
-function normalizeCloudSharePrivacy(value) {
-  const privacy = String(value || '').trim().toLowerCase();
-  if (privacy !== 'private' && !CLOUD_SHARE_PRIVACIES.has(privacy)) {
-    const err = new Error('Privacidad de archivo no permitida.');
-    err.status = 400;
-    throw err;
-  }
-  return privacy;
-}
-
-function validCloudShareEntry(entry) {
-  try {
-    const privacy = normalizeCloudSharePrivacy(entry?.privacy);
-    if (privacy === 'private' || !/^[a-f0-9]{48}$/i.test(String(entry?.token || ''))) return false;
-    safeChildName(entry.name);
-    normalizeCloudPath(entry.path);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function readCloudShareState(baseRoot) {
-  try {
-    const raw = await fsp.readFile(cloudShareStatePath(baseRoot), 'utf8');
-    const parsed = JSON.parse(raw);
-    return { files: Array.isArray(parsed?.files) ? parsed.files.filter(validCloudShareEntry) : [] };
-  } catch (err) {
-    if (err?.code === 'ENOENT' || err instanceof SyntaxError) return { files: [] };
-    throw err;
-  }
-}
-
-async function writeCloudShareState(baseRoot, state) {
-  const files = Array.isArray(state?.files) ? state.files.filter(validCloudShareEntry) : [];
-  await writeAtomicCloudFile(cloudShareStatePath(baseRoot), JSON.stringify({ version: 1, files }, null, 2));
-}
-
-function findCloudShareEntry(state, requestedPath, name) {
-  const key = cloudShareKey(requestedPath, name);
-  return (state?.files || []).find((entry) => {
-    try { return cloudShareKey(entry.path, entry.name) === key; } catch { return false; }
-  }) || null;
-}
-
-async function renameCloudShareEntries(baseRoot, requestedPath, oldName, newName, itemType) {
-  const oldFullPath = cloudShareFullPath(requestedPath, oldName);
-  const newFullPath = cloudShareFullPath(requestedPath, newName);
-  const state = await readCloudShareState(baseRoot);
-  const files = state.files.map((entry) => {
-    let fullPath;
-    try { fullPath = cloudShareFullPath(entry.path, entry.name); } catch { return entry; }
-    if (fullPath === oldFullPath) {
-      return { ...entry, path: normalizeCloudPath(requestedPath), name: safeChildName(newName), updatedAt: new Date().toISOString() };
-    }
-    if (itemType !== 'folder' || !fullPath.startsWith(`${oldFullPath}/`)) return entry;
-    const relative = fullPath.slice(oldFullPath.length + 1).split('/').filter(Boolean);
-    const childName = relative.pop();
-    const parentPath = normalizeCloudPath(`${newFullPath}/${relative.join('/')}`);
-    return { ...entry, path: parentPath, name: safeChildName(childName), updatedAt: new Date().toISOString() };
-  });
-  await writeCloudShareState(baseRoot, { files });
-}
-
-async function removeCloudShareEntries(baseRoot, requestedPath, name, itemType) {
-  const target = cloudShareFullPath(requestedPath, name);
-  const state = await readCloudShareState(baseRoot);
-  const files = state.files.filter((entry) => {
-    let fullPath;
-    try { fullPath = cloudShareFullPath(entry.path, entry.name); } catch { return false; }
-    return fullPath !== target && (itemType !== 'folder' || !fullPath.startsWith(`${target}/`));
-  });
-  await writeCloudShareState(baseRoot, { files });
-}
-
-function requireCloudShareAdmin(user) {
-  if (!user?.isAdmin) {
-    const err = new Error('Solo un administrador puede cambiar la privacidad de Cloud.');
-    err.status = 403;
-    throw err;
-  }
-}
-
-async function setCloudFileSharing(user, req, res) {
-  requireCloudShareAdmin(user);
-  const body = await readJson(req);
-  const requestedPath = normalizeCloudPath(body.path);
-  const name = safeChildName(body.name);
-  if (name.startsWith('.')) throw new Error('No se puede compartir un archivo interno de Cloud.');
-  const privacy = normalizeCloudSharePrivacy(body.privacy);
-  const baseRoot = path.resolve(CLOUD_ROOT);
-  const { child } = await resolveSafeChild(baseRoot, requestedPath, name, { mustExist: true });
-  const stats = await fsp.stat(child);
-  if (!stats.isFile()) throw new Error('Solo los archivos pueden tener privacidad compartida.');
-  const state = await readCloudShareState(baseRoot);
-  const current = findCloudShareEntry(state, requestedPath, name);
-  const files = state.files.filter((entry) => {
-    try { return cloudShareKey(entry.path, entry.name) !== cloudShareKey(requestedPath, name); } catch { return false; }
-  });
-  if (privacy !== 'private') {
-    files.push({
-      path: requestedPath,
-      name,
-      privacy,
-      token: current?.token || crypto.randomBytes(CLOUD_SHARE_TOKEN_BYTES).toString('hex'),
-      updatedAt: new Date().toISOString(),
-    });
-  }
-  await writeCloudShareState(baseRoot, { files });
-  const entry = privacy === 'private' ? null : files[files.length - 1];
-  sendJson(res, 200, {
-    success: true,
-    path: requestedPath,
-    name,
-    privacy,
-    share_url: entry ? cloudShareUrl(entry.token) : null,
-  });
-}
-
-async function resolveSharedFile(rawToken) {
-  const token = String(rawToken || '').trim();
-  if (!/^[a-f0-9]{48}$/i.test(token)) {
-    const err = new Error('Enlace compartido no encontrado.');
-    err.status = 404;
-    throw err;
-  }
-  const baseRoot = path.resolve(CLOUD_ROOT);
-  const state = await readCloudShareState(baseRoot);
-  const entry = state.files.find((item) => String(item.token).toLowerCase() === token.toLowerCase());
-  if (!entry) {
-    const err = new Error('Enlace compartido no encontrado.');
-    err.status = 404;
-    throw err;
-  }
-  const { child } = await resolveSafeChild(baseRoot, entry.path, entry.name, { mustExist: true });
-  const stats = await fsp.stat(child);
-  if (!stats.isFile()) {
-    const err = new Error('El archivo compartido ya no está disponible.');
-    err.status = 404;
-    throw err;
-  }
-  return { ...entry, child, stats };
+  const shares = Array.isArray(state?.shares) ? state.shares : [];
+  await writeAtomicCloudFile(cloudStatePath(baseRoot), JSON.stringify({ version: 1, favorites, shares }, null, 2));
 }
 
 function favoriteKey(requestedPath, name) {
   return normalizeCloudPath(requestedPath) + '\u0000' + safeChildName(name);
+}
+
+function cloudShareKey(p,n){return favoriteKey(p,n)}
+function normalizeCloudSharePrivacy(v){v=String(v||'').trim().toLowerCase();if(v==='private')return v;if(!CLOUD_SHARE_PRIVACIES.has(v))throw Error('Privacidad no permitida.');return v}
+function cloudShareUrl(t){return String(CLOUD_HIDDENROOM_URL).replace(/\/$/,'')+'/share/'+encodeURIComponent(t)}
+function validCloudShareEntry(e){try{return Boolean(e&&new RegExp('^[a-f0-9]{'+(CLOUD_SHARE_TOKEN_BYTES*2)+'}$','i').test(String(e.token||''))&&CLOUD_SHARE_PRIVACIES.has(String(e.privacy||''))&&cloudShareKey(e.path,e.name))}catch{return false}}
+function relocateCloudShare(entry, oldItemPath, newItemPath, isFolder) {
+  try {
+    const entryPath = normalizeCloudPath(entry.path), entryName = safeChildName(entry.name);
+    const entryFullPath = cloudShareKey(entryPath, entryName).replace('\u0000', '/');
+    if (entryFullPath === oldItemPath) {
+      const split = newItemPath.lastIndexOf('/');
+      return { ...entry, path: split <= 0 ? '/' : newItemPath.slice(0, split), name: newItemPath.slice(split + 1) };
+    }
+    if (isFolder && entryFullPath.startsWith(oldItemPath + '/')) {
+      const movedPath = newItemPath + entryFullPath.slice(oldItemPath.length), split = movedPath.lastIndexOf('/');
+      return { ...entry, path: split <= 0 ? '/' : movedPath.slice(0, split), name: movedPath.slice(split + 1) };
+    }
+  } catch {}
+  return entry;
+}
+function requireShareAdmin(u){if(!u.isAdmin){const e=Error('Solo admin puede compartir archivos.');e.status=403;throw e}}
+async function setCloudFileSharing(u,req,res){requireShareAdmin(u);const b=await readJson(req),p=normalizeCloudPath(b.path),n=safeChildName(b.name),privacy=normalizeCloudSharePrivacy(b.privacy),root=path.resolve(CLOUD_ROOT);const {child}=await resolveSafeChild(root,p,n,{mustExist:true});if(!(await fsp.stat(child)).isFile())throw Error('Solo se pueden compartir archivos.');const s=await readCloudState(root),key=cloudShareKey(p,n);const shares=(s.shares||[]).filter(validCloudShareEntry).filter(e=>{try{return cloudShareKey(e.path,e.name)!==key}catch{return false}});let share=null;if(privacy!=='private'){share={token:crypto.randomBytes(CLOUD_SHARE_TOKEN_BYTES).toString('hex'),path:p,name:n,privacy,createdAt:new Date().toISOString()};shares.push(share)}await writeCloudState(root,{favorites:s.favorites,shares});sendJson(res,200,{success:true,privacy,share_url:share?cloudShareUrl(share.token):null})}
+async function resolveSharedFile(raw){const token=String(raw||'').trim();if(!new RegExp('^[a-f0-9]{'+(CLOUD_SHARE_TOKEN_BYTES*2)+'}$','i').test(token)){const e=Error('Enlace compartido no valido.');e.status=404;throw e}const root=path.resolve(CLOUD_ROOT),s=await readCloudState(root),share=(s.shares||[]).find(e=>validCloudShareEntry(e)&&e.token.toLowerCase()===token.toLowerCase());if(!share){const e=Error('Enlace compartido no encontrado.');e.status=404;throw e}const {name,child}=await resolveSafeChild(root,share.path,share.name,{mustExist:true}),stats=await fsp.stat(child);if(!stats.isFile()){const e=Error('El archivo compartido no esta disponible.');e.status=404;throw e}return{share,name,child,stats}}
+async function streamSharedFile(req,res,url){const {name,child,stats}=await resolveSharedFile(url.searchParams.get('token')),mode=url.searchParams.get('mode')==='view'?'view':'download',type=mode==='view'?await detectCloudPreviewMimeType(name,child):null,inline=mode==='view'&&Boolean(type),encoded=encodeURIComponent(name).replace(/['()]/g,escape).replace(/\*/g,'%2A'),safe=name.replace(/["\r\n]/g,'_');return streamFile(req,res,child,stats,{...PUBLIC_CORS_HEADERS,'Content-Type':type||'application/octet-stream','Content-Disposition':(inline?'inline':'attachment')+'; filename="'+safe+'"; filename*=UTF-8\'\''+encoded,'Cache-Control':'public, max-age=60','X-Content-Type-Options':'nosniff'})}
+function escapeHtml(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+async function renderSharedPreviewPage(req,res,url){
+  const {share,name}=await resolveSharedFile(url.pathname.split('/').filter(Boolean).pop());
+  const token=share.token;
+  const view='/api/shared-file?token='+encodeURIComponent(token)+'&mode=view';
+  const download='/api/shared-file?token='+encodeURIComponent(token)+'&mode=download';
+  const type=await detectCloudPreviewMimeType(name,(await resolveSharedFile(token)).child)||'';
+  let preview='<p>No hay vista previa para este formato.</p>';
+  if(type.startsWith('image/')) preview='<img src="'+view+'" alt="'+escapeHtml(name)+'">';
+  else if(type.startsWith('audio/')) preview='<audio controls src="'+view+'"></audio>';
+  else if(type.startsWith('video/')) preview='<video controls playsinline src="'+view+'"></video>';
+  else if(type==='application/pdf'||type.startsWith('text/')||type==='application/json'||type==='application/xml') preview='<iframe title="Vista previa" src="'+view+'"></iframe>';
+  const robots=share.privacy==='public'?'index,follow':'noindex,nofollow';
+  const html='<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="'+robots+'"><link rel="icon" type="image/svg+xml" href="/assets/img/mysauth-favicon.svg?v=20261020-mysauth-favicon-v1"><title>MysAuth Cloud</title><style>'+
+    'body{display:flex;flex-direction:column;margin:0;padding:0;background:#0b0e16;color:#f5f6fc;font:16px system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh;box-sizing:border-box}' +
+    '.card{width:min(860px,calc(100% - 40px));margin:auto;padding:20px;border:1px solid #293144;border-radius:20px;background:#171c29;box-shadow:0 24px 80px #05070d99;box-sizing:border-box}' +
+    '.topbar{display:flex;align-items:center;justify-content:space-between;width:min(1420px,calc(100% - 44px));margin:0 auto;padding:22px 0 20px}' +
+    '.topbar-actions{display:flex;align-items:center;gap:8px}' +
+    '.brand-lockup{display:flex;align-items:center;gap:12px;min-width:0;color:#f5f6fc;text-decoration:none}' +
+    '.cloud-logo-header{display:block;width:min(146px,42vw);max-height:38px;object-fit:contain;object-position:left center}' +
+    '.brand-lockup > span{display:flex;align-items:center;gap:10px;min-width:0}' +
+    '.brand-lockup > span::before{content:"";width:1px;height:22px;background:rgba(166,165,255,.42)}' +
+    '.brand-lockup strong{color:#f5f6fc;font-size:1rem;font-weight:600;letter-spacing:-.02em}' +
+    '.brand-lockup small{display:none}' +
+    '.share-menu{position:relative;z-index:2}' +
+    '.share-menu summary{display:grid;place-content:center;gap:4px;min-width:42px;min-height:42px;padding:0;border:1px solid #293144;border-radius:12px;background:rgba(23,28,41,.9);color:#f5f6fc;cursor:pointer;list-style:none;box-sizing:border-box}' +
+    '.share-menu summary::-webkit-details-marker{display:none}' +
+    '.share-menu summary span{display:block;width:17px;height:1.5px;border-radius:2px;background:currentColor}' +
+    '.share-menu-panel{position:absolute;top:calc(100% + 8px);right:0;display:grid;min-width:170px;padding:6px;border:1px solid #293144;border-radius:12px;background:#1d2433;box-shadow:0 18px 44px #05070dcc}' +
+    '.share-menu-panel a,.share-menu-panel a:visited{display:block;margin:0;padding:10px 12px;border:0;border-radius:8px;background:transparent;color:#f5f6fc;text-decoration:none;font-size:.86rem;font-weight:600}' +
+    '.share-menu-panel a:hover,.share-menu-panel a:focus-visible{background:#293144;color:#fff;text-decoration:none;outline:0}' +
+    'h1{margin:0 0 14px;font-size:clamp(1.05rem,3vw,1.4rem);line-height:1.3;overflow-wrap:anywhere}' +
+    '.preview{display:grid;place-items:center;min-height:120px;padding:16px;background:#111726;border:1px solid #293144;border-radius:14px;box-sizing:border-box;overflow:hidden}' +
+    '.preview img,.preview video{display:block;max-width:100%;max-height:min(62vh,560px);width:auto;border:0;border-radius:10px;object-fit:contain}' +
+    '.preview iframe{display:block;width:100%;min-height:min(62vh,560px);border:0;border-radius:10px;background:#f5f6fc}' +
+    '.preview audio{display:block;width:min(620px,100%);height:54px}' +
+    '.card > a,.card > a:visited{display:inline-block;margin:14px 8px 0 0;padding:11px 15px;border:1px solid #293144;border-radius:11px;background:#1d2433;color:#f5f6fc;text-decoration:none;font-weight:700;min-height:44px;box-sizing:border-box}' +
+    '.card > a:first-of-type,.card > a:first-of-type:visited{border-color:transparent;background:linear-gradient(135deg,#a6a5ff,#8898ff);color:#090c18}' +
+    '@media(max-width:720px){.topbar{width:calc(100% - 22px);padding:12px 0 15px}.cloud-logo-header{width:min(137px,42vw);max-height:34px}.brand-lockup{gap:9px}.brand-lockup > span{gap:8px}.brand-lockup strong{font-size:.92rem}.brand-lockup > span::before{height:19px}.topbar-actions{gap:6px}.topbar-actions .icon-button{min-width:40px;padding:0}}' +
+    '@media(max-width:520px){.card{width:calc(100% - 24px);margin:auto 12px;padding:16px;border-radius:16px}.preview{padding:12px}}' +
+    '</style></head><body><header class="topbar"><a class="brand-lockup" href="https://mysauth.com/" target="_blank" rel="noopener noreferrer" aria-label="MysAuth, sitio principal"><img class="cloud-logo cloud-logo-header" src="'+MYSAUTH_LOGO_URL+'" alt="MysAuth"><span class="cloud-wordmark"><strong>Cloud</strong><small>Hidden Room</small></span></a><div class="topbar-actions"><details class="share-menu"><summary class="icon-button menu-button" aria-label="Abrir menu"><span></span><span></span><span></span></summary><nav class="share-menu-panel" aria-label="Opciones"><a href="/">Iniciar sesión</a><a href="'+download+'">Descargar</a></nav></details></div></header><main class="card"><h1>'+escapeHtml(name)+'</h1><section class="preview">'+preview+'</section><a href="'+download+'">Descargar</a><a href="'+view+'" target="_blank" rel="noopener">Abrir archivo</a></main></body></html>';
+  send(res,200,html,{...PUBLIC_CORS_HEADERS,'Content-Type':'text/html; charset=utf-8','Cache-Control':'public, max-age=60','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; img-src 'self' https://hiddenroom.mx data:; media-src 'self'; frame-src 'self'; base-uri 'none'; form-action 'none'"})
 }
 
 function getTrashRoot(baseRoot) {
@@ -797,14 +719,30 @@ function getBackupDeleteMarker(user, requestedPath, itemName, itemType) {
   };
 }
 
-async function recordBackupTombstone(marker) {
+async function recordBackupTombstone(marker, user) {
+  if (user?.localSession) {
+    const response = await fetch(CLOUD_LOCAL_API_INTERNAL_URL + '/api/tombstones', {
+      method: 'POST', headers: { Authorization: 'Bearer ' + user.localToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify(marker), signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) throw new Error('No se pudo guardar el bloqueo local de respaldo.');
+    return;
+  }
   await supabaseFetch('/rest/v1/cloud_backup_tombstones', {
     method: 'POST',
     headers: { ...supabaseHeaders(), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
     body: JSON.stringify(marker),
   });
 }
-
+async function removeBackupTombstone(marker, user) {
+  if (!marker || !user?.localSession) return;
+  const response = await fetch(CLOUD_LOCAL_API_INTERNAL_URL + '/api/tombstones/remove', {
+    method: 'POST', headers: { Authorization: 'Bearer ' + user.localToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ business_user_id: marker.business_user_id, relative_path: marker.relative_path }),
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!response.ok) throw new Error('No se pudo retirar el bloqueo local del respaldo.');
+}
 async function writeAtomicCloudFile(targetPath, buffer) {
   const directory = path.dirname(targetPath);
   await fsp.mkdir(directory, { recursive: true });
@@ -1463,9 +1401,9 @@ function sessionPayload(user) {
     },
     isAdmin: user.isAdmin,
     canUpload: user.canUpload,
-    canManageSharing: user.isAdmin,
     canUploadBeats: user.canUploadBeats,
     hasBeatStore: user.hasBeatStore,
+    canManageSharing: user.isAdmin,
     rootLabel: user.isAdmin ? 'Raíz Cloud' : 'Mi Cloud',
     homePath: '/',
   };
@@ -1475,7 +1413,6 @@ async function listFiles(user, res, url) {
   const baseRoot = getCloudBaseRoot(user);
   const { normalized, resolved } = await resolveSafePath(baseRoot, url.searchParams.get('path'), { mustExist: true });
   const cloudState = await readCloudState(baseRoot);
-  const shareState = user.isAdmin ? await readCloudShareState(path.resolve(CLOUD_ROOT)) : null;
   const favorites = new Set((cloudState.favorites || []).map((entry) => {
     try { return favoriteKey(entry.path, entry.name); } catch { return ''; }
   }).filter(Boolean));
@@ -1498,14 +1435,8 @@ async function listFiles(user, res, url) {
       continue;
     }
     if (!stats.isFile()) continue;
-    const share = user.isAdmin ? findCloudShareEntry(shareState, normalized, entry.name) : null;
-    files.push({
-      name: entry.name,
-      size: stats.size,
-      modified: stats.mtime.toISOString(),
-      favorite: favorites.has(favoriteKey(normalized, entry.name)),
-      ...(user.isAdmin ? { privacy: share?.privacy || 'private', share_url: share ? cloudShareUrl(share.token) : null } : {}),
-    });
+    const share=user.isAdmin?(cloudState.shares||[]).find(e=>{try{return validCloudShareEntry(e)&&cloudShareKey(e.path,e.name)===cloudShareKey(normalized,entry.name)}catch{return false}}):null;
+    files.push({ name: entry.name, size: stats.size, modified: stats.mtime.toISOString(), favorite: favorites.has(favoriteKey(normalized, entry.name)), ...(user.isAdmin?{privacy:share?.privacy||'private',share_url:share?cloudShareUrl(share.token):null}:{}) });
   }
   folders.sort((a, b) => a.name.localeCompare(b.name));
   files.sort((a, b) => a.name.localeCompare(b.name));
@@ -1548,7 +1479,7 @@ async function toggleFavorite(user, req, res) {
   });
   const favorite = body.favorite !== false;
   if (favorite) favorites.push({ path: parentPath, name, type: 'file', addedAt: new Date().toISOString() });
-  await writeCloudState(baseRoot, { favorites });
+  await writeCloudState(baseRoot, { favorites, shares: state.shares });
   sendJson(res, 200, { success: true, favorite, path: parentPath, name });
 }
 
@@ -1602,17 +1533,98 @@ async function uploadFile(user, req, res, url) {
   sendJson(res, 201, { success: true, file: { name, size: stats.size, modified: stats.mtime.toISOString() } });
 }
 
+async function copyCloudEntry(source, target, stats) {
+  if (stats.isDirectory()) {
+    await fsp.mkdir(target, { recursive: false });
+    const entries = await fsp.readdir(source, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isSymbolicLink()) throw new Error('No se copian enlaces simb�licos.');
+      const childSource = path.join(source, entry.name);
+      const childTarget = path.join(target, entry.name);
+      const childStats = await fsp.stat(childSource);
+      await copyCloudEntry(childSource, childTarget, childStats);
+    }
+    return;
+  }
+  if (!stats.isFile()) throw new Error('Solo se pueden copiar archivos o carpetas.');
+  await fsp.copyFile(source, target);
+}
+
+function cloudItemPath(parentPath, name) {
+  const normalized = normalizeCloudPath(parentPath);
+  return normalized === '/' ? '/' + safeChildName(name) : normalized + '/' + safeChildName(name);
+}
+
+function relocateFavorite(entry, oldItemPath, newItemPath, isFolder) {
+  try {
+    const entryPath = normalizeCloudPath(entry.path);
+    const entryName = safeChildName(entry.name);
+    const entryFullPath = cloudItemPath(entryPath, entryName);
+    if (entryFullPath === oldItemPath) {
+      const split = newItemPath.lastIndexOf('/');
+      return { ...entry, path: split <= 0 ? '/' : newItemPath.slice(0, split), name: newItemPath.slice(split + 1) };
+    }
+    if (isFolder && entryFullPath.startsWith(oldItemPath + '/')) {
+      const movedPath = newItemPath + entryFullPath.slice(oldItemPath.length);
+      const split = movedPath.lastIndexOf('/');
+      return { ...entry, path: split <= 0 ? '/' : movedPath.slice(0, split), name: movedPath.slice(split + 1) };
+    }
+  } catch {
+    return entry;
+  }
+  return entry;
+}
+
+async function relocateItem(user, req, res, mode) {
+  requireUploadPermission(user);
+  const body = await readJson(req);
+  const baseRoot = getCloudBaseRoot(user);
+  const fromInfo = await resolveSafeChild(baseRoot, body.path, body.name, { mustExist: true });
+  const destinationPath = normalizeCloudPath(body.destinationPath ?? body.toPath ?? '/');
+  const destinationInfo = await resolveSafePath(baseRoot, destinationPath, { mustExist: true });
+  const destinationStats = await fsp.stat(destinationInfo.resolved);
+  if (!destinationStats.isDirectory()) throw new Error('La ruta destino no es una carpeta.');
+
+  const itemType = String(body.type || '').toLowerCase();
+  const stats = await fsp.stat(fromInfo.child);
+  if (itemType === 'folder' && !stats.isDirectory()) throw new Error('El origen no es carpeta.');
+  if (itemType === 'file' && !stats.isFile()) throw new Error('El origen no es archivo.');
+  if (!['file', 'folder'].includes(itemType)) throw new Error('Tipo no permitido.');
+
+  if (stats.isDirectory()) {
+    const relativeDestination = path.relative(fromInfo.child, destinationInfo.resolved);
+    if (relativeDestination && !relativeDestination.startsWith('..') && !path.isAbsolute(relativeDestination)) {
+      throw new Error('No puedes mover o copiar una carpeta dentro de s� misma.');
+    }
+  }
+
+  const targetName = safeChildName(body.newName || fromInfo.name);
+  const targetInfo = await resolveSafeChild(baseRoot, destinationPath, targetName, { mustExist: false });
+  await fsp.access(targetInfo.child).then(() => { throw new Error('Ya existe un elemento con ese nombre en la ruta destino.'); }).catch((err) => { if (err && err.code !== 'ENOENT') throw err; });
+
+  if (mode === 'move') {
+    await fsp.rename(fromInfo.child, targetInfo.child);
+    const state = await readCloudState(baseRoot);
+    const oldItemPath = cloudItemPath(body.path, fromInfo.name);
+    const newItemPath = cloudItemPath(destinationPath, targetName);
+    await writeCloudState(baseRoot, { favorites: (state.favorites || []).map((entry) => relocateFavorite(entry, oldItemPath, newItemPath, stats.isDirectory())), shares: state.shares });
+  } else {
+    await copyCloudEntry(fromInfo.child, targetInfo.child, stats);
+  }
+
+  sendJson(res, 200, { success: true, mode, type: itemType, name: targetName, path: destinationPath });
+}
+
 async function renameItem(user, req, res) {
   requireUploadPermission(user);
   const body = await readJson(req);
   const baseRoot = getCloudBaseRoot(user);
   const fromInfo = await resolveSafeChild(baseRoot, body.path, body.name, { mustExist: true });
+  const toInfo = await resolveSafeChild(baseRoot, body.path, body.newName, { mustExist: false });
   const itemType = String(body.type || '').toLowerCase();
   const stats = await fsp.stat(fromInfo.child);
   if (itemType === 'folder' && !stats.isDirectory()) throw new Error('El origen no es carpeta.');
   if (itemType === 'file' && !stats.isFile()) throw new Error('El origen no es archivo.');
-  const targetName = itemType === 'file' ? preserveFileExtension(fromInfo.name, body.newName) : safeChildName(body.newName);
-  const toInfo = await resolveSafeChild(baseRoot, body.path, targetName, { mustExist: false });
   await fsp.access(toInfo.child).then(() => { throw new Error('Ya existe un elemento con ese nombre.'); }).catch((err) => { if (err && err.code !== 'ENOENT') throw err; });
   await fsp.rename(fromInfo.child, toInfo.child);
   const state = await readCloudState(baseRoot);
@@ -1623,8 +1635,10 @@ async function renameItem(user, req, res) {
       return { ...entry, path: normalizeCloudPath(body.path), name: toInfo.name };
     } catch { return entry; }
   });
-  await writeCloudState(baseRoot, { favorites });
-  if (user.isAdmin) await renameCloudShareEntries(baseRoot, body.path, fromInfo.name, toInfo.name, itemType);
+  const oldItemPath = cloudItemPath(body.path, fromInfo.name);
+  const newItemPath = cloudItemPath(body.path, toInfo.name);
+  const shares = user.isAdmin ? (state.shares || []).map((entry) => relocateCloudShare(entry, oldItemPath, newItemPath, stats.isDirectory())) : state.shares;
+  await writeCloudState(baseRoot, { favorites, shares });
   sendJson(res, 200, { success: true, name: fromInfo.name, newName: toInfo.name });
 }
 
@@ -1644,7 +1658,7 @@ async function deleteItem(user, res, url) {
     throw new Error('Tipo no permitido.');
   }
   const backupMarker = getBackupDeleteMarker(user, url.searchParams.get('path'), name, itemType);
-  if (backupMarker) await recordBackupTombstone(backupMarker);
+  if (backupMarker) await recordBackupTombstone(backupMarker, user);
   const normalizedPath = normalizeCloudPath(url.searchParams.get('path'));
   const id = Date.now().toString(16) + '-' + crypto.randomBytes(8).toString('hex');
   const storedName = id + '-' + name;
@@ -1670,8 +1684,8 @@ async function deleteItem(user, res, url) {
       return !sameItem && !insideFolder;
     } catch { return false; }
   });
-  await writeCloudState(baseRoot, { favorites });
-  if (user.isAdmin) await removeCloudShareEntries(baseRoot, normalizedPath, name, itemType);
+  const shares = user.isAdmin ? (state.shares || []).filter((entry) => { try { const entryPath = normalizeCloudPath(entry.path); const sameItem = entryPath === normalizedPath && safeChildName(entry.name) === name; const insideFolder = itemType === 'folder' && (entryPath === normalizedPath || entryPath.startsWith(normalizedPath + '/')); return !sameItem && !insideFolder; } catch { return false; } }) : state.shares;
+  await writeCloudState(baseRoot, { favorites, shares });
   sendJson(res, 200, { success: true, type: itemType, name, trashed: true });
 }
 
@@ -1692,6 +1706,8 @@ async function restoreTrashItem(user, req, res) {
   await fsp.rename(storedPath, child);
   manifest.splice(index, 1);
   await writeTrashManifest(baseRoot, manifest);
+  const backupMarker = getBackupDeleteMarker(user, parentPath, name, entry.type);
+  if (backupMarker) await removeBackupTombstone(backupMarker, user);
   sendJson(res, 200, { success: true, name, path: parentPath });
 }
 
@@ -2176,6 +2192,15 @@ async function persistServerStatus(status) {
   if (serverStatusPersisting) return;
   serverStatusPersisting = true;
   try {
+    if (CLOUD_LOCAL_API_INTERNAL_URL) {
+      const response = await fetch(CLOUD_LOCAL_API_INTERNAL_URL + '/internal/metrics', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: 'server_status', created_at: status.checkedAt, hostname: status.hostname, cpu_percent: status.cpuPercent, ram_percent: status.memory?.percent ?? null, disk_percent: status.diskUsage?.percent ?? null, temperature_celsius: status.temperatureCelsius, payload: status }),
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!response.ok) throw new Error('Local metrics API returned ' + response.status);
+      return;
+    }
     const payload = {
       created_at: status.checkedAt,
       hostname: status.hostname,
@@ -2395,83 +2420,6 @@ async function downloadFile(user, req, res, url) {
   const { name, child } = await resolveDownloadChild(user, baseRoot, requestedPath, url.searchParams.get('name'));
   return streamCloudDownloadFile(req, res, name, child, url);
 }
-async function streamSharedFile(req, res, url) {
-  const shared = await resolveSharedFile(url.searchParams.get('token'));
-  const mode = url.searchParams.get('mode') === 'download' ? 'download' : 'view';
-  const contentType = mode === 'view' ? await detectCloudPreviewMimeType(shared.name, shared.child) : null;
-  const isInline = mode === 'view' && Boolean(contentType);
-  const encoded = encodeURIComponent(shared.name).replace(/['()]/g, escape).replace(/\*/g, '%2A');
-  const safeName = shared.name.replace(/["\r\n]/g, '_');
-  return streamFile(req, res, shared.child, shared.stats, {
-    ...PUBLIC_CORS_HEADERS,
-    'Content-Type': contentType || 'application/octet-stream',
-    'Content-Disposition': (isInline ? 'inline' : 'attachment') + '; filename="' + safeName + '"; filename*=UTF-8\'\'' + encoded,
-    'Cache-Control': 'public, max-age=300',
-    'X-Content-Type-Options': 'nosniff',
-  });
-}
-
-async function renderSharedPreviewPage(req, res, url) {
-  const rawToken = url.pathname.slice('/share/'.length).split('/')[0];
-  const shared = await resolveSharedFile(rawToken);
-  const token = encodeURIComponent(String(rawToken));
-  const previewUrl = `/api/shared-file?token=${token}&mode=view`;
-  const downloadUrl = `/api/shared-file?token=${token}&mode=download`;
-  const mime = await detectCloudPreviewMimeType(shared.name, shared.child) || '';
-  const robots = shared.privacy === 'public' ? 'index,follow' : 'noindex';
-  let viewer = `<p class="share-note">Este formato no tiene vista previa integrada. <a href="${downloadUrl}">Descargar archivo</a>.</p>`;
-  if (mime.startsWith('image/')) viewer = `<img class="share-image" src="${previewUrl}" alt="${escapeHtml(shared.name)}" />`;
-  else if (mime.startsWith('audio/')) viewer = `<audio class="share-media" controls preload="metadata" src="${previewUrl}"></audio>`;
-  else if (mime.startsWith('video/')) viewer = `<video class="share-media" controls preload="metadata" src="${previewUrl}"></video>`;
-  else if (mime === 'application/pdf') viewer = `<iframe class="share-document" title="Vista previa de ${escapeHtml(shared.name)}" src="${previewUrl}"></iframe>`;
-  else if (mime.startsWith('text/') || mime.startsWith('application/json') || mime.startsWith('application/xml')) viewer = `<iframe class="share-document share-document--text" title="Vista previa de ${escapeHtml(shared.name)}" src="${previewUrl}"></iframe>`;
-  const html = `<!doctype html>
-<html lang="es">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="robots" content="${robots}" />
-  <title>${escapeHtml(shared.name)} · Hidden Room Cloud</title>
-  <style>
-    :root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; background: #0f1115; color: #f2f4f8; }
-    * { box-sizing: border-box; }
-    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at top, #252b38, #0f1115 58%); }
-    main { width: min(960px, 100%); padding: clamp(22px, 5vw, 48px); border: 1px solid #343b4a; background: #171a21; box-shadow: 0 24px 80px #0008; }
-    .eyebrow { margin: 0 0 10px; color: #2bb3a3; font-size: .75rem; letter-spacing: .12em; text-transform: uppercase; }
-    h1 { margin: 0; overflow-wrap: anywhere; font-size: clamp(1.5rem, 4vw, 2.5rem); }
-    .viewer { display: grid; place-items: center; min-height: 220px; margin: 28px 0; padding: 18px; border: 1px solid #343b4a; background: #0c0e12; }
-    .share-image { display: block; max-width: 100%; max-height: 68vh; object-fit: contain; }
-    .share-media { width: min(760px, 100%); }
-    .share-document { width: 100%; height: min(68vh, 720px); border: 0; background: #fff; }
-    .share-document--text { background: #0c0e12; }
-    .share-note { color: #aab2c0; line-height: 1.6; }
-    a { color: #2bb3a3; }
-    .actions { display: flex; flex-wrap: wrap; gap: 10px; }
-    .button { display: inline-flex; align-items: center; min-height: 40px; padding: 9px 14px; border: 1px solid #2bb3a3; color: #07100f; background: #2bb3a3; text-decoration: none; font-weight: 700; }
-    .button.secondary { color: #f2f4f8; background: #1f2430; border-color: #343b4a; }
-  </style>
-</head>
-<body>
-  <main>
-    <p class="eyebrow">Hidden Room · Cloud</p>
-    <h1>${escapeHtml(shared.name)}</h1>
-    <section class="viewer" aria-label="Vista previa">${viewer}</section>
-    <div class="actions">
-      <a class="button" href="${downloadUrl}">Descargar archivo</a>
-      <a class="button secondary" href="${CLOUD_HIDDENROOM_URL}">Abrir Cloud</a>
-    </div>
-  </main>
-</body>
-</html>`;
-  send(res, 200, html, {
-    ...PUBLIC_CORS_HEADERS,
-    'Content-Type': 'text/html; charset=utf-8',
-    'Cache-Control': 'public, max-age=300',
-    'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; media-src 'self'; frame-src 'self'; base-uri 'none'; form-action 'none'",
-    'X-Frame-Options': 'SAMEORIGIN',
-  });
-}
-
 async function serveStatic(req, res, url) {
   let pathname = decodeURIComponent(url.pathname);
   if (pathname === '/') pathname = '/index.html';
@@ -2494,13 +2442,15 @@ async function serveStatic(req, res, url) {
   }
 }
 
+const proxyLocalApi = createLocalApiProxy({ internalUrl: CLOUD_LOCAL_API_INTERNAL_URL, fail });
 async function route(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   try {
-    if (url.pathname === '/health') return sendJson(res, 200, { ok: true, service: 'mysauth-cloud' });
-    if (url.pathname.startsWith('/share/') && (req.method === 'GET' || req.method === 'HEAD')) return await renderSharedPreviewPage(req, res, url);
-    if (url.pathname === '/api/shared-file' && (req.method === 'GET' || req.method === 'HEAD')) return await streamSharedFile(req, res, url);
+    if (url.pathname === '/local-api' || url.pathname.startsWith('/local-api/')) return proxyLocalApi(req, res, url);
+    if ((req.method === 'GET' || req.method === 'HEAD') && /^\/share\/[a-f0-9]{48}$/i.test(url.pathname)) return await renderSharedPreviewPage(req, res, url);
+    if ((req.method === 'GET' || req.method === 'HEAD') && url.pathname === '/api/shared-file') return await streamSharedFile(req, res, url);
     if (url.pathname === '/api/shared-file' && req.method === 'OPTIONS') return send(res, 204, '', PUBLIC_CORS_HEADERS);
+    if (url.pathname === '/health') return sendJson(res, 200, { ok: true, service: 'mysauth-cloud' });
     if (url.pathname.startsWith('/api/beat-store')) {
       if (req.method === 'OPTIONS') return send(res, 204, '', PUBLIC_CORS_HEADERS);
       if (req.method === 'POST' && url.pathname === '/api/beat-store/cover') return await uploadBeatCover(await requireCloudUser(req), req, res);
@@ -2534,6 +2484,8 @@ async function route(req, res) {
       if (req.method === 'DELETE' && url.pathname === '/api/trash/item') return await deleteTrashItem(user, res, url);
       if (req.method === 'POST' && url.pathname === '/api/folders') return await createFolder(user, req, res);
       if (req.method === 'POST' && url.pathname === '/api/upload') return await uploadFile(user, req, res, url);
+      if (req.method === 'POST' && url.pathname === '/api/move') return await relocateItem(user, req, res, 'move');
+      if (req.method === 'POST' && url.pathname === '/api/copy') return await relocateItem(user, req, res, 'copy');
       if (req.method === 'POST' && url.pathname === '/api/rename') return await renameItem(user, req, res);
       if (req.method === 'DELETE' && url.pathname === '/api/item') return await deleteItem(user, res, url);
       if (req.method === 'GET' && url.pathname === '/api/download-link') return await createDownloadLink(user, res, url);
@@ -2555,7 +2507,7 @@ async function route(req, res) {
   }
 }
 
-http.createServer(route).listen(PORT, '0.0.0.0', () => {
+http.createServer(route).listen(PORT, BIND_HOST, () => {
   console.log(`MysAuth Cloud listening on ${PORT}`);
   console.log(`Cloud root: ${path.resolve(CLOUD_ROOT)}`);
   startServerStatusCollector();
