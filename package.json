@@ -2,7 +2,12 @@
     "scripts": {
         "dev": "node .codex-static-server.js",
         "instagram:login": "node tools/instagram-comments/server.js --login",
-        "instagram:scraper": "node tools/instagram-comments/server.js"
+        "instagram:scraper": "node tools/instagram-comments/server.js",
+        "test:store-seo": "node scripts/test-build-store-seo.mjs",
+        "test:store-seo-fetch": "node scripts/test-fetch-store-seo-source.mjs",
+        "test:store-seo-snapshot": "node scripts/test-store-seo-snapshot.mjs",
+        "test:media-seo": "node scripts/test-build-media-seo.mjs",
+        "test:studio": "node scripts/test-studio-revenue.mjs"
     },
     "dependencies": {
         "@supabase/supabase-js": "^2.107.0",
