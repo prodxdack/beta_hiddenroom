@@ -7,6 +7,7 @@ import process from "node:process";
 const DEFAULT_INPUT = "scripts/fixtures/store-seo-snapshot.json";
 const DEFAULT_OUTPUT = ".store-seo-preview";
 const DEFAULT_SITE_URL = "https://hiddenroom.mx";
+const PUBLIC_SITE_ROUTES = ["/", "/studio/", "/store/", "/store/beat_store/", "/media/", "/academia/", "/eventos/", "/tickets/", "/empresas/", "/empresas/jingles/"];
 
 export function slugify(value) {
   const raw = String(value ?? "").trim();
@@ -79,7 +80,7 @@ export async function buildStoreSeo({ input = DEFAULT_INPUT, output = DEFAULT_OU
   await fs.mkdir(path.join(root, "beats"), { recursive: true });
   await fs.writeFile(path.join(root, "beats", "index.html"), beatsIndex(beats, siteUrl, { noindex }), "utf8");
   for (const beat of beats) { const dir = path.join(root, "beats", beat.slug); await fs.mkdir(dir, { recursive: true }); await fs.writeFile(path.join(dir, "index.html"), beatPage(beat, siteUrl, { noindex }), "utf8"); }
-  const urls = [`${baseUrl(siteUrl)}/store/beat_store/`, `${baseUrl(siteUrl)}/beats/`, ...beats.map((beat) => beatUrl(siteUrl, beat.slug))];
+  const urls = [...PUBLIC_SITE_ROUTES.map((route) => `${baseUrl(siteUrl)}${route}`), `${baseUrl(siteUrl)}/beats/`, ...beats.map((beat) => beatUrl(siteUrl, beat.slug))];
   await fs.writeFile(path.join(root, "sitemap.xml"), `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.map((url) => `<url><loc>${escapeHtml(url)}</loc></url>`).join("")}</urlset>\n`, "utf8");
   await fs.writeFile(path.join(root, "robots.txt"), `User-agent: *\nAllow: /store/beat_store/\nAllow: /beats/\nSitemap: ${baseUrl(siteUrl)}/sitemap.xml\n`, "utf8");
   return { output: root, beats: beats.map((beat) => beat.slug), files: beats.length + 4 };

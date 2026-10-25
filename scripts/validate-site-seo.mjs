@@ -5,7 +5,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
-const PUBLIC_ROUTES = new Set(["/", "/studio/", "/store/", "/store/beat_store/", "/media/", "/media/articles/", "/academia/", "/eventos/", "/tickets/"]);
+const PUBLIC_ROUTES = new Set(["/", "/studio/", "/store/", "/store/beat_store/", "/media/", "/media/articles/", "/academia/", "/eventos/", "/tickets/", "/empresas/", "/empresas/jingles/"]);
 const PRIVATE_ROUTE = /^(?:portal(?:\/|$)|analytics(?:\/|$)|cloud(?:\/|$)|store\/(?:admin\.html|cart\.html|checkout\.html|orders\.html|success\.html)|store\/beat_store\/(?:my-beats\.html|new-beat\.html|orders\.html|producer\.html|review\.html)|eventos\/admin\.html|media\/admin\.html|tickets\/(?:generate\.html|validate\.html|view\.html))$/i;
 
 function args(argv) {

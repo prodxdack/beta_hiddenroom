@@ -42,6 +42,14 @@ const ROUTE_META = new Map([
     title: "Boletos y accesos | Hidden Room",
     description: "Consulta accesos y boletos para eventos de Hidden Room.",
   }],
+  ["/empresas/", {
+    title: "Música para empresas y marcas | Hidden Room",
+    description: "Hidden Room crea jingles, música original, audio publicitario e identidad sonora para empresas, marcas y campañas.",
+  }],
+  ["/empresas/jingles/", {
+    title: "Jingles publicitarios y música para marcas | Hidden Room",
+    description: "Producción de jingles publicitarios, música original e identidad sonora para campañas y marcas. Solicita una cotización.",
+  }],
 ]);
 
 const PUBLIC_SCHEMA = {
@@ -81,6 +89,24 @@ const PUBLIC_SCHEMA = {
     url: "{site}/store/beat_store/",
     isPartOf: { "@type": "WebSite", name: "Hidden Room", url: "{site}/" },
     about: "Beats y licencias para producción musical",
+    inLanguage: "es-MX",
+  },
+  "/empresas/": {
+    "@context": "https://schema.org",
+    "@type": "Service",
+    name: "Producción musical comercial para empresas y marcas",
+    serviceType: "Producción musical comercial",
+    url: "{site}/empresas/",
+    provider: { "@type": "Organization", name: "Hidden Room", url: "{site}/" },
+    inLanguage: "es-MX",
+  },
+  "/empresas/jingles/": {
+    "@context": "https://schema.org",
+    "@type": "Service",
+    name: "Jingles publicitarios y música original para marcas",
+    serviceType: "Producción de jingles publicitarios",
+    url: "{site}/empresas/jingles/",
+    provider: { "@type": "Organization", name: "Hidden Room", url: "{site}/" },
     inLanguage: "es-MX",
   },
 };

@@ -10,6 +10,7 @@ const ECOSYSTEM_LINKS = [
   ["media", "/media/", "Media"],
   ["store", "/store/", "Store"],
   ["studio", "/studio/", "Studio"],
+  ["empresas", "/empresas/", "Empresas"],
   ["beat-store", "/store/beat_store/", "Beat Store"],
   ["kairen", "/kairen/", "Kairen AI"],
   ["tickets", "/tickets/", "Tickets"],
