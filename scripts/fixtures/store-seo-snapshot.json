@@ -1,0 +1,74 @@
+[
+  {
+    "slug": "dack001",
+    "name": "Marroneo Underground Reggaeton Old School @prodxdack ZUMBANDO DURÖÖ",
+    "producer": "prodxdack",
+    "artwork_url": "https://cloud.hiddenroom.mx/api/beat-store/stream?file=covers%2Ffddbef84-5840-4dac-9e51-ae24d18c60be%2Fcover.webp",
+    "genre": "reggaeton",
+    "bpm": 185,
+    "key": "C",
+    "description": "",
+    "price": 0,
+    "currency": "MXN"
+  },
+  {
+    "slug": "dack002",
+    "name": "HOUSE BEAT @prodxdack DRIFTIN’",
+    "producer": "prodxdack",
+    "artwork_url": "https://cloud.hiddenroom.mx/api/beat-store/stream?file=covers%2F59f02c4d-b9ea-4237-81c2-8587a53804be%2Fcover.webp",
+    "genre": "House",
+    "bpm": 120,
+    "key": "Cm",
+    "description": "",
+    "price": 0,
+    "currency": "MXN"
+  },
+  {
+    "slug": "dack003",
+    "name": "RAP @prodxdack HIT KID",
+    "producer": "prodxdack",
+    "artwork_url": "https://cloud.hiddenroom.mx/api/beat-store/stream?file=covers%2Ffda691cf-9aa8-49f5-8428-d24014966039%2Fcover.webp",
+    "genre": "boom bap",
+    "bpm": 157,
+    "key": "Bm",
+    "description": "",
+    "price": 0,
+    "currency": "MXN"
+  },
+  {
+    "slug": "dack004",
+    "name": "BOOM BAP CHILL @prodxdack SALIMOS DE NOCHE",
+    "producer": "prodxdack",
+    "artwork_url": "https://cloud.hiddenroom.mx/api/beat-store/stream?file=covers%2F6ae0d01d-dee7-4d93-b638-502141b55c8f%2Fcover.webp",
+    "genre": "boom bap",
+    "bpm": 93,
+    "key": "Bbm",
+    "description": "",
+    "price": 0,
+    "currency": "MXN"
+  },
+  {
+    "slug": "dack005",
+    "name": "PERREO UNDER @prodxdack SLIM SHADY",
+    "producer": "prodxdack",
+    "artwork_url": "",
+    "genre": "perreo",
+    "bpm": 92,
+    "key": "Ebm",
+    "description": "",
+    "price": 0,
+    "currency": "MXN"
+  },
+  {
+    "slug": "dack006",
+    "name": "PERREO UNDERGROUND @prodxdack VOLTIO",
+    "producer": "prodxdack",
+    "artwork_url": "",
+    "genre": "perreo",
+    "bpm": 86,
+    "key": "Eb",
+    "description": "",
+    "price": 0,
+    "currency": "MXN"
+  }
+]

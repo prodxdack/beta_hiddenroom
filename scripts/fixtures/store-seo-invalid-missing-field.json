@@ -1,0 +1,3 @@
+[
+  { "id": "invalid-missing-name", "slug": "sin-nombre", "price": 100, "currency": "MXN", "category": "beats", "is_active": true }
+]

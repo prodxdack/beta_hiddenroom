@@ -1,0 +1,41 @@
+[
+  {
+    "id": "fixture-beat-001",
+    "slug": "luz-de-neon",
+    "name": "Luz de Neón",
+    "description": "Beat de prueba para validar el contrato de snapshot del Beat Store.",
+    "producer": "Hidden Room Sample Producer",
+    "genre": "Trap",
+    "bpm": 140,
+    "key": "Cm",
+    "price": 499,
+    "currency": "MXN",
+    "category": "beats",
+    "is_active": true,
+    "publication_status": "published",
+    "email": "private@example.invalid",
+    "internal_admin_note": "Nunca debe aparecer en el snapshot"
+  },
+  {
+    "id": "fixture-beat-002",
+    "slug": "borrador-no-publicar",
+    "name": "Borrador no publicar",
+    "price": 300,
+    "currency": "MXN",
+    "category": "beats",
+    "is_active": false,
+    "publication_status": "inactive",
+    "phone": "+52 5555555555"
+  },
+  {
+    "id": "fixture-merch-001",
+    "slug": "camiseta-no-beat",
+    "name": "Camiseta no beat",
+    "price": 250,
+    "currency": "MXN",
+    "category": "merch",
+    "is_active": true,
+    "publication_status": "pending_review",
+    "payment_token": "never-export"
+  }
+]
