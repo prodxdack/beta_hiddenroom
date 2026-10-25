@@ -1,2 +1,3 @@
 User-agent: *
 Allow: /
+Sitemap: https://beta.hiddenroom.mx/sitemap.xml
