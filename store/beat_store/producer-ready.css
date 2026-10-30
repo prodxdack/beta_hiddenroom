@@ -17,6 +17,78 @@
 .producer-ready-checklist { display:grid; gap:.6rem; padding-left:1.2rem; }
 @media (max-width: 640px) { .producer-ready-shell { padding-top:2rem; } .producer-ready-license { grid-template-columns:auto 1fr; } .producer-ready-license input[type=number] { grid-column:2; } }
 
+.beat-store-invite-modal {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--hr-z-overlay, 1000) + 30);
+  display: grid;
+  place-items: center;
+  padding: clamp(16px, 4vw, 40px);
+}
+
+.beat-store-invite-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, .78);
+  backdrop-filter: blur(10px);
+}
+
+.beat-store-invite-modal__dialog {
+  position: relative;
+  z-index: 1;
+  width: min(680px, 100%);
+  max-height: min(86vh, 720px);
+  overflow: auto;
+  display: grid;
+  gap: 18px;
+  padding: clamp(24px, 5vw, 48px);
+  border: 1px solid var(--hr-border, rgba(255, 255, 255, .16));
+  background: var(--hr-surface-strong, #101010);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, .45);
+}
+
+.beat-store-invite-modal__eyebrow {
+  margin: 0;
+  color: var(--hr-red, #e21b1b);
+  font-size: 11px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.beat-store-invite-modal h2 {
+  margin: 0;
+  max-width: 18ch;
+  color: var(--hr-text, #f0ece4);
+  font: 700 clamp(26px, 5vw, 46px)/1.05 var(--hr-font-display, var(--font-display));
+  text-transform: uppercase;
+}
+
+.beat-store-invite-modal__copy {
+  display: grid;
+  gap: 14px;
+  color: var(--hr-muted, #a5a5ad);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.beat-store-invite-modal__copy p { margin: 0; }
+
+.beat-store-invite-modal__legal {
+  padding-top: 14px;
+  border-top: 1px solid var(--hr-border, rgba(255, 255, 255, .12));
+  font-size: 12px;
+}
+
+.beat-store-invite-modal__button {
+  justify-self: start;
+  min-width: 130px;
+}
+
+@media (max-width: 560px) {
+  .beat-store-invite-modal { align-items: end; padding: 12px; }
+  .beat-store-invite-modal__dialog { padding: 24px 20px; }
+}
+
 /* New Beat workspace ---------------------------------------------------- */
 .new-beat-page {
   --new-beat-line: rgba(240, 236, 228, .11);
